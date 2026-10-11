@@ -161,8 +161,9 @@ test("The login card maintains a 3:2 layout and visible keyboard controls", asyn
   expect(
     await page.evaluate(() => matchMedia("(forced-colors: active)").matches),
   ).toBe(true);
-  expect(
-    await card.evaluate(element => {
+  // Corner decoration restores authored borders on its scheduled paint frame.
+  await expect.poll(
+    () => card.evaluate(element => {
       const style = getComputedStyle(element);
       return style.borderStyle !== "none" &&
         Number.parseFloat(style.borderWidth) >= 1;
