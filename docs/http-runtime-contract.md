@@ -29,6 +29,8 @@ Xczs 负责共享根路径安全、文件流、列表、上传、持久操作和
 
 标签 API 包括 `GET status/files/folders/tags`、`POST scan/backup/tags/file-tags/files/{id}/confirm/files/{id}/relink`，以及 `PUT,DELETE tags/{id}`，路径均位于 `/api/v1/file-tags/` 下。文件下载继续使用 Xczs 原有的受保护文件路径。扫描只在完整成功后更新缺失状态；文件替换和改名不自动继承标签。
 
+标签 ID 在删除后不会被新标签复用，包含清空标签表并重新打开数据库后的情况。旧页面持有的已删除 ID 不能编辑、删除或关联到新标签。当前 `tags.db` 按精确 schema 指纹验证；使用可复用标签 ID 的旧结构将被拒绝打开，不会自动迁移、重置或修改现有数据库。
+
 React 页面中的文件和上传控制器拥有各自 DOM 区域。主题更新保留正在运行的上传队列。
 CSP 只允许同源静态资产，SVG 使用同源摘要路径。产品源码接受严格类型检查及 ESLint 浏览器安全检查。
 xcss 共同清单绑定 native 与 React 资源的路径、MIME、大小和 SHA-256。正式资源以完整清单摘要

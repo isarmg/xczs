@@ -17,6 +17,10 @@ pub const MAX_FILE_TAGS: i64 = 16;
 #[error("a file can have at most 16 tags")]
 pub struct TagLimitExceeded;
 
+#[derive(Debug, thiserror::Error)]
+#[error("relink requires distinct records, a missing source, and a current target")]
+pub struct RelinkConflict;
+
 #[derive(Clone, Debug)]
 pub struct Sample {
     pub path: String,

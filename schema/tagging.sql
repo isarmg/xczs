@@ -13,7 +13,7 @@
             CREATE INDEX IF NOT EXISTS files_path_status ON files(root_id,path,status);
             CREATE INDEX IF NOT EXISTS files_parent_status ON files(parent,status);
             CREATE TABLE IF NOT EXISTS tags (
-              id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+              id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL UNIQUE COLLATE NOCASE,
               color TEXT
             );
             CREATE TABLE IF NOT EXISTS file_tags (

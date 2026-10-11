@@ -68,6 +68,9 @@ impl IntoResponse for ApiError {
     }
 }
 fn database_error(error: anyhow::Error) -> ApiError {
+    if error.is::<super::db::RelinkConflict>() {
+        return ApiError::conflict();
+    }
     if error.is::<super::db::TagLimitExceeded>() {
         return ApiError(StatusCode::CONFLICT, "tag_limit_exceeded", false);
     }
@@ -450,14 +453,7 @@ async fn relink(
     db_call(server.tagging.db.clone(), move |db| {
         db.relink(input.source_id, id)
     })
-    .await
-    .map_err(|error| {
-        if error.1 == "tag_limit_exceeded" {
-            error
-        } else {
-            ApiError::conflict()
-        }
-    })?;
+    .await?;
     Ok(StatusCode::NO_CONTENT)
 }
 async fn confirm(
@@ -470,3 +466,6 @@ async fn confirm(
         Err(ApiError::conflict())
     }
 }
+
+#[cfg(test)]
+mod tests;

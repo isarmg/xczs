@@ -110,7 +110,9 @@ async fn send_open_file_with_gate(
         .typed_insert(CacheControl::new().with_private().with_no_store());
     let mut use_range = !head_only;
     if let Some((etag, last_modified)) = extract_cache_headers(&meta) {
-        res.headers_mut().typed_insert(last_modified);
+        if let Some(last_modified) = last_modified {
+            res.headers_mut().typed_insert(last_modified);
+        }
         res.headers_mut().typed_insert(etag.clone());
 
         if let Some(if_match) = headers.typed_get::<IfMatch>() {
@@ -118,7 +120,8 @@ async fn send_open_file_with_gate(
                 *res.status_mut() = StatusCode::PRECONDITION_FAILED;
                 return Ok(());
             }
-        } else if let Some(if_unmodified_since) = headers.typed_get::<IfUnmodifiedSince>()
+        } else if let Some(last_modified) = last_modified
+            && let Some(if_unmodified_since) = headers.typed_get::<IfUnmodifiedSince>()
             && !if_unmodified_since.precondition_passes(last_modified.into())
         {
             *res.status_mut() = StatusCode::PRECONDITION_FAILED;
@@ -130,7 +133,8 @@ async fn send_open_file_with_gate(
                 *res.status_mut() = StatusCode::NOT_MODIFIED;
                 return Ok(());
             }
-        } else if let Some(if_modified_since) = headers.typed_get::<IfModifiedSince>()
+        } else if let Some(last_modified) = last_modified
+            && let Some(if_modified_since) = headers.typed_get::<IfModifiedSince>()
             && !if_modified_since.is_modified(last_modified.into())
         {
             *res.status_mut() = StatusCode::NOT_MODIFIED;
@@ -267,8 +271,7 @@ fn gated_file_body(
     Body::from_stream(stream)
 }
 
-fn extract_cache_headers(meta: &Metadata) -> Option<(ETag, LastModified)> {
-    let mtime = meta.modified().ok().or_else(|| meta.created().ok())?;
+fn extract_cache_headers(meta: &Metadata) -> Option<(ETag, Option<LastModified>)> {
     // File identity and nanosecond timestamps distinguish normal in-place
     // changes and same-size atomic replacements without claiming that
     // metadata is a collision-proof content digest, so emit a weak validator.
@@ -282,7 +285,17 @@ fn extract_cache_headers(meta: &Metadata) -> Option<(ETag, LastModified)> {
     validator.update(meta.ctime_nsec().to_le_bytes());
     let validator = encode_hex(validator.finalize());
     let etag = format!(r#"W/"{validator}""#).parse::<ETag>().ok()?;
-    let last_modified = LastModified::from(mtime);
+    // httpdate panics outside its supported years (1970..=9999), while
+    // filesystem timestamps can fall outside that range. Omit only the date
+    // validator in that case; ETag and byte-range downloads remain available.
+    let last_modified = meta
+        .modified()
+        .ok()
+        .or_else(|| meta.created().ok())
+        .and_then(|mtime| {
+            let since_epoch = mtime.duration_since(std::time::UNIX_EPOCH).ok()?;
+            (since_epoch.as_secs() < 253_402_300_800).then(|| LastModified::from(mtime))
+        });
     Some((etag, last_modified))
 }
 
@@ -331,11 +344,14 @@ mod tests {
         (status, headers, body)
     }
 
-    fn assert_cache_headers(headers: &HeaderMap<HeaderValue>, expected: &(ETag, LastModified)) {
+    fn assert_cache_headers(
+        headers: &HeaderMap<HeaderValue>,
+        expected: &(ETag, Option<LastModified>),
+    ) {
         assert_eq!(headers.typed_get::<ETag>().as_ref(), Some(&expected.0));
         assert_eq!(
             headers.typed_get::<LastModified>().as_ref(),
-            Some(&expected.1)
+            expected.1.as_ref()
         );
     }
 
@@ -638,5 +654,149 @@ mod tests {
             get_content_type(Path::new("no-extension")),
             "application/octet-stream"
         );
+    }
+
+    #[tokio::test]
+    async fn download_supports_pre_epoch_file_mtime() {
+        assert_download_with_unrepresentable_date(std::time::UNIX_EPOCH - Duration::from_secs(1))
+            .await;
+    }
+
+    #[tokio::test]
+    async fn download_supports_file_mtime_after_http_date_limit() {
+        assert_download_with_unrepresentable_date(
+            std::time::UNIX_EPOCH + Duration::from_secs(253_402_300_800),
+        )
+        .await;
+    }
+
+    async fn assert_download_with_unrepresentable_date(modified: std::time::SystemTime) {
+        let temp = assert_fs::TempDir::new().unwrap();
+        let path = temp.path().join("archived.txt");
+        std::fs::write(&path, b"archived content").unwrap();
+        File::open(&path)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(modified))
+            .unwrap();
+        assert_eq!(
+            std::fs::metadata(&path).unwrap().modified().unwrap(),
+            modified
+        );
+        let (status, headers, body) = render_open_file(
+            &path,
+            fs::File::open(&path).await.unwrap(),
+            HeaderMap::new(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert_eq!(headers[CONTENT_LENGTH], "16");
+        assert_eq!(body, b"archived content");
+        assert!(!headers.contains_key(http::header::LAST_MODIFIED));
+        let etag = headers[http::header::ETAG].clone();
+
+        for (name, value, range, head, expected_status, expected_body) in [
+            (
+                "if-modified-since",
+                "Wed, 01 Jan 2020 00:00:00 GMT",
+                false,
+                false,
+                StatusCode::OK,
+                b"archived content".as_slice(),
+            ),
+            (
+                "if-unmodified-since",
+                "Wed, 01 Jan 2020 00:00:00 GMT",
+                false,
+                false,
+                StatusCode::OK,
+                b"archived content".as_slice(),
+            ),
+            (
+                "if-match",
+                "*",
+                false,
+                false,
+                StatusCode::OK,
+                b"archived content".as_slice(),
+            ),
+            (
+                "if-none-match",
+                etag.to_str().unwrap(),
+                true,
+                false,
+                StatusCode::NOT_MODIFIED,
+                b"".as_slice(),
+            ),
+            (
+                "if-range",
+                "Wed, 01 Jan 2020 00:00:00 GMT",
+                true,
+                false,
+                StatusCode::OK,
+                b"archived content".as_slice(),
+            ),
+            (
+                "if-range",
+                etag.to_str().unwrap(),
+                true,
+                false,
+                StatusCode::OK,
+                b"archived content".as_slice(),
+            ),
+            (
+                "x-test",
+                "range",
+                true,
+                false,
+                StatusCode::PARTIAL_CONTENT,
+                b"chiv".as_slice(),
+            ),
+            ("x-test", "head", true, true, StatusCode::OK, b"".as_slice()),
+        ] {
+            let mut request = HeaderMap::new();
+            request.insert(
+                http::header::HeaderName::from_static(name),
+                value.parse().unwrap(),
+            );
+            if range {
+                request.insert(RANGE, HeaderValue::from_static("bytes=2-5"));
+            }
+            let mut response = Response::default();
+            send_open_file(
+                &path,
+                fs::File::open(&path).await.unwrap(),
+                &request,
+                head,
+                &mut response,
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                response.status(),
+                expected_status,
+                "{name}, range={range}, head={head}"
+            );
+            assert_eq!(response.headers()[http::header::ETAG], etag);
+            assert!(!response.headers().contains_key(http::header::LAST_MODIFIED));
+            if expected_status == StatusCode::PARTIAL_CONTENT {
+                assert_eq!(response.headers()[CONTENT_RANGE], "bytes 2-5/16");
+                assert_eq!(response.headers()[CONTENT_LENGTH], "4");
+            } else {
+                assert!(!response.headers().contains_key(CONTENT_RANGE));
+                if expected_status == StatusCode::OK {
+                    assert_eq!(response.headers()[CONTENT_LENGTH], "16");
+                }
+            }
+            assert_eq!(
+                response
+                    .into_body()
+                    .collect()
+                    .await
+                    .unwrap()
+                    .to_bytes()
+                    .as_ref(),
+                expected_body
+            );
+        }
     }
 }

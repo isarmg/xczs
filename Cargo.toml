@@ -1,6 +1,6 @@
 [package]
 name = "xczs"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2024"
 rust-version = "1.99"
 description = "A Linux browser file manager"
@@ -15,7 +15,7 @@ build = "build.rs"
 hex = "=0.4.3"
 thiserror = "=2.0.21"
 sqlx = { version = "=0.9.0", default-features = false, features = ["sqlite-bundled", "runtime-tokio"] }
-xcss = { git = "https://github.com/isarmg/xcss.git", rev = "0fb8d744c75e829dff48eadc5e50137f5ad589fd", version = "=1.0.4", features = ["tracing"] }
+xcss = { git = "https://github.com/isarmg/xcss.git", rev = "6a8113d4be76e5e8977ac7be08c1a7c57963ae49", version = "=1.0.5", features = ["tracing"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json"] }
 http = "1"
 http-body = "1"
@@ -47,7 +47,7 @@ subtle = "2.6"
 tempfile = "3"
 
 [build-dependencies]
-xcss = { git = "https://github.com/isarmg/xcss.git", rev = "0fb8d744c75e829dff48eadc5e50137f5ad589fd", version = "=1.0.4" }
+xcss = { git = "https://github.com/isarmg/xcss.git", rev = "6a8113d4be76e5e8977ac7be08c1a7c57963ae49", version = "=1.0.5" }
 
 [dev-dependencies]
 socket2 = "0.6"

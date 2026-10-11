@@ -189,7 +189,7 @@ impl Database {
         })
     }
     pub fn relink(&self, old_id: i64, new_id: i64) -> Result<()> {
-        anyhow::ensure!(old_id != new_id, "source and target must differ");
+        anyhow::ensure!(old_id != new_id, RelinkConflict);
         database_operation!(self, 3, connection, {
             let mut tx = connection.begin_with("BEGIN IMMEDIATE").await?;
             let old: Option<String> = sqlx::query_scalar("SELECT status FROM files WHERE id=?")
@@ -203,7 +203,7 @@ impl Database {
             anyhow::ensure!(
                 old.as_deref() == Some("missing")
                     && matches!(new.as_deref(), Some("present" | "suspect")),
-                "relink requires a missing source and a current target"
+                RelinkConflict
             );
             let (current, additional): (i64, i64) = sqlx::query_as(
                 "SELECT (SELECT COUNT(*) FROM file_tags WHERE file_id=?),(SELECT COUNT(*) FROM file_tags old WHERE old.file_id=? AND NOT EXISTS(SELECT 1 FROM file_tags new WHERE new.file_id=? AND new.tag_id=old.tag_id))",

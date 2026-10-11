@@ -610,3 +610,50 @@ fn case_sensitive_folder_cursors_keep_forward_and_reverse_scope() {
         .unwrap();
     assert_eq!(previous.folders, first.folders);
 }
+
+#[test]
+fn tag_ids_survive_empty_table_and_reopen() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("tags.db");
+    Database::initialize(&path, root.path()).unwrap();
+    let db = Database::open(&path, root.path()).unwrap();
+    let first = db.create_tag("first", None).unwrap();
+    let second = db.create_tag("second", None).unwrap();
+    assert!(db.delete_tag(second).unwrap());
+    let third = db.create_tag("third", None).unwrap();
+    assert!(third > second);
+    assert!(db.delete_tag(first).unwrap());
+    assert!(db.delete_tag(third).unwrap());
+    drop(db);
+    let reopened = Database::open(&path, root.path()).unwrap();
+    assert!(reopened.create_tag("after reopen", None).unwrap() > third);
+}
+
+#[test]
+fn old_reusable_tag_schema_is_rejected_without_mutation() {
+    let root = tempfile::tempdir().unwrap();
+    let path = root.path().join("tags.db");
+    std::fs::File::create(&path).unwrap();
+    xcss::sqlite::block_on_sqlite_connection(async {
+        let mut connection = connect(&path).await.unwrap();
+        sqlx::raw_sql(include_str!("fixtures/tagging-rowid.sql"))
+            .execute(&mut connection)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO roots(id,path) VALUES('main',?)")
+            .bind(root.path().to_str().unwrap())
+            .execute(&mut connection)
+            .await
+            .unwrap();
+        sqlx::query("INSERT INTO tags(name) VALUES('retained')")
+            .execute(&mut connection)
+            .await
+            .unwrap();
+        connection.close().await.unwrap();
+    });
+    let before = std::fs::read(&path).unwrap();
+    let error = Database::validate_current(&path, root.path()).unwrap_err();
+    assert!(error.to_string().contains("exact current structure"));
+    assert!(Database::open(&path, root.path()).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+}
