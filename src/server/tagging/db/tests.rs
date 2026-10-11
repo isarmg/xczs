@@ -516,3 +516,97 @@ mod resource_tests {
         assert_eq!(db.file_tags_page(id, None).unwrap().tags[0].name, "kept");
     }
 }
+
+#[test]
+fn recursive_paths_and_folders_keep_literal_case_sensitive_identity() {
+    let t = tempfile::tempdir().unwrap();
+    Database::initialize(&t.path().join("db"), t.path()).unwrap();
+    let db = Database::open(&t.path().join("db"), t.path()).unwrap();
+    let directories = ["Reports", "reports", "数据_%\\A", "数据_%\\a", "数据_XX\\A"];
+    let mut samples = Vec::new();
+    for (index, directory) in directories.iter().enumerate() {
+        for child in ["direct.txt".to_owned(), format!("child-{index}/same.txt")] {
+            let path = format!("{directory}/{child}");
+            samples.push(Sample {
+                parent: path.rsplit_once('/').unwrap().0.into(),
+                name: path.rsplit('/').next().unwrap().into(),
+                path,
+                dev: 1,
+                ino: samples.len() as i64 + 1,
+                size: 1,
+                mtime_ns: 1,
+                ctime_ns: 1,
+            });
+        }
+    }
+    db.scan_complete(samples).unwrap();
+    for (index, directory) in directories.iter().enumerate() {
+        let query = FileQuery {
+            search: String::new(),
+            directory: (*directory).into(),
+            scope: "recursive".into(),
+            status: "present".into(),
+            all_tags: vec![],
+            any_tags: vec![],
+            exclude_tags: vec![],
+            page: 1,
+            page_size: 50,
+        };
+        let mut expected = vec![
+            format!("{directory}/direct.txt"),
+            format!("{directory}/child-{index}/same.txt"),
+        ];
+        expected.sort();
+        let page = db.list(&query).unwrap();
+        let mut paths: Vec<_> = page.files.into_iter().map(|file| file.path).collect();
+        paths.sort();
+        assert_eq!(page.total, 2);
+        assert_eq!(paths, expected);
+        let mut matched: Vec<_> = db.matching_tag_paths(&query).unwrap().into_keys().collect();
+        matched.sort();
+        assert_eq!(matched, expected);
+        assert_eq!(
+            db.folders(directory, None).unwrap().folders,
+            vec![format!("child-{index}")]
+        );
+    }
+}
+
+#[test]
+fn case_sensitive_folder_cursors_keep_forward_and_reverse_scope() {
+    let t = tempfile::tempdir().unwrap();
+    Database::initialize(&t.path().join("db"), t.path()).unwrap();
+    let db = Database::open(&t.path().join("db"), t.path()).unwrap();
+    let samples = (0..52)
+        .map(|index| {
+            let parent = if index == 51 {
+                "reports/foreign".into()
+            } else {
+                format!("Reports/child-{index:02}")
+            };
+            Sample {
+                path: format!("{parent}/same.txt"),
+                parent,
+                name: "same.txt".into(),
+                dev: 1,
+                ino: index,
+                size: 1,
+                mtime_ns: 1,
+                ctime_ns: 1,
+            }
+        })
+        .collect();
+    db.scan_complete(samples).unwrap();
+    let first = db.folders("Reports", None).unwrap();
+    assert_eq!(
+        first.folders,
+        (0..50).map(|i| format!("child-{i:02}")).collect::<Vec<_>>()
+    );
+    let last = db.folders("Reports", first.next_cursor.as_deref()).unwrap();
+    assert_eq!(last.folders, vec!["child-50"]);
+    assert!(last.next_cursor.is_none());
+    let previous = db
+        .folders("Reports", last.previous_cursor.as_deref())
+        .unwrap();
+    assert_eq!(previous.folders, first.folders);
+}

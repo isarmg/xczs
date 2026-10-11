@@ -41,11 +41,16 @@ impl Database {
             if filter.scope == "current" {
                 q.push(" AND physical.parent=").push_bind(&filter.directory);
             } else if !filter.directory.is_empty() {
+                // LIKE narrows candidates; the binary prefix preserves filesystem case.
                 q.push(" AND (physical.parent=")
                     .push_bind(&filter.directory)
                     .push(" OR physical.path LIKE ")
                     .push_bind(format!("{}/%", escape_like(&filter.directory)))
-                    .push(" ESCAPE '\\')");
+                    .push(" ESCAPE '\\' AND substr(physical.path,1,")
+                    .push_bind(filter.directory.chars().count() as i64 + 1)
+                    .push(")=")
+                    .push_bind(format!("{}/", filter.directory))
+                    .push(" COLLATE BINARY)");
             }
             q.push(" LIMIT 100001");
             let query = q.build();
@@ -188,7 +193,7 @@ impl Database {
             format!("{parent}/")
         };
         database_operation!(self, 3, connection, {
-            const FOLDERS: &str = "WITH folder_names AS (SELECT DISTINCT substr(substr(path,?+1),1,instr(substr(path,?+1),'/')-1) AS name FROM files WHERE root_id='main' AND status IN ('present','suspect') AND path LIKE ? ESCAPE '\\' AND instr(substr(path,?+1),'/')>0) ";
+            const FOLDERS: &str = "WITH folder_names AS (SELECT DISTINCT substr(substr(path,?+1),1,instr(substr(path,?+1),'/')-1) AS name FROM files WHERE root_id='main' AND status IN ('present','suspect') AND path LIKE ? ESCAPE '\\' AND instr(substr(path,?+1),'/')>0 AND substr(path,1,?)=? COLLATE BINARY) ";
             let make = || {
                 let mut q = QueryBuilder::<Sqlite>::new(FOLDERS);
                 q.push("SELECT CASE WHEN length(CAST(name AS BLOB))<=768 THEN name END FROM folder_names");
@@ -208,13 +213,15 @@ impl Database {
             } else {
                 " ORDER BY name ASC LIMIT 51"
             });
-            // The fixed CTE has four leading parameters; append cursor arguments after them.
+            // The fixed CTE has six leading parameters; append cursor arguments after them.
             let sql = q.sql().to_owned();
             let mut query = sqlx::query_scalar(sql)
                 .bind(prefix.chars().count() as i64)
                 .bind(prefix.chars().count() as i64)
                 .bind(format!("{}%", escape_like(&prefix)))
-                .bind(prefix.chars().count() as i64);
+                .bind(prefix.chars().count() as i64)
+                .bind(prefix.chars().count() as i64)
+                .bind(&prefix);
             if let Some(c) = &cursor {
                 query = query.bind(&c.name);
             }
@@ -233,6 +240,8 @@ impl Database {
                     .bind(prefix.chars().count() as i64)
                     .bind(format!("{}%", escape_like(&prefix)))
                     .bind(prefix.chars().count() as i64)
+                    .bind(prefix.chars().count() as i64)
+                    .bind(&prefix)
                     .bind(name)
             };
             let previous_cursor = if let Some(name) = folders.first() {
@@ -385,11 +394,16 @@ fn file_filter(q: &mut QueryBuilder<Sqlite>, filter: &FileQuery) -> Result<()> {
             q.push(" AND f.parent=").push_bind(&filter.directory);
         }
         "recursive" if !filter.directory.is_empty() => {
+            // Filename search is case-insensitive, but directory identity is not.
             q.push(" AND (f.parent=")
                 .push_bind(&filter.directory)
                 .push(" OR f.path LIKE ")
                 .push_bind(format!("{}/%", escape_like(&filter.directory)))
-                .push(" ESCAPE '\\')");
+                .push(" ESCAPE '\\' AND substr(f.path,1,")
+                .push_bind(filter.directory.chars().count() as i64 + 1)
+                .push(")=")
+                .push_bind(format!("{}/", filter.directory))
+                .push(" COLLATE BINARY)");
         }
         "all" | "recursive" => {}
         _ => bail!("invalid scope"),
