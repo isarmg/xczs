@@ -19,3 +19,7 @@
 .library-status dd { margin: 0; overflow-wrap: anywhere; }
 .library-dialog-form { display: grid; gap: var(--xcss-space-4); }
 @media (max-width: 760px) { .library-filters { grid-template-columns: 1fr; } .library-status { grid-template-columns: 1fr; } .library-status dd { margin-bottom: .5rem; } }
+
+/* Explicit Mac mini surfaces; the authored round radii remain the fallback before startup. */
+.library-tag { --xcss-server-corner-extent: 10px; }
+.library-color { --xcss-server-corner-extent: 0px; }

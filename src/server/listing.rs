@@ -819,7 +819,7 @@ impl Server {
         res.headers_mut().insert(
             "content-security-policy",
             HeaderValue::from_static(
-                "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+                "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' blob:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
             ),
         );
         if options.head_only {

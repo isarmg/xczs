@@ -108,6 +108,8 @@ fn unauthenticated_html_navigation_redirects_to_login(
             .is_some_and(|value| {
                 value.contains("style-src 'self'")
                     && value.contains("connect-src 'self'")
+                    && value.contains("img-src 'self' blob:")
+                    && !value.contains("data:")
                     && !value.contains("'unsafe-inline'")
             })
     );

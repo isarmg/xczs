@@ -9,6 +9,9 @@ export {
 } from "@xcss/web/contracts";
 export { ApiClientError } from "@xcss/web/http-client";
 import { startAfterFonts as startPrepared } from "@xcss/web/web-fonts";
+import { startServerCorners } from "@xcss/web/admin-ui/server-corners";
+
+startServerCorners(document);
 
 export function startAfterFonts(start: () => void) {
   return startPrepared(start);

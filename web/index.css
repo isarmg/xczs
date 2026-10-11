@@ -809,3 +809,16 @@ button {
   #xczs-root .file-action-mode[aria-pressed="true"],
   #xczs-root .file-tag-choice[aria-pressed="true"] .file-tag-label { color: Highlight; border-color: Highlight; }
 }
+
+/* Explicit Mac mini surfaces; the authored round radii remain the fallback before startup. */
+.searchbar { --xcss-server-corner-extent: var(--xcss-server-corner-control, 27px); }
+.search-tag-options { --xcss-server-corner-extent: var(--xcss-server-corner-notification, 48px); }
+.file-tag-label { --xcss-server-corner-extent: 10px; }
+.load-more { --xcss-server-corner-extent: var(--xcss-server-corner-control, 27px); }
+.operation-status,
+.upload-queue-message { --xcss-server-corner-extent: var(--xcss-server-corner-notification, 48px); }
+.action-dialog { --xcss-server-corner-extent: var(--xcss-server-corner-dialog, 54px); }
+.action-dialog-input-group input { --xcss-server-corner-extent: var(--xcss-server-corner-control, 27px); }
+.action-dialog-actions button { --xcss-server-corner-extent: var(--xcss-server-corner-control, 27px); }
+#xczs-root .file-action-mode[aria-pressed="true"] { --xcss-server-corner-extent: var(--xcss-server-corner-control, 27px); }
+.inline-name-input { --xcss-server-corner-extent: 0px; }
