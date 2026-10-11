@@ -292,11 +292,13 @@ fn extract_cache_headers(meta: &Metadata) -> Option<(ETag, Option<LastModified>)
         .modified()
         .ok()
         .or_else(|| meta.created().ok())
-        .and_then(|mtime| {
-            let since_epoch = mtime.duration_since(std::time::UNIX_EPOCH).ok()?;
-            (since_epoch.as_secs() < 253_402_300_800).then(|| LastModified::from(mtime))
-        });
+        .and_then(last_modified_for_http);
     Some((etag, last_modified))
+}
+
+fn last_modified_for_http(mtime: std::time::SystemTime) -> Option<LastModified> {
+    let since_epoch = mtime.duration_since(std::time::UNIX_EPOCH).ok()?;
+    (since_epoch.as_secs() < 253_402_300_800).then(|| LastModified::from(mtime))
 }
 
 fn get_content_type(path: &Path) -> String {
@@ -656,21 +658,64 @@ mod tests {
         );
     }
 
+    #[test]
+    fn last_modified_http_date_boundaries_do_not_depend_on_filesystem_limits() {
+        let epoch = std::time::UNIX_EPOCH;
+        let upper_bound = epoch + Duration::from_secs(253_402_300_800);
+        for (mtime, expected) in [
+            (epoch - Duration::from_nanos(1), None),
+            (epoch, Some("Thu, 01 Jan 1970 00:00:00 GMT")),
+            (
+                upper_bound - Duration::from_secs(1),
+                Some("Fri, 31 Dec 9999 23:59:59 GMT"),
+            ),
+            (
+                upper_bound - Duration::from_nanos(1),
+                Some("Fri, 31 Dec 9999 23:59:59 GMT"),
+            ),
+            (upper_bound, None),
+            (upper_bound + Duration::from_nanos(1), None),
+        ] {
+            let mut headers = HeaderMap::new();
+            if let Some(last_modified) = last_modified_for_http(mtime) {
+                // Actually serialize the header: conversion alone would not
+                // prove the HTTP-date formatter cannot panic at a boundary.
+                headers.typed_insert(last_modified);
+            }
+            assert_eq!(
+                headers
+                    .get(http::header::LAST_MODIFIED)
+                    .map(|value| value.to_str().unwrap()),
+                expected,
+                "mtime={mtime:?}"
+            );
+        }
+    }
+
     #[tokio::test]
     async fn download_supports_pre_epoch_file_mtime() {
-        assert_download_with_unrepresentable_date(std::time::UNIX_EPOCH - Duration::from_secs(1))
-            .await;
+        assert_download_with_extreme_date(std::time::UNIX_EPOCH - Duration::from_secs(1)).await;
     }
 
     #[tokio::test]
     async fn download_supports_file_mtime_after_http_date_limit() {
-        assert_download_with_unrepresentable_date(
+        assert_download_with_extreme_date(
             std::time::UNIX_EPOCH + Duration::from_secs(253_402_300_800),
         )
         .await;
     }
 
-    async fn assert_download_with_unrepresentable_date(modified: std::time::SystemTime) {
+    #[tokio::test]
+    async fn download_supports_filesystem_clamped_future_mtime() {
+        // ext4's maximum timestamp observed on the CI runner is still an
+        // HTTP-representable date. Exercise that path on wider filesystems too.
+        assert_download_with_extreme_date(
+            std::time::UNIX_EPOCH + Duration::from_secs(15_032_385_535),
+        )
+        .await;
+    }
+
+    async fn assert_download_with_extreme_date(modified: std::time::SystemTime) {
         let temp = assert_fs::TempDir::new().unwrap();
         let path = temp.path().join("archived.txt");
         std::fs::write(&path, b"archived content").unwrap();
@@ -678,10 +723,18 @@ mod tests {
             .unwrap()
             .set_times(std::fs::FileTimes::new().set_modified(modified))
             .unwrap();
-        assert_eq!(
-            std::fs::metadata(&path).unwrap().modified().unwrap(),
-            modified
-        );
+        // Filesystems can silently clamp year 10000 to their own upper bound.
+        // Exercise HTTP behavior for the stored date; the pure boundary test
+        // above covers year 10000 regardless of filesystem capabilities.
+        let stored_modified = std::fs::metadata(&path).unwrap().modified().unwrap();
+        if modified < std::time::UNIX_EPOCH {
+            assert_eq!(stored_modified, modified);
+        }
+        let representable = stored_modified
+            .duration_since(std::time::UNIX_EPOCH)
+            .is_ok_and(|duration| duration.as_secs() < 253_402_300_800);
+        let expected_last_modified = representable.then(|| LastModified::from(stored_modified));
+        let condition_date = std::time::UNIX_EPOCH + Duration::from_secs(1_577_836_800);
         let (status, headers, body) = render_open_file(
             &path,
             fs::File::open(&path).await.unwrap(),
@@ -691,7 +744,10 @@ mod tests {
         assert_eq!(status, StatusCode::OK);
         assert_eq!(headers[CONTENT_LENGTH], "16");
         assert_eq!(body, b"archived content");
-        assert!(!headers.contains_key(http::header::LAST_MODIFIED));
+        assert_eq!(headers.typed_get::<LastModified>(), expected_last_modified);
+        if expected_last_modified.is_none() {
+            assert!(!headers.contains_key(http::header::LAST_MODIFIED));
+        }
         let etag = headers[http::header::ETAG].clone();
 
         for (name, value, range, head, expected_status, expected_body) in [
@@ -700,16 +756,32 @@ mod tests {
                 "Wed, 01 Jan 2020 00:00:00 GMT",
                 false,
                 false,
-                StatusCode::OK,
-                b"archived content".as_slice(),
+                if representable && stored_modified <= condition_date {
+                    StatusCode::NOT_MODIFIED
+                } else {
+                    StatusCode::OK
+                },
+                if representable && stored_modified <= condition_date {
+                    b"".as_slice()
+                } else {
+                    b"archived content".as_slice()
+                },
             ),
             (
                 "if-unmodified-since",
                 "Wed, 01 Jan 2020 00:00:00 GMT",
                 false,
                 false,
-                StatusCode::OK,
-                b"archived content".as_slice(),
+                if representable && stored_modified > condition_date {
+                    StatusCode::PRECONDITION_FAILED
+                } else {
+                    StatusCode::OK
+                },
+                if representable && stored_modified > condition_date {
+                    b"".as_slice()
+                } else {
+                    b"archived content".as_slice()
+                },
             ),
             (
                 "if-match",
@@ -777,7 +849,13 @@ mod tests {
                 "{name}, range={range}, head={head}"
             );
             assert_eq!(response.headers()[http::header::ETAG], etag);
-            assert!(!response.headers().contains_key(http::header::LAST_MODIFIED));
+            assert_eq!(
+                response.headers().typed_get::<LastModified>(),
+                expected_last_modified
+            );
+            if expected_last_modified.is_none() {
+                assert!(!response.headers().contains_key(http::header::LAST_MODIFIED));
+            }
             if expected_status == StatusCode::PARTIAL_CONTENT {
                 assert_eq!(response.headers()[CONTENT_RANGE], "bytes 2-5/16");
                 assert_eq!(response.headers()[CONTENT_LENGTH], "4");
