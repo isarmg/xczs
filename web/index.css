@@ -174,7 +174,6 @@ button {
   height: 44px;
   background-color: var(--bg-secondary);
   border: 1px var(--border-primary) solid;
-  border-radius: var(--xcss-radius-sm);
   margin-bottom: 0;
   min-width: 10rem;
   flex: 0 1 24rem;
@@ -185,12 +184,12 @@ button {
 .search-tags { flex: 0 0 auto; }
 .search-tags summary { cursor: pointer; padding: .5rem; line-height: 1.5; white-space: nowrap; }
 .search-tags summary:focus-visible { outline: 2px solid var(--text-accent); outline-offset: -2px; }
-.search-tag-options { position: absolute; z-index: 10; inset-inline-end: 0; top: calc(100% + 8px); width: min(40rem, calc(100vw - 32px)); max-height: min(70vh, 40rem); overflow: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 16px; background: var(--bg-secondary); border: 1px solid var(--border-primary); border-radius: var(--xcss-radius-sm); box-shadow: 0 8px 24px #0002; box-sizing: border-box; }
+.search-tag-options { position: absolute; z-index: 10; inset-inline-end: 0; top: calc(100% + 8px); width: min(40rem, calc(100vw - 32px)); max-height: min(70vh, 40rem); overflow: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 16px; background: var(--bg-secondary); border: 1px solid var(--border-primary); box-shadow: 0 8px 24px #0002; box-sizing: border-box; }
 .search-tag-options .xcss-form-field { min-width: 0; }
 .search-tag-options .xcss-error, .search-tag-pager, .search-tag-actions { grid-column: 1 / -1; }
 .search-tag-pager, .search-tag-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .search-submit { flex: 0 0 auto; min-width: 36px; padding: 0 .4rem; border: 0; background: transparent; }
-.file-tag-label { display: inline-block; padding: .1rem .35rem; margin: .15rem; border: 1px solid var(--border-primary); border-inline-start-width: 3px; border-radius: var(--xcss-radius-sm); overflow-wrap: anywhere; max-width: 100%; box-sizing: border-box; }
+.file-tag-label { display: inline-block; padding: .1rem .35rem; margin: .15rem; border: 1px solid var(--border-primary); border-inline-start-width: 3px; overflow-wrap: anywhere; max-width: 100%; box-sizing: border-box; }
 .file-tag-editor { display: grid; gap: 12px; }
 .paths-table .cell-tags { width: clamp(8rem, 18vw, 22rem); white-space: normal; overflow-wrap: anywhere; }
 .paths-table col.file-tags { width: clamp(8rem, 18vw, 22rem); }
@@ -244,7 +243,6 @@ button {
 .load-more {
   padding: 0.25em 0.75em;
   border: 1px solid var(--border-primary);
-  border-radius: var(--xcss-radius-sm);
   color: var(--text-primary);
   background: var(--bg-secondary);
   cursor: pointer;
@@ -267,7 +265,6 @@ button {
   color: var(--text-primary);
   background-color: var(--bg-secondary);
   border: 1px solid var(--border-primary);
-  border-radius: 4px;
 }
 
 .paths-table,
@@ -499,7 +496,6 @@ button {
   color: var(--text-primary);
   background: var(--bg-primary);
   border: 1px solid var(--border-primary);
-  border-radius: 8px;
   box-shadow: none;
 }
 
@@ -540,7 +536,6 @@ button {
   color: var(--text-primary);
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
-  border-radius: 4px;
 }
 
 .action-dialog-actions {
@@ -557,7 +552,6 @@ button {
   color: var(--text-primary);
   background: var(--bg-secondary);
   border: 1px solid var(--border-primary);
-  border-radius: 4px;
   cursor: pointer;
 }
 
@@ -797,7 +791,7 @@ button {
 .file-action-hint { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-inline: 16px; }
 .file-action-hint[hidden] { display: none; }
 #xczs-root .file-action-hint .xcss-button { padding-inline: 0; min-width: 44px; }
-#xczs-root .file-action-mode[aria-pressed="true"] { color: var(--text-accent); outline: 1px solid currentColor; outline-offset: -3px; border-radius: var(--xcss-radius-sm); }
+#xczs-root .file-action-mode[aria-pressed="true"] { color: var(--text-accent); outline: 1px solid currentColor; outline-offset: -3px; }
 .paths-table[data-action-mode]:not([data-action-mode=""]) tbody tr { cursor: pointer; }
 .paths-table .is-tag-selected { background: color-mix(in srgb, var(--text-accent) 10%, transparent); }
 .file-tag-target { overflow-wrap: anywhere; }
@@ -810,7 +804,7 @@ button {
   #xczs-root .file-tag-choice[aria-pressed="true"] .file-tag-label { color: Highlight; border-color: Highlight; }
 }
 
-/* Explicit Mac mini surfaces; the authored round radii remain the fallback before startup. */
+/* Explicit Mac mini surfaces on supported modern browsers. */
 .searchbar { --xcss-server-corner-extent: var(--xcss-server-corner-control, 27px); }
 .search-tag-options { --xcss-server-corner-extent: var(--xcss-server-corner-notification, 48px); }
 .file-tag-label { --xcss-server-corner-extent: 10px; }
