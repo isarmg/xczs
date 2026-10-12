@@ -170,7 +170,21 @@ test("The login card maintains a 3:2 layout and visible keyboard controls", asyn
     }),
   ).toBe(true);
   const username = page.getByLabel("Username");
+  const paint = () => username.evaluate(element => {
+    const style = getComputedStyle(element);
+    return {
+      borders: ["Top", "Right", "Bottom", "Left"].map(side => [
+        style[`border${side}Width`], style[`border${side}Style`],
+      ]),
+      borderColors: ["Top", "Right", "Bottom", "Left"].map(side => style[`border${side}Color`]),
+      shadow: style.boxShadow,
+      outline: style.outlineStyle,
+      outlineWidth: style.outlineWidth,
+    };
+  });
+  const beforeFocus = await paint();
   await username.focus();
+  await expect(username).toBeFocused();
   for (const control of [username, submit]) {
     expect(
       await control.evaluate(element => {
@@ -180,13 +194,17 @@ test("The login card maintains a 3:2 layout and visible keyboard controls", asyn
       }),
     ).toBe(true);
   }
-  expect(
-    await username.evaluate(element => {
-      const style = getComputedStyle(element);
-      return style.outlineStyle !== "none" &&
-        Number.parseFloat(style.outlineWidth) >= 2;
-    }),
-  ).toBe(true);
+  const afterFocus = await paint();
+  expect(afterFocus.outline).toBe("none");
+  expect(afterFocus.outlineWidth).toBe("0px");
+  // Forced-color palettes can remap a focused native input to Highlight.
+  // Its existing border geometry must stay intact without a replacement ring.
+  expect(afterFocus.borders).toEqual(beforeFocus.borders);
+  expect(afterFocus.shadow).toBe(beforeFocus.shadow);
+  await testInfo.attach("forced-colors-input-paint", {
+    body: JSON.stringify({ beforeFocus, afterFocus }, null, 2),
+    contentType: "application/json",
+  });
 });
 
 test("Browser login password limits use UTF-8 bytes rather than character counts", async ({

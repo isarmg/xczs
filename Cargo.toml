@@ -15,7 +15,7 @@ build = "build.rs"
 hex = "=0.4.3"
 thiserror = "=2.0.21"
 sqlx = { version = "=0.9.0", default-features = false, features = ["sqlite-bundled", "runtime-tokio"] }
-xcss = { git = "https://github.com/isarmg/xcss.git", rev = "c51ef3ac43c10314b091f0415ce1aebea7470a47", version = "=1.0.9", features = ["tracing"] }
+xcss = { git = "https://github.com/isarmg/xcss.git", rev = "dda7b25f34ebe717587b6c7083d3664707f0a31f", version = "=1.0.11", features = ["tracing"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json"] }
 http = "1"
 http-body = "1"
@@ -47,7 +47,7 @@ subtle = "2.6"
 tempfile = "3"
 
 [build-dependencies]
-xcss = { git = "https://github.com/isarmg/xcss.git", rev = "c51ef3ac43c10314b091f0415ce1aebea7470a47", version = "=1.0.9" }
+xcss = { git = "https://github.com/isarmg/xcss.git", rev = "dda7b25f34ebe717587b6c7083d3664707f0a31f", version = "=1.0.11" }
 
 [dev-dependencies]
 socket2 = "0.6"

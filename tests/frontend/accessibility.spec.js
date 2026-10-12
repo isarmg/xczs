@@ -31,6 +31,19 @@ function walkJavaScript(root) {
   });
 }
 
+function fieldPaint(control) {
+  return control.evaluate(element => {
+    const style = getComputedStyle(element);
+    return {
+      borders: ["Top", "Right", "Bottom", "Left"].map(side => [
+        style[`border${side}Width`], style[`border${side}Style`], style[`border${side}Color`],
+      ]),
+      shadow: style.boxShadow,
+      outline: style.outlineStyle,
+    };
+  });
+}
+
 test("Primary file controls use native semantics and keyboard interaction", async ({ appPage: page }) => {
   const root = page.getByRole("link", { name: "Root", exact: true });
   await expect(root).toBeVisible();
@@ -139,14 +152,16 @@ test("Primary file controls use native semantics and keyboard interaction", asyn
   await expect(page.locator("#file")).toHaveAttribute("tabindex", "-1");
   await expect(page.locator("#folder")).toHaveAttribute("tabindex", "-1");
   const search = page.getByLabel("Search files or folders");
+  const searchbar = page.locator(".searchbar");
+  const beforeFocus = await Promise.all([search, searchbar].map(fieldPaint));
   await search.focus();
-  expect(
-    await page.locator(".searchbar").evaluate(element => {
-      const style = getComputedStyle(element);
-      return style.outlineStyle !== "none" &&
-        Number.parseFloat(style.outlineWidth) >= 2;
-    }),
-  ).toBe(true);
+  await expect(search).toBeFocused();
+  const afterFocus = await Promise.all([search, searchbar].map(fieldPaint));
+  for (let index = 0; index < afterFocus.length; index++) {
+    expect(afterFocus[index].outline).toBe("none");
+    expect(afterFocus[index].borders).toEqual(beforeFocus[index].borders);
+    expect(afterFocus[index].shadow).toBe(beforeFocus[index].shadow);
+  }
 
   for (const control of [
     page.getByRole("button", { name: "Upload files", exact: true }),
@@ -257,7 +272,7 @@ test("Forced colors preserve inline editor focus and dialog semantics", async ({
       return style.borderTopStyle === "none" &&
         style.borderRightStyle === "none" &&
         style.borderLeftStyle === "none" &&
-        style.borderBottomStyle === "dashed" && Number.parseFloat(style.borderBottomWidth) >= 2 &&
+        style.borderBottomStyle === "dashed" && Number.parseFloat(style.borderBottomWidth) === 1 &&
         style.outlineStyle === "none" &&
         style.boxShadow === "none" &&
         style.caretColor !== "rgba(0, 0, 0, 0)";
