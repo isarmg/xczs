@@ -130,8 +130,13 @@ export function FileSearch({ client }: { client: AdministratorApiClient }) {
         onToggle={(event) => setOpen(event.currentTarget.open)}
       >
         <summary aria-label={t("标签筛选", "Tag filters")}>
-          {t("标签", "Tags")}
-          {count > 0 ? ` (${count})` : ""}
+          <span>
+            {t("标签", "Tags")}
+            {count > 0 ? ` (${count})` : ""}
+          </span>
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <path d="m9 6 6 6-6 6" />
+          </svg>
         </summary>
         <div className="search-tag-options">
           {error && (

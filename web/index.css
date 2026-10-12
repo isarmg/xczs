@@ -182,9 +182,19 @@ button {
 
 .search-input { flex: 1; min-width: 0; }
 .search-tags { flex: 0 0 auto; }
-.search-tags summary { cursor: pointer; padding: .5rem; line-height: 1.5; white-space: nowrap; }
-.search-tags summary:focus-visible { outline: 2px solid var(--text-accent); outline-offset: -2px; }
-.search-tag-options { position: absolute; z-index: 10; inset-inline-end: 0; top: calc(100% + 8px); width: min(40rem, calc(100vw - 32px)); max-height: min(70vh, 40rem); overflow: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 16px; background: var(--bg-secondary); border: 1px solid var(--border-primary); box-shadow: 0 8px 24px #0002; box-sizing: border-box; }
+.search-tags summary { display: flex; align-items: center; justify-content: space-between; gap: .5rem; cursor: pointer; padding: .5rem; line-height: 1.5; white-space: nowrap; list-style: none; }
+.search-tags summary::-webkit-details-marker { display: none; }
+.search-tags summary::marker { content: ""; }
+.search-tags summary:focus, .search-tags summary:focus-visible { outline: none; }
+.search-tags summary svg { display: block; flex-shrink: 0; fill: none; transform-origin: center; }
+.search-tags[open] summary svg { transform: rotate(90deg); }
+.search-tag-options { position: absolute; z-index: 10; inset-inline-end: 0; top: calc(100% + 8px); width: min(40rem, calc(100vw - 32px)); max-height: min(70vh, 40rem); overflow: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 16px; background: var(--bg-secondary); border: 1px solid var(--xcss-block-border, #e3e3e3); box-shadow: 0 8px 24px #0002; box-sizing: border-box; }
+/* Visibility preserves measurement while preventing native square paint
+   before the server-corners renderer applies the panel contour. */
+.search-tag-options:not([data-xcss-server-corner-state="clip"]) { visibility: hidden; }
+@media (forced-colors: active) {
+  .search-tag-options:not([data-xcss-server-corner-state="clip"]) { visibility: visible; }
+}
 .search-tag-options .xcss-form-field { min-width: 0; }
 .search-tag-options .xcss-error, .search-tag-pager, .search-tag-actions { grid-column: 1 / -1; }
 .search-tag-pager, .search-tag-actions { display: flex; gap: 8px; flex-wrap: wrap; }
@@ -205,11 +215,6 @@ button {
   background-color: transparent;
   border: none;
   outline: none;
-}
-
-.searchbar:focus-within {
-  outline: 2px solid var(--text-accent);
-  outline-offset: 2px;
 }
 
 .searchbar .icon {
@@ -567,8 +572,7 @@ button {
   border: 0;
 }
 
-.action-dialog-actions button:focus-visible,
-.action-dialog-input-group input:focus-visible {
+.action-dialog-actions button:focus-visible {
   outline: 2px solid var(--text-accent);
   outline-offset: 2px;
 }
@@ -754,11 +758,6 @@ button {
     forced-color-adjust: auto;
   }
 
-  #xczs-root .inline-name-input:focus,
-  #xczs-root .inline-name-input:focus-visible {
-    border-bottom: 2px dashed Highlight;
-  }
-
   .breadcrumb>a,
   .path a,
   .paths-table thead a {
@@ -772,9 +771,7 @@ button {
   .upload-cancel:focus-visible,
   .load-more:focus-visible,
   .paths-table thead a:focus-visible,
-  .action-dialog-actions button:focus-visible,
-  .action-dialog-input-group input:focus-visible,
-  .searchbar:focus-within {
+  .action-dialog-actions button:focus-visible {
     outline: 2px solid Highlight;
     outline-offset: 2px;
   }
@@ -806,7 +803,7 @@ button {
 
 /* Explicit Mac mini surfaces on supported modern browsers. */
 .searchbar { --xcss-server-corner-extent: var(--xcss-server-corner-control, 27px); }
-.search-tag-options { --xcss-server-corner-extent: var(--xcss-server-corner-panel, 42px); --xcss-server-corner-mode: clip; }
+.search-tag-options { --xcss-server-corner-extent: var(--xcss-server-corner-panel, 42px); --xcss-server-corner-mode: clip; --xcss-server-corner-foreground: 1; }
 .search-tag-options option { --xcss-server-corner-extent: 0px; border-radius: 0; }
 .file-tag-label { --xcss-server-corner-extent: 10px; }
 .load-more { --xcss-server-corner-extent: var(--xcss-server-corner-control, 27px); }

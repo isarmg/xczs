@@ -6,8 +6,4 @@ body { margin: 0; }
 @media (forced-colors: active) {
   .xcss-auth-shell .xcss-auth-card .login-card > button { border: 1px solid ButtonText; }
   .xcss-auth-shell .xcss-auth-card .xcss-input { border-bottom: 1px solid ButtonText; }
-  .xcss-auth-shell .xcss-auth-card .login-card .xcss-input:focus {
-    outline: 2px solid Highlight;
-    outline-offset: -2px;
-  }
 }
