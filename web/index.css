@@ -190,8 +190,8 @@ button {
 .search-tags[open] summary svg { transform: rotate(90deg); }
 .search-tag-options { position: absolute; z-index: 10; inset-inline-end: 0; top: calc(100% + 8px); width: min(40rem, calc(100vw - 32px)); max-height: min(70vh, 40rem); overflow: auto; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 16px; background: var(--bg-secondary); border: 1px solid var(--xcss-block-border, #e3e3e3); box-shadow: 0 8px 24px #0002; box-sizing: border-box; }
 /* Visibility preserves measurement while preventing native square paint
-   before the server-corners renderer applies the panel contour. */
-.search-tag-options:not([data-xcss-server-corner-state="clip"]) { visibility: hidden; }
+   before the renderer applies the contour or completes a native fallback. */
+.search-tag-options:not([data-xcss-server-corner-state="clip"]):not([data-xcss-server-corner-state="fallback"]:not([data-xcss-server-corner-reason="not-visible"])) { visibility: hidden; }
 @media (forced-colors: active) {
   .search-tag-options:not([data-xcss-server-corner-state="clip"]) { visibility: visible; }
 }

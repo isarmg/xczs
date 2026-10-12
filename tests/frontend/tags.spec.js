@@ -287,8 +287,10 @@ test("Tag rows in subdirectories and for special filenames still target the orig
   expect(new URL(page.url()).pathname).toBe(directory + "existing-folder/");
 });
 
-test("An open tag filter picker refreshes after creating a tag in the same workspace", async ({ appPage: page }) => {
+test("An open tag filter native fallback refreshes and selects newly created tags", async ({ appPage: page }) => {
   const name = `候选刷新-${randomUUID().slice(0, 8)}`;
+  const fallbackStyle = await page.addStyleTag({ content: '.search-tag-options { box-shadow: inset 0 0 2px black !important; }' });
+  const panel = page.locator('.search-tag-options');
   const picker = page.getByRole("listbox", { name: "全部标签", exact: true });
   await page.locator(".search-tags summary").click();
   await expect(picker).toBeVisible();
@@ -300,9 +302,16 @@ test("An open tag filter picker refreshes after creating a tag in the same works
   // Menu changes preserve this open details element. No toggle or reload should
   // be needed before a newly created tag can become a search condition.
   await expect(picker).toBeVisible();
+  await expect(panel).toHaveAttribute('data-xcss-server-corner-state', 'fallback');
+  await expect(panel).toHaveAttribute('data-xcss-server-corner-reason', 'inset-or-unsupported-shadow');
+  await expect(panel).toBeVisible();
   const option = picker.locator("option").filter({ hasText: name });
   await expect(option).toHaveCount(1);
   await picker.selectOption({ label: name });
+  await expect(picker.locator('option:checked')).toHaveText(name);
+  await fallbackStyle.evaluate(style => style.remove());
+  await expect(panel).toHaveAttribute('data-xcss-server-corner-state', 'clip');
+  await expect(panel).toBeVisible();
   await page.locator(".search-tag-options").getByRole("button", { name: "搜索", exact: true }).click();
   await expect(page.locator(".empty-folder")).toHaveText("没有搜索结果");
 });
