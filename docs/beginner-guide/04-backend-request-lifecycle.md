@@ -1,6 +1,6 @@
 # 第 4 章：后端请求生命周期
 
-本章对应 Axum 与 xcss 1.0.2 的唯一服务链路。HTTP 行为和验证入口见[HTTP 与运行时合同](../http-runtime-contract.md)。
+本章对应 Axum 与 xcss 1.0.5 的唯一服务链路。HTTP 行为和验证入口见[HTTP 与运行时合同](../http-runtime-contract.md)。
 
 ## 4.1 总体关系
 

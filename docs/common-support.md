@@ -9,16 +9,18 @@
 
 ## 固定输入
 
-Cargo manifest 指定官方 Git URL、完整 revision 和精确 `=1.0.2`，Cargo.lock 固定依赖解析结果。
+Cargo manifest 指定官方 Git URL、完整 revision `b3a68b94e1b7bae53685bae07449e3f78e3c20a8` 和精确 `=1.0.7`，Cargo.lock 固定依赖解析结果。
 Web 的 package.json 依赖条目如下，合并到项目自身的 dependencies 中：
 
 ```json
 {
   "dependencies": {
-    "@xcss/web": "https://github.com/isarmg/xcss/releases/download/v1.0.2/xcss-web-1.0.2.tgz"
+    "@xcss/web": "https://github.com/isarmg/xcss/releases/download/v1.0.7/xcss-web-1.0.7.tgz"
   }
 }
 ```
+
+当前 1.0.7 revision 和 tarball 是本地已验证的候选输入，尚未推送或发布。验证使用与锁文件 integrity 一致的本地 tarball；只有对应提交和发行资产正式发布后，外部环境才能按上述 URL 安装。
 
 认证、HTTP、Shell、UI、字体和构建工具通过同包的 `contracts`、`http-client`、`admin-web`、`admin-shell`、`admin-ui`、`design-tokens`、`web-fonts`、`web-toolchain` 子路径导入，共享版本和锁文件完整性摘要。
 

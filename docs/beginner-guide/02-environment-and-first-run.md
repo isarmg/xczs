@@ -78,7 +78,7 @@ target/x86_64-unknown-linux-gnu/release/xczs
 共同入口依次构建前端、运行 `cargo build --locked`、执行实际 binary 的 `web-assets` 命令，逐个验证
 内嵌资源与本次输出相同。正式模式还要求干净源码与完整 Git revision；开发模式把源码身份设为 `unbound`。
 `--locked` 要求 Cargo 严格使用 [Cargo.lock](../../Cargo.lock)，避免一次普通构建意外改变依赖解析结果。
-当前 xcss Rust/Web 依赖固定正式 1.0.2 的完整 revision、Release URL 和锁文件 integrity，无需相邻 xcss checkout。Xczs 1.0.0 的独立构建与发行验收由当前提交的 CI 与标签工作流执行。后续改动仍须通过发行门禁，不能仅凭本地编译成功宣称已发布，也不能复制认证、Schema 或 target 合同代替共享包。
+当前 xcss Rust/Web 依赖固定正式 1.0.5 的完整 revision、Release URL 和锁文件 integrity，无需相邻 xcss checkout。Xczs 1.0.3 的独立构建与发行验收由当前提交的 CI 与标签工作流执行。后续改动仍须通过发行门禁，不能仅凭本地编译成功宣称已发布，也不能复制认证、Schema 或 target 合同代替共享包。
 
 内嵌资源清单由 xcss 自动生成，覆盖 native 文件控制器与 React/font/icon/许可证资源；
 TypeScript 检查使用 `noEmit`；运行资源由 Vite 构建到 `web/runtime-dist`。调用 `xczs web-assets` 可查看程序中的精确清单。

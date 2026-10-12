@@ -8,9 +8,9 @@
 [下载页](https://github.com/isarmg/xczs/releases)的便捷资产是单个程序与同名 `.sha256`：
 
 ```sh
-sha256sum --check xczs-1.0.0-x86_64-unknown-linux-gnu.sha256
-chmod 0755 xczs-1.0.0-x86_64-unknown-linux-gnu
-XCZS_BIN="$PWD/xczs-1.0.0-x86_64-unknown-linux-gnu"
+sha256sum --check xczs-1.0.3-x86_64-unknown-linux-gnu.sha256
+chmod 0755 xczs-1.0.3-x86_64-unknown-linux-gnu
+XCZS_BIN="$PWD/xczs-1.0.3-x86_64-unknown-linux-gnu"
 ```
 
 如从源码构建，在干净仓库根目录准备 Rust 1.99.0、Node.js 26.7.0 和 C 工具链：

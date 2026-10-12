@@ -1,7 +1,8 @@
 # Xczs HTTP 与运行时合同
 
 本文描述当前 Xczs 的 HTTP 行为、xcss 分工和验证入口。Rust 与 Web 依赖由
-`Cargo.toml`、`Cargo.lock`、`package.json` 和 `package-lock.json` 固定到 xcss 1.0.2。
+`Cargo.toml`、`Cargo.lock`、`package.json` 和 `package-lock.json` 固定到 xcss 1.0.7。
+当前为本地已验证、尚未发布的候选输入，来源及安装条件见[公共依赖](common-support.md)。
 
 ## 请求与认证
 

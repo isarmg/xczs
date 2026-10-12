@@ -286,3 +286,23 @@ test("Tag rows in subdirectories and for special filenames still target the orig
   await expect(bar.locator(".file-tag-target")).toHaveText("nested.txt");
   expect(new URL(page.url()).pathname).toBe(directory + "existing-folder/");
 });
+
+test("An open tag filter picker refreshes after creating a tag in the same workspace", async ({ appPage: page }) => {
+  const name = `候选刷新-${randomUUID().slice(0, 8)}`;
+  const picker = page.getByRole("listbox", { name: "全部标签", exact: true });
+  await page.locator(".search-tags summary").click();
+  await expect(picker).toBeVisible();
+  await page.locator('.xcss-header-navigation a[href="#tags"]').click();
+  await page.getByRole("textbox", { name: "标签名称", exact: true }).fill(name);
+  await page.getByRole("button", { name: "创建标签", exact: true }).click();
+  await expect(page.getByRole("table", { name: "标签列表", exact: true })).toContainText(name);
+  await page.locator('.xcss-header-navigation a[href="#files"]').click();
+  // Menu changes preserve this open details element. No toggle or reload should
+  // be needed before a newly created tag can become a search condition.
+  await expect(picker).toBeVisible();
+  const option = picker.locator("option").filter({ hasText: name });
+  await expect(option).toHaveCount(1);
+  await picker.selectOption({ label: name });
+  await page.locator(".search-tag-options").getByRole("button", { name: "搜索", exact: true }).click();
+  await expect(page.locator(".empty-folder")).toHaveText("没有搜索结果");
+});

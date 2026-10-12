@@ -19,9 +19,9 @@
 从 [下载页](https://github.com/isarmg/xczs/releases) 取得 Linux 二进制和同名 `.sha256` 文件。公开便捷发行物是单个程序，不含安装器或配置模板。
 
 ```sh
-sha256sum --check xczs-1.0.0-x86_64-unknown-linux-gnu.sha256
-chmod 0755 xczs-1.0.0-x86_64-unknown-linux-gnu
-./xczs-1.0.0-x86_64-unknown-linux-gnu hash-password
+sha256sum --check xczs-1.0.3-x86_64-unknown-linux-gnu.sha256
+chmod 0755 xczs-1.0.3-x86_64-unknown-linux-gnu
+./xczs-1.0.3-x86_64-unknown-linux-gnu hash-password
 ```
 
 准备专用服务账号 `xczs`、共享目录 `/srv/xczs` 和该账号拥有的 `0700` 状态目录 `/var/lib/xczs`。创建 `/etc/xczs/xczs.json`，由 `root:xczs` 拥有并设为 `0640`，填入以下内容并替换完整密码哈希：
@@ -39,9 +39,9 @@ chmod 0755 xczs-1.0.0-x86_64-unknown-linux-gnu
 确保账号可管理共享根，配置文件位于共享根外，并能读取二进制后执行：
 
 ```sh
-sudo -u xczs ./xczs-1.0.0-x86_64-unknown-linux-gnu init --config /etc/xczs/xczs.json
-sudo -u xczs ./xczs-1.0.0-x86_64-unknown-linux-gnu config validate --config /etc/xczs/xczs.json
-sudo -u xczs ./xczs-1.0.0-x86_64-unknown-linux-gnu run --config /etc/xczs/xczs.json
+sudo -u xczs ./xczs-1.0.3-x86_64-unknown-linux-gnu init --config /etc/xczs/xczs.json
+sudo -u xczs ./xczs-1.0.3-x86_64-unknown-linux-gnu config validate --config /etc/xczs/xczs.json
+sudo -u xczs ./xczs-1.0.3-x86_64-unknown-linux-gnu run --config /etc/xczs/xczs.json
 ```
 
 仅全新状态执行 `init`。将 HTTPS 网关转发至 `127.0.0.1:5000`，确认能登录和操作文件后再配置 systemd 常驻。
