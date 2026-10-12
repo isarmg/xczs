@@ -806,7 +806,8 @@ button {
 
 /* Explicit Mac mini surfaces on supported modern browsers. */
 .searchbar { --xcss-server-corner-extent: var(--xcss-server-corner-control, 27px); }
-.search-tag-options { --xcss-server-corner-extent: var(--xcss-server-corner-notification, 48px); }
+.search-tag-options { --xcss-server-corner-extent: var(--xcss-server-corner-panel, 42px); --xcss-server-corner-mode: clip; }
+.search-tag-options option { --xcss-server-corner-extent: 0px; border-radius: 0; }
 .file-tag-label { --xcss-server-corner-extent: 10px; }
 .load-more { --xcss-server-corner-extent: var(--xcss-server-corner-control, 27px); }
 .operation-status,
