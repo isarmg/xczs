@@ -8,7 +8,7 @@ use std::{
 
 use axum::body::Body as AxumBody;
 use bytes::Bytes;
-use chrono::{Local, SecondsFormat};
+use chrono::{SecondsFormat, Utc};
 use http::{Method, Request, Version, header::HeaderName};
 
 use http_body::{Body, Frame, SizeHint};
@@ -59,7 +59,7 @@ impl LogNeeds {
     const REQUEST_METHOD: u16 = 1 << 1;
     const REQUEST_URI: u16 = 1 << 2;
     const REMOTE_USER: u16 = 1 << 3;
-    const TIME_LOCAL: u16 = 1 << 4;
+    const TIME_UTC: u16 = 1 << 4;
     const TIME_ISO8601: u16 = 1 << 5;
     const MSEC: u16 = 1 << 6;
     const REMOTE_ADDR: u16 = 1 << 7;
@@ -81,7 +81,7 @@ impl LogNeeds {
             "request_method" => Self::REQUEST_METHOD,
             "request_uri" => Self::REQUEST_URI,
             "remote_user" => Self::REMOTE_USER,
-            "time_local" => Self::TIME_LOCAL,
+            "time_utc" => Self::TIME_UTC,
             "time_iso8601" => Self::TIME_ISO8601,
             "msec" => Self::MSEC,
             "remote_addr" => Self::REMOTE_ADDR,
@@ -216,21 +216,9 @@ impl HttpLogger {
     }
 
     fn render(&self, data: &HashMap<String, String>, err: Option<&str>) -> String {
-        let wall_clock = (self.needs.contains(LogNeeds::TIME_LOCAL)
+        let formatted_time = (self.needs.contains(LogNeeds::TIME_UTC)
             || self.needs.contains(LogNeeds::TIME_ISO8601))
-        .then(Local::now);
-        let time_local = self.needs.contains(LogNeeds::TIME_LOCAL).then(|| {
-            wall_clock
-                .as_ref()
-                .expect("wall clock is captured when a formatted time is required")
-                .to_rfc3339_opts(SecondsFormat::Secs, false)
-        });
-        let time_iso8601 = self.needs.contains(LogNeeds::TIME_ISO8601).then(|| {
-            wall_clock
-                .as_ref()
-                .expect("wall clock is captured when a formatted time is required")
-                .to_rfc3339_opts(SecondsFormat::Secs, true)
-        });
+        .then(|| Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true));
         let msec = self.needs.contains(LogNeeds::MSEC).then(|| {
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -245,8 +233,7 @@ impl HttpLogger {
                 LogElement::Literal(value) => output.push_str(value.as_str()),
                 LogElement::Variable(name) => {
                     let resolved = match name.as_str() {
-                        "time_local" => time_local.as_deref(),
-                        "time_iso8601" => time_iso8601.as_deref(),
+                        "time_utc" | "time_iso8601" => formatted_time.as_deref(),
                         "msec" => msec.as_deref(),
                         "log_level" => Some(log_level),
                         _ => None,
@@ -574,6 +561,28 @@ mod tests {
         assert_eq!(frame.into_data().unwrap(), Bytes::from_static(b"complete"));
         drop(exact);
         assert_eq!(exact_drop.recv().unwrap(), None);
+    }
+
+    #[test]
+    fn formatted_clock_variables_share_one_utc_timestamp() {
+        let logger: HttpLogger = "$time_utc $time_iso8601".parse().unwrap();
+        let rendered = logger.render(&HashMap::new(), None);
+        let times: Vec<_> = rendered.split_whitespace().collect();
+        assert_eq!(times.len(), 2);
+        assert!(times.iter().all(|value| value.ends_with('Z')));
+        assert_eq!(times[0], times[1]);
+        assert_eq!(
+            chrono::DateTime::parse_from_rfc3339(times[0])
+                .unwrap()
+                .offset()
+                .local_minus_utc(),
+            0
+        );
+    }
+
+    #[test]
+    fn local_time_variable_is_rejected_by_the_utc_contract() {
+        assert!("$time_local".parse::<HttpLogger>().is_err());
     }
 
     #[test]

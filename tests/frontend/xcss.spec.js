@@ -18,7 +18,7 @@ test("React Profile uses embedded fonts, licenses, and session recovery supplied
   }, new URL("platform.js", prefix).href);
   const provenance = require("../../node_modules/@xcss/web/dist/web-fonts/provenance.json");
   const fontCss = readFileSync(require("node:path").join(__dirname, "../../node_modules/@xcss/web/dist/web-fonts/fonts.css"), "utf8");
-  expect(fontCss).toContain('font-family:"Sarmg Maple Bootstrap"');
+  expect(fontCss).toContain('font-family:"Sarmg Maple"');
   for (const source of Object.keys(provenance.assets).filter(name => (name.endsWith(".woff2") && fontCss.includes(`./${name}`)) || name.endsWith(".txt"))) {
     const name = source.split("/").at(-1);
     // Vite may coalesce identical license bytes into a single emitted asset.

@@ -52,3 +52,5 @@ Xczs 使用 `serve_path`、`data_dir`、`auth` 等 snake_case JSON 字段；命�
 | `XCZS_MAX_TAG_SCAN_ENTRIES` | `max_tag_scan_entries` | 限制标签扫描遍历的条目数 |
 
 部署时优先使用受保护的 JSON 文件保存管理员 PHC；不要把凭据或完整私有配置复制到命令历史和公开日志。`config validate --json` 只读核对有效配置、字段来源和当前状态。修改运行配置后，需要按[运维说明](operations.md)重启服务。
+
+访问日志时间统一输出 UTC RFC3339（`Z`）。`$time_iso8601` 与 `$time_utc` 使用同一 UTC 时刻。文件修改时间与完整扫描时间也显示 UTC。

@@ -1317,12 +1317,12 @@ function getPathIcon(pathType: ListingItem["path_type"]) {
 function formatMtime(mtime: number) {
   if (!mtime) return "";
   const date = new Date(mtime);
-  const year = date.getFullYear();
-  const month = padZero(date.getMonth() + 1, 2);
-  const day = padZero(date.getDate(), 2);
-  const hours = padZero(date.getHours(), 2);
-  const minutes = padZero(date.getMinutes(), 2);
-  return `${year}-${month}-${day} ${hours}:${minutes}`;
+  const year = date.getUTCFullYear();
+  const month = padZero(date.getUTCMonth() + 1, 2);
+  const day = padZero(date.getUTCDate(), 2);
+  const hours = padZero(date.getUTCHours(), 2);
+  const minutes = padZero(date.getUTCMinutes(), 2);
+  return `${year}-${month}-${day} ${hours}:${minutes} UTC`;
 }
 
 function padZero(value: number, size: number) {

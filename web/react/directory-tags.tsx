@@ -251,13 +251,14 @@ function FileTagRow({ client, target }: {
     setFile(null);
     setError("");
     (async () => {
-      if (!target.fileId && !file?.file_id)
-        await tagRequest(client, "/scan", scanResponse, "POST", undefined, controller.signal);
       const current = await tagRequest(
         client, `/file?${new URLSearchParams({ path: target.path })}`,
         listedTags, undefined, undefined, controller.signal,
       );
-      if (!current.file_id) throw new Error("File identity changed");
+      if (!current.file_id) {
+        if (live) { setFile(current); setAssigned(null); setChoices(null); }
+        return;
+      }
       const tagged = await tagRequest(
         client, `/files/${current.file_id}/tags${cursorQuery(cursor)}`,
         tagsPage, undefined, undefined, controller.signal,
@@ -275,6 +276,20 @@ function FileTagRow({ client, target }: {
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; controller.abort(); };
   }, [client, target, cursor, choiceCursor, version]);
+
+  async function indexLibrary() {
+    if (busy.current || loading) return;
+    busy.current = true;
+    setPending(true);
+    setError("");
+    try {
+      await tagRequest(client, "/scan", scanResponse, "POST");
+      setVersion(value => value + 1);
+      window.dispatchEvent(new Event("xczs:tags-changed"));
+    } catch {
+      setError(t("扫描结果未能确认，请查看文件库状态后再决定是否重试。", "The scan result could not be confirmed. Check Library status before retrying."));
+    } finally { busy.current = false; setPending(false); }
+  }
 
   async function mutate(id: number, action: "add" | "remove") {
     if (!file?.file_id || busy.current || loading) return;
@@ -306,7 +321,12 @@ function FileTagRow({ client, target }: {
   return <div className="file-tag-editor">
     {error && <ErrorState onRetry={() => setVersion(value => value + 1)}>{error}</ErrorState>}
     {loading && <LoadingState />}
-    {file && <span className="file-tag-count">{file.tags_has_more
+    {!loading && file && !file.file_id && <div role="status">
+      <p>{t("该文件尚未索引。添加标签前需要扫描整个文件库，这可能需要较长时间。", "This file is not indexed. Scan the entire file library before adding tags; this may take a while.")}</p>
+      <Button disabled={pending} onClick={() => void indexLibrary()}>{pending ? t("正在扫描整个文件库…", "Scanning the entire library…") : t("扫描整个文件库", "Scan entire library")}</Button>
+      <a href="#status">{t("查看文件库状态", "Library status")}</a>
+    </div>}
+    {file?.file_id && <span className="file-tag-count">{file.tags_has_more
       ? t("标签超过 16 个，请先移除至少于 16 个。", "More than 16 tags. Remove tags until fewer than 16 remain.")
       : t("标签：{0}/16", "Tags: {0}/16", [String(file.tags.length)])}</span>}
     {atLimit && !file?.tags_has_more && <span>{t("每个文件最多 16 个标签，请先移除后再添加。", "Each file can have at most 16 tags. Remove a tag before adding another.")}</span>}

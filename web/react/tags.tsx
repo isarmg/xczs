@@ -45,6 +45,7 @@ import {
   scanResponse,
   backupResponse,
   createdTagResponse,
+  foldersPage,
 } from "./tags-pages.ts";
 
 const empty = (value: unknown): value is undefined => value === undefined;
@@ -70,7 +71,7 @@ function size(value: number) {
   } while (value >= 1024 && index < units.length - 1);
   return `${value.toFixed(1)} ${units[index]}`;
 }
-const time = (ns: number) => new Date(ns / 1e6).toLocaleString(getLocale());
+const time = (ns: number) => new Date(ns / 1e6).toLocaleString(getLocale(), { timeZone: "UTC", timeZoneName: "short" });
 const fileHref = (path: string) =>
   "/" + path.split("/").map(encodeURIComponent).join("/");
 function failureMessage(cause: unknown) {
@@ -137,6 +138,43 @@ function PageNavigation({
     </nav>
   );
 }
+
+function IndexedFolders({ client, directory }: {
+  client: import("@xcss/web/admin-web").AdministratorApiClient;
+  directory: string;
+}) {
+  const [path, setPath] = useState(() => directory.replace(/\/+$/, ""));
+  const [cursor, setCursor] = useState<string | null>(null);
+  const [page, setPage] = useState<import("./tags-pages.ts").FolderPage | null>(null);
+  const [error, setError] = useState("");
+  const [version, setVersion] = useState(0);
+  useEffect(() => {
+    let live = true;
+    const controller = new AbortController();
+    setPage(null);
+    setError("");
+    const query = new URLSearchParams({ path });
+    if (cursor) query.set("cursor", cursor);
+    tagRequest(client, `/folders?${query}`, foldersPage, undefined, undefined, controller.signal)
+      .then(value => { if (live) setPage(value); })
+      .catch(cause => { if (live) setError(failureMessage(cause)); });
+    return () => { live = false; controller.abort(); };
+  }, [client, path, cursor, version]);
+  function navigate(next: string) { setCursor(null); setPath(next); }
+  return <section className="xcss-content-panel library-panel" aria-label={t("索引目录", "Indexed folders")}>
+    <h2>{t("索引目录", "Indexed folders")}</h2>
+    <p>{t("浏览已索引文件所在的目录。空目录不在索引中。", "Browse folders containing indexed files. Empty folders are not indexed.")}</p>
+    <p><a href={fileHref(path) + (path ? "/" : "")}>{path || "/"}</a></p>
+    {path && <Button onClick={() => navigate(path.split("/").slice(0, -1).join("/"))}>{t("上级目录", "Parent folder")}</Button>}
+    {error ? <ErrorState onRetry={() => setVersion(value => value + 1)}>{error}</ErrorState> : !page ? <LoadingState /> : <>
+      {page.folders.length ? <ul>{page.folders.map(name => {
+        const child = path ? `${path}/${name}` : name;
+        return <li key={name}><Button onClick={() => navigate(child)}>{name}</Button> <a href={fileHref(child) + "/"}>{t("打开文件目录", "Open folder")}</a></li>;
+      })}</ul> : <EmptyState>{t("没有已索引的子目录。", "No indexed subfolders.")}</EmptyState>}
+      <PageNavigation label={t("索引目录分页", "Indexed folder pages")} page={page} onPage={setCursor} disabled={false} />
+    </>}
+  </section>;
+}
 export function FileLibrary({
   client,
   view,
@@ -191,7 +229,7 @@ export function FileLibrary({
     ): Promise<T> => tagRequest(client, path, guard, method, body, signal),
     [client],
   );
-  async function perform(operation: () => Promise<unknown>, message: string) {
+  async function perform(operation: () => Promise<unknown>, message: string, failure?: string) {
     setError("");
     setPending(true);
     try {
@@ -200,7 +238,9 @@ export function FileLibrary({
       if (message) notify(message);
       refresh();
     } catch (cause) {
-      setError(failureMessage(cause));
+      setError(failure ?? failureMessage(cause));
+      // An unconfirmed scan may have committed. Re-read status without replaying it.
+      if (failure) refresh();
     } finally {
       setPending(false);
     }
@@ -320,7 +360,8 @@ export function FileLibrary({
   useEffect(() => {
     if (view !== "status") return;
     let live = true;
-    request("/status", statusResponse)
+    const controller = new AbortController();
+    request("/status", statusResponse, undefined, undefined, controller.signal)
       .then((value) => {
         if (live) setStatus(value);
       })
@@ -329,6 +370,7 @@ export function FileLibrary({
       });
     return () => {
       live = false;
+      controller.abort();
     };
   }, [request, view, version]);
   const tagName = (id: number) =>
@@ -659,6 +701,7 @@ export function FileLibrary({
       )}
       {view === "tags" && (
         <>
+          <IndexedFolders client={client} directory={directory} />
           <form
             className="xcss-content-panel library-panel library-tag-form"
             onSubmit={(event) => {
@@ -758,6 +801,7 @@ export function FileLibrary({
       {view === "status" && (
         <>
           <section className="xcss-content-panel library-panel">
+            <p>{t("重新扫描会更新整个文件库的索引。扫描期间请等待完成；若结果未能确认，请先检查扫描状态。", "Scanning updates the entire file library index. Wait for completion; if the result is unconfirmed, check scan status before retrying.")}</p>
             {status ? (
               <dl className="library-status">
                 {[
@@ -772,7 +816,7 @@ export function FileLibrary({
                     t("上次完整扫描", "Last full scan"),
                     status.last_scan_at
                       ? new Date(status.last_scan_at * 1000).toLocaleString(
-                          getLocale(),
+                          getLocale(), { timeZone: "UTC", timeZoneName: "short" },
                         )
                       : t("尚未完成", "Not completed yet"),
                   ],
@@ -799,6 +843,7 @@ export function FileLibrary({
               <LoadingState />
             )}
             <div className="library-actions">
+              <Button disabled={pending} onClick={refresh}>{t("刷新扫描状态", "Refresh scan status")}</Button>
               <Button
                 disabled={pending}
                 onClick={() =>
@@ -811,10 +856,10 @@ export function FileLibrary({
                         [value.scanned],
                       ),
                     );
-                  }, "")
+                  }, "", t("扫描结果未能确认，请检查上次扫描时间和错误信息后再决定是否重试。", "The scan result could not be confirmed. Check the last scan time and errors before retrying."))
                 }
               >
-                {t("重新扫描", "Scan again")}
+                {pending ? t("操作进行中…", "Operation in progress…") : t("重新扫描", "Scan again")}
               </Button>
               <Button
                 disabled={pending}

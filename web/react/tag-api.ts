@@ -3,6 +3,26 @@ import type { AdministratorApiClient } from "@xcss/web/admin-web";
 import { t } from "@xcss/web/admin-ui/i18n";
 
 const queued = new WeakMap<AdministratorApiClient, Promise<unknown>>();
+export const TAG_SCAN_TIMEOUT_MS = 90_000;
+
+function retryDelay(milliseconds: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException("The view changed.", "AbortError"));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", abort);
+      resolve();
+    }, milliseconds);
+    function abort() {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
+      reject(new DOMException("The view changed.", "AbortError"));
+    }
+    signal?.addEventListener("abort", abort, { once: true });
+  });
+}
 
 /** Consume each bounded tag response before admitting the next SQLite read. */
 export function tagRequest<T>(
@@ -16,8 +36,10 @@ export function tagRequest<T>(
   const result = (queued.get(client) ?? Promise.resolve()).then(async () => {
     const options: RequestJsonOptions = {
       method,
-      timeoutMs: 5000,
+      // Collection has a 30s server budget, followed by the index transaction.
+      timeoutMs: path === "/scan" ? TAG_SCAN_TIMEOUT_MS : 5000,
       maxResponseBytes: 8 * 1024 * 1024,
+      ...(signal ? { signal } : {}),
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     };
     for (let attempt = 0; ; attempt++) {
@@ -39,9 +61,7 @@ export function tagRequest<T>(
             (cause.status === 503 && cause.code === "service_unavailable")) &&
           (cause.retryAfterSeconds ?? 1) <= 2
         ) {
-          await new Promise((resolve) =>
-            setTimeout(resolve, Math.max(0, cause.retryAfterSeconds ?? 1) * 1000),
-          );
+          await retryDelay(Math.max(0, cause.retryAfterSeconds ?? 1) * 1000, signal);
           continue;
         }
         throw cause;

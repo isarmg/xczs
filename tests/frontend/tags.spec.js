@@ -46,6 +46,16 @@ async function expectSharedNavigation(page) {
   ).toEqual(["#files", "#tags", "#status"]);
 }
 
+async function ensureIndexed(bar) {
+  const scan = bar.getByRole("button", { name: "扫描整个文件库", exact: true });
+  await expect.poll(async () => await scan.count() + await bar.locator(".file-tag-options").count()).toBeGreaterThan(0);
+  if (await scan.count()) {
+    await expect(bar).toContainText("整个文件库");
+    await scan.click();
+  }
+  await expect(bar.locator(".file-tag-options")).toBeVisible();
+}
+
 test("The directory table displays a tag column and tag search conditions fit narrow screens", async ({
   appPage: page,
 }, testInfo) => {
@@ -108,6 +118,7 @@ test("File tag editing, combined search, and history navigation use the same dir
   await row.locator(".cell-name a").click();
   const dialog = page.getByRole("region", { name: "文件标签", exact: true });
   await expect(dialog.locator(".file-tag-target")).toHaveText("download-me.txt");
+  await ensureIndexed(dialog);
   const [saved] = await Promise.all([
     page.waitForResponse(
       (response) =>
@@ -221,6 +232,7 @@ test("Adding multiple tags consecutively and switching files modifies only the c
   const first = page.getByRole("link", { name: "download-me.txt", exact: true });
   await first.click();
   const bar = page.getByRole("region", { name: "文件标签", exact: true });
+  await ensureIndexed(bar);
   for (const name of names) {
     await bar.getByRole("button", { name: `添加标签 ${name}`, exact: true }).click();
     await expect(bar.getByRole("button", { name: `移除标签 ${name}`, exact: true })).toHaveAttribute("aria-pressed", "true");
@@ -233,6 +245,7 @@ test("Adding multiple tags consecutively and switching files modifies only the c
   }
   await page.getByRole("link", { name: "rename-me.txt", exact: true }).click();
   await expect(bar.locator(".file-tag-target")).toHaveText("rename-me.txt");
+  await ensureIndexed(bar);
   const add = bar.getByRole("button", { name: `添加标签 ${names[0]}`, exact: true });
   await expect(add).toHaveAttribute("aria-pressed", "false");
   await add.click();
@@ -258,7 +271,7 @@ test("Tag rows in subdirectories and for special filenames still target the orig
   await page.getByRole("link", { name: special, exact: true }).click();
   const bar = page.getByRole("region", { name: "文件标签", exact: true });
   await expect(bar.locator(".file-tag-target")).toHaveText(special);
-  await expect(bar.locator(".file-tag-options")).toBeVisible();
+  await ensureIndexed(bar);
   await page.keyboard.press("Escape");
   await expect(bar).toHaveCount(0);
   await page.getByRole("link", { name: "existing-folder", exact: true }).click();
