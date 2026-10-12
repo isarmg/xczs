@@ -1,6 +1,6 @@
 # 构建输入与发行验证
 
-xcss 是编译期供应链输入，不是运行时共享服务。当前 Rust 固定正式 1.0.2 / `3f751196615edd9f7fda2d76a5aa90f9f42586dc`，一个 @xcss/web 包使用同版 GitHub Release tarball 和锁文件 integrity，无相邻工作区依赖。Xczs 1.0.0 的独立源码树构建、浏览器回归和发行核验由当前提交的 CI 与标签工作流执行。后续发行仍须执行同样门禁；依赖不可取得或身份不符时停止，不能复制共享类型、目标守卫或认证实现继续构建。
+xcss 是编译期供应链输入，不是运行时共享服务。当前 Rust 固定正式 1.0.5 / `6a8113d4be76e5e8977ac7be08c1a7c57963ae49`，一个 @xcss/web 包使用同版 GitHub Release tarball 和锁文件 integrity，无相邻工作区依赖。Xczs 1.0.3 的独立源码树构建、浏览器回归和发行核验由当前提交的 CI 与标签工作流执行。后续发行仍须执行同样门禁；依赖不可取得或身份不符时停止，不能复制共享类型、目标守卫或认证实现继续构建。
 
 `xcss-web-build.json` 声明根 Web、`build:platform`、`web/runtime-dist` 和 Xczs Cargo package。
 正式源码构建通过 `npm run build:server:release` 完成前端→Rust→实际 binary 资源验收。`build:platform`
@@ -81,7 +81,7 @@ install -d -m 0700 ./dist
 ```sh
 set -eu
 
-bundle=/secure/releases/xczs-1.0.0-x86_64-unknown-linux-gnu-0123456789ab.release
+bundle=/secure/releases/xczs-1.0.3-x86_64-unknown-linux-gnu-0123456789ab.release
 pinned_public_key=/secure/trust/xczs-release-public.pem
 test -d "$bundle"
 test ! -L "$bundle"
@@ -106,10 +106,10 @@ test ! -L "$release_dir"
 (cd "$release_dir" && sha256sum --check SHA256SUMS)
 
 # 从独立可信的发布记录填写完整值，不从同一下载目录自行推断。
-expected_version=1.0.0
+expected_version=1.0.3
 expected_sha=0123456789abcdef0123456789abcdef01234567
 expected_target=x86_64-unknown-linux-gnu
-expected_common_revision=3f751196615edd9f7fda2d76a5aa90f9f42586dc
+expected_common_revision=6a8113d4be76e5e8977ac7be08c1a7c57963ae49
 test "$("$release_dir/xczs" --version)" = \
   "xczs $expected_version (git $expected_sha) xcss=$expected_common_revision"
 grep -Fx "format=xczs-build-environment-v1" \

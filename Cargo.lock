@@ -3030,7 +3030,7 @@ dependencies = [
 
 [[package]]
 name = "xczs"
-version = "1.0.2"
+version = "1.0.3"
 dependencies = [
  "alphanumeric-sort",
  "anyhow",

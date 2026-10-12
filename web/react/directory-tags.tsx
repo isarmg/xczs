@@ -50,8 +50,18 @@ export function FileSearch({ client }: { client: AdministratorApiClient }) {
   const [version, setVersion] = useState(0);
   useEffect(() => {
     const changed = () => setFilters(valuesFromLocation());
+    const refreshTags = () => {
+      setTags([]);
+      setPage(null);
+      setCursor(null);
+      setVersion((value) => value + 1);
+    };
     window.addEventListener("popstate", changed);
-    return () => window.removeEventListener("popstate", changed);
+    window.addEventListener("xczs:tags-changed", refreshTags);
+    return () => {
+      window.removeEventListener("popstate", changed);
+      window.removeEventListener("xczs:tags-changed", refreshTags);
+    };
   }, []);
   useEffect(() => {
     if (!open) return;

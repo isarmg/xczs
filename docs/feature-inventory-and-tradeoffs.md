@@ -1,6 +1,6 @@
 # 项目完整功能与取舍清单
 
-本文以当前工作树（Cargo 版本 `1.0.0`）的实际代码为准，盘点 Xczs 当前所有对外可见、可配置，以及会显著影响安全性、正确性、性能和可维护性的功能。普通辅助函数和测试夹具不单独作为“功能”列出；最终发布身份必须以制品内 `xczs --version` 的完整 Git SHA 为准。
+本文以当前工作树（Cargo 版本 `1.0.3`）的实际代码为准，盘点 Xczs 当前所有对外可见、可配置，以及会显著影响安全性、正确性、性能和可维护性的功能。普通辅助函数和测试夹具不单独作为“功能”列出；最终发布身份必须以制品内 `xczs --version` 的完整 Git SHA 为准。
 
 本页供功能设计和代码评审使用。日常操作请从[文档入口](README.md)选择安装、使用或排障指南。
 
@@ -168,7 +168,7 @@ Xczs 的认证唯一所有者是 xcss：受保护 JSON 经 `AuthConfig` 验证�
 
 生产采用规范域名的同源 HTTPS，后端由网关独占访问；具体头部与来源规则见[运行参考](runtime-reference.md#请求与网关)。
 
-当前 xcss Rust/Web 固定正式 1.0.2 的完整 revision、Release tarball 与锁文件 integrity。Xczs 1.0.0 的独立构建和发行验收由当前提交的 CI 与标签工作流执行；独立发布不代表公开二进制带独立发布者签名。
+当前 xcss Rust/Web 固定正式 1.0.5 的完整 revision、Release tarball 与锁文件 integrity。Xczs 1.0.3 的独立构建和发行验收由当前提交的 CI 与标签工作流执行；独立发布不代表公开二进制带独立发布者签名。
 
 ## 5. 浏览器目录界面
 
@@ -381,7 +381,7 @@ Xczs 的认证唯一所有者是 xcss：受保护 JSON 经 `AuthConfig` 验证�
 | ID | 当前特性 | 作用 | 删除后的影响 | 级别 |
 | --- | --- | --- | --- | --- |
 | T-01 | 固定 Rust 工具链 | Rust 1.99.0、edition 2024、Rustfmt、Clippy | 开发机结果可能漂移 | 开发运维 |
-| T-02 | 锁定不可变 xcss 来源 | 当前固定 xcss 1.0.2 的完整 Git revision、一个 @xcss/web Release tarball 和 Rust/Web 锁图；本版本独立发行门通过后方可发布 | 未完成不可发布，禁止复制共享机制或可变分支 fallback | 开发运维 |
+| T-02 | 锁定不可变 xcss 来源 | 当前固定 xcss 1.0.5 的完整 Git revision、一个 @xcss/web Release tarball 和 Rust/Web 锁图；本版本独立发行门通过后方可发布 | 未完成不可发布，禁止复制共享机制或可变分支 fallback | 开发运维 |
 | T-03 | Linux 构建守卫 | 编译阶段明确拒绝错误目标 | 错误平台可能到运行时才失败 | 保障 |
 | T-04 | Rust 模块分层 | `server.rs` 保留共享状态与模块协调；`router.rs`、`assets.rs`、`delete.rs`、`purge.rs` 分别负责请求路由、内置资源注册/摘要、删除提交事务和回收调度。`listing/{snapshot,walk}.rs` 隔离进程级快照/游标缓存与有界递归遍历；`rooted_fs/purge.rs` 隔离 fd-relative 删除执行器；`internal_names.rs` 与 `maintenance.rs` 提供服务端中性的内部名称和清理边界；`upload/{prepare,target,transfer,commit,failure,protocol,record}.rs` 隔离路径/会话准备、目标 identity/revision、传输、提交、失败、协议与检查点持久化。`server`、`listing`、`rooted_fs` 与 `upload` 的大段内联单元测试均位于各自 `tests.rs`，仍保留模块私有访问 | 拆分只移动内部职责，不改变 HTTP/上传协议，也不新增第三方依赖；重新合并不会减少能力，只降低边界清晰度、维护性和测试定位 | 开发运维 |
 | T-05 | 可复用 `lib.rs` | 测试可在进程内构造服务层 | 删除会增加只能启动外部进程的测试成本 | 开发运维 |

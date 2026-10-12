@@ -17,4 +17,4 @@
 - [构建与发行验证](releasing.md)、[完整运行包说明](runtime-package.md)。
 - [功能设计参考](feature-inventory-and-tradeoffs.md)、[设计决策矩阵](feature-decision-matrix.md)。
 - [账号设置](account-settings.md)、[仓库职责](repository-boundary.md)、[公共支撑](common-support.md)、[安全审查](unsafe-audit.md)。
-- [1.0.0 发行记录](releases/1.0.0.md)、[项目首页](../README.md)。
+- [1.0.3 发行记录](releases/1.0.3.md)、[项目首页](../README.md)。
