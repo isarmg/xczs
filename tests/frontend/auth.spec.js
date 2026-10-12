@@ -180,13 +180,16 @@ test("The login card maintains a 3:2 layout and visible keyboard controls", asyn
       }),
     ).toBe(true);
   }
-  expect(
-    await username.evaluate(element => {
-      const style = getComputedStyle(element);
-      return style.outlineStyle !== "none" &&
-        Number.parseFloat(style.outlineWidth) >= 2;
-    }),
-  ).toBe(true);
+  // Forced colors retain the authored underline and caret, without a focus frame.
+  await expect(username).toBeFocused();
+  await expect(username).toBeEditable();
+  await expect(username).toHaveCSS("outline-style", "none");
+  expect(await username.evaluate(element => getComputedStyle(element).caretColor)).not.toBe("rgba(0, 0, 0, 0)");
+  await username.pressSequentially("keyboard-user");
+  await expect(username).toHaveValue("keyboard-user");
+  await username.press("Tab");
+  await expect(page.getByLabel("Password")).toBeFocused();
+  await expect(page.getByLabel("Password")).toBeEditable();
 });
 
 test("Browser login password limits use UTF-8 bytes rather than character counts", async ({

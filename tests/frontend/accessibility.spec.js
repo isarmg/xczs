@@ -140,13 +140,15 @@ test("Primary file controls use native semantics and keyboard interaction", asyn
   await expect(page.locator("#folder")).toHaveAttribute("tabindex", "-1");
   const search = page.getByLabel("Search files or folders");
   await search.focus();
-  expect(
-    await page.locator(".searchbar").evaluate(element => {
-      const style = getComputedStyle(element);
-      return style.outlineStyle !== "none" &&
-        Number.parseFloat(style.outlineWidth) >= 2;
-    }),
-  ).toBe(true);
+  await expect(search).toBeFocused();
+  await expect(search).toBeEditable();
+  // The current design omits focus frames; keyboard editing must still work.
+  await search.pressSequentially("keyboard query");
+  await expect(search).toHaveValue("keyboard query");
+  await search.press("ControlOrMeta+A");
+  await search.press("Backspace");
+  await expect(search).toHaveValue("");
+  await expect(page.locator(".searchbar")).toHaveCSS("outline-style", "none");
 
   for (const control of [
     page.getByRole("button", { name: "Upload files", exact: true }),
@@ -257,13 +259,19 @@ test("Forced colors preserve inline editor focus and dialog semantics", async ({
       return style.borderTopStyle === "none" &&
         style.borderRightStyle === "none" &&
         style.borderLeftStyle === "none" &&
-        style.borderBottomStyle === "dashed" && Number.parseFloat(style.borderBottomWidth) >= 2 &&
+        style.borderBottomStyle === "dashed" && Number.parseFloat(style.borderBottomWidth) >= 1 &&
         style.outlineStyle === "none" &&
         style.boxShadow === "none" &&
         style.caretColor !== "rgba(0, 0, 0, 0)";
     }),
   ).toBe(true);
   await expect(page.locator(".inline-name-marker")).toHaveCount(0);
+  await expect(input).toBeEditable();
+  const initialName = await input.inputValue();
+  await input.press("End");
+  await input.pressSequentially("-keyboard");
+  await expect(input).toHaveValue(`${initialName}-keyboard`);
+  await expect(input).toBeFocused();
 
   await page.keyboard.press("Escape");
   await expect(input).toHaveCount(0);

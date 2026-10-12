@@ -289,7 +289,6 @@ test("Tag rows in subdirectories and for special filenames still target the orig
 
 test("An open tag filter native fallback refreshes and selects newly created tags", async ({ appPage: page }) => {
   const name = `候选刷新-${randomUUID().slice(0, 8)}`;
-  const fallbackStyle = await page.addStyleTag({ content: '.search-tag-options { box-shadow: inset 0 0 2px black !important; }' });
   const panel = page.locator('.search-tag-options');
   const picker = page.getByRole("listbox", { name: "全部标签", exact: true });
   await page.locator(".search-tags summary").click();
@@ -302,6 +301,8 @@ test("An open tag filter native fallback refreshes and selects newly created tag
   // Menu changes preserve this open details element. No toggle or reload should
   // be needed before a newly created tag can become a search condition.
   await expect(picker).toBeVisible();
+  // Apply CSSOM to the current panel after navigation; keep the production CSP intact.
+  await panel.evaluate(node => node.style.setProperty('box-shadow', 'inset 0 0 2px black', 'important'));
   await expect(panel).toHaveAttribute('data-xcss-server-corner-state', 'fallback');
   await expect(panel).toHaveAttribute('data-xcss-server-corner-reason', 'inset-or-unsupported-shadow');
   await expect(panel).toBeVisible();
@@ -309,7 +310,7 @@ test("An open tag filter native fallback refreshes and selects newly created tag
   await expect(option).toHaveCount(1);
   await picker.selectOption({ label: name });
   await expect(picker.locator('option:checked')).toHaveText(name);
-  await fallbackStyle.evaluate(style => style.remove());
+  await panel.evaluate(node => node.style.removeProperty('box-shadow'));
   await expect(panel).toHaveAttribute('data-xcss-server-corner-state', 'clip');
   await expect(panel).toBeVisible();
   await page.locator(".search-tag-options").getByRole("button", { name: "搜索", exact: true }).click();
