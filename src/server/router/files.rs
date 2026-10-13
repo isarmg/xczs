@@ -1019,7 +1019,7 @@ fn apply_tracked_delete_rejection(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Args, auth::AuthConfig};
+    use crate::Args;
     use futures_util::poll;
     use http::header::CONTENT_TYPE;
     use http_body_util::BodyExt as _;
@@ -1032,8 +1032,6 @@ mod tests {
     };
     use uuid::Uuid;
 
-    const TEST_ACCOUNT: &str = "user:$argon2id$v=19$m=19456,t=2,p=1$HdPI2G8k0h+yEgnqIt2rSw$P+MRyz7wH+b/iPY+He/9DApcy6yB9TAoo7j2JG1Smzs";
-
     fn upload_test_server(root: &Path) -> (Arc<Server>, assert_fs::TempDir) {
         let state_dir = assert_fs::TempDir::new().unwrap();
         std::fs::set_permissions(state_dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -1041,7 +1039,6 @@ mod tests {
             Args {
                 serve_path: root.to_path_buf(),
                 state_dir: Some(state_dir.path().to_path_buf()),
-                auth: AuthConfig::new(&[TEST_ACCOUNT]).unwrap(),
                 max_concurrent_uploads: 1,
                 ..Args::default()
             },

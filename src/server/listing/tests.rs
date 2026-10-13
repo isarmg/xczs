@@ -14,8 +14,6 @@ use std::{
 };
 use xcss::server_runtime::TrackedTasks as TaskTracker;
 
-const LIST_API_TEST_ACCOUNT: &str = "listing-test:$argon2id$v=19$m=19456,t=2,p=1$HdPI2G8k0h+yEgnqIt2rSw$P+MRyz7wH+b/iPY+He/9DApcy6yB9TAoo7j2JG1Smzs";
-
 fn list_api_test_server(root: &assert_fs::TempDir) -> (Arc<Server>, assert_fs::TempDir) {
     let state_dir = assert_fs::TempDir::new().expect("create listing state directory");
     std::fs::set_permissions(state_dir.path(), std::fs::Permissions::from_mode(0o700))
@@ -23,12 +21,11 @@ fn list_api_test_server(root: &assert_fs::TempDir) -> (Arc<Server>, assert_fs::T
     let mut args = Args {
         serve_path: root.path().to_path_buf(),
         state_dir: Some(state_dir.path().to_path_buf()),
-        auth: crate::auth::AuthConfig::new(&[LIST_API_TEST_ACCOUNT])
-            .expect("parse listing test account"),
         ..Args::default()
     };
     args.max_concurrent_searches = 1;
-    Server::initialize(args.clone()).expect("initialize current listing fixtures");
+    Server::initialize(args.clone(), "listing-test", "test-password")
+        .expect("initialize current listing fixtures");
     let server = Server::init_with_list_snapshot_cache(
         args,
         ServerLifecycle::new(),

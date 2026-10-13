@@ -9,7 +9,7 @@ xcss 是编译期供应链输入，不是运行时共享服务。当前 Rust 固
 固定文件名也可以安全使用 immutable 缓存；动态 HTML 和用户文件继续使用原来的私有缓存规则。
 
 开发通过 `npm run build:server` 明确生成 `unbound` binary。选择 `--development` 并设置绝对路径
-`XCSS_DEV_WEB_DIR` 后，当前目录资源采用共同 `no-cache`/ETag 服务，后续前端构建不要求重编 Rust。
+`XCZS_DEV_WEB_DIR` 后，当前目录资源采用共同 `no-cache`/ETag 服务，后续前端构建不要求重编 Rust。
 该 provider 不依据编译时文件名单限制新 chunk，并逐次进行 no-follow/普通单链接文件验证。正式或
 非开发模式拒绝覆盖，且拒绝发生在任何管理员状态创建与业务数据库写入之前。
 
@@ -18,7 +18,7 @@ xcss 是编译期供应链输入，不是运行时共享服务。当前 Rust 固
 
 ## CI 与发行通道
 
-仓库的 `.github/workflows/read-only-ci.yml` 只提供远程回归反馈：权限为 `contents: read`，checkout 不保留凭据，静态、Rust、质量和 Chromium/Firefox 层不会创建 tag/release 或签名，也不会上传制品。质量层分别运行覆盖率、部署行为、发布脚本自测和 release binary smoke；主分支推送总是运行，普通 PR 保持轻量，修改工作流、依赖清单、部署样例或发布/部署脚本的 PR 则在合并前运行完整质量层。各步骤只在自己的前置条件成功时运行，一项实质检查失败不会跳过其余独立检查。唯一当前 Node 26.7.0 由 `.node-version`、manifest/lockfile 和工作流共同声明；`scripts/check.sh` 与正式打包入口还会在任何审计、构建或依赖代码前精确比对实际运行时，因此 npm 的 `EBADENGINE` warning 不能形成绿色结论。Rust 1.99.0、ShellCheck 0.11.0、锁定的 npm 工具和 Action commit SHA 也在工作流中固定；静态、Rust 与浏览器 job 使用 `ubuntu-24.04`，含 nginx 1.25.1+ 部署门的质量 job 使用 x64 `ubuntu-26.04`，两种托管镜像的实际版本及宿主工具均写入日志。GitHub 当前把 26.04 标为 preview；若该 runner 不可调度或镜像回归，质量门必须保持失败，不能退回 nginx 1.24 旧语法完成合并。合并前应查看全部矩阵结果，但它不包含正式签名边界，也不替代目标 exact tag 上的完整本地门和下述发布流程。
+仓库的 `.github/workflows/read-only-ci.yml` 只提供远程回归反馈：权限为 `contents: read`，checkout 不保留凭据，静态、Rust、质量和 Chromium/Firefox 层不会创建 tag/release 或签名，也不会上传制品。质量层分别运行覆盖率、部署行为、发布脚本自测和 release binary smoke；主分支推送总是运行，普通 PR 保持轻量，修改工作流、依赖清单、部署样例或发布/部署脚本的 PR 则在合并前运行完整质量层。各步骤只在自己的前置条件成功时运行，一项实质检查失败不会跳过其余独立检查。唯一当前 Node 26.7.0 由 `.node-version`、manifest/lockfile 和工作流共同声明；`scripts/check.sh` 与正式打包入口还会在任何审计、构建或依赖代码前精确比对实际运行时，因此 npm 的 `EBADENGINE` warning 不能形成绿色结论。Rust 1.99.0、ShellCheck 0.11.0、锁定的 npm 工具和 Action commit SHA 也在工作流中固定；静态、Rust 与浏览器 job 使用 `ubuntu-24.04`，部署质量 job 使用 x64 `ubuntu-26.04`，两种托管镜像的实际版本及宿主工具均写入日志。GitHub 当前把 26.04 标为 preview；若该 runner 不可调度或镜像回归，质量门必须保持失败。合并前应查看全部矩阵结果，但它不包含正式签名边界，也不替代目标 exact tag 上的完整本地门和下述发布流程。
 
 `.github/workflows/release-binary.yml` 只在推送 `v<version>` 注释标签后运行。`preflight` 校验标签、Cargo 版本与完整源码 SHA；只读 `verify_build` 执行锁定依赖审计、生成 Web 资源并直接编译 Linux release 二进制，复核版本、动态库、SHA-256 与发行输入摘要。唯一的 `contents: write` job 不 checkout、不执行下载的二进制，只消费本次只读构建上传的精确 artifact 并复核后发布。完整签名包 E2E 可按需手动执行，不阻塞便捷二进制 Release；主分支 CI 继续承担测试、浏览器、覆盖率和部署回归。
 
@@ -50,7 +50,7 @@ SBOM 递归把本地 Xczs `bom-ref`/`purl` 规范化为绑定完整源码 SHA �
 
 包内 `BUILD-ENVIRONMENT.txt`、SBOM、第三方 notice、Rust 标准库 notice 和项目 Apache-2.0 许可证均纳入 `SHA256SUMS`。
 
-当前完整运行包由 `install_release_support_tree` 复制 `config/`、`deploy/`、`LICENSE-APACHE` 和 `docs/runtime-package.md`，后者在包内重命名为 `README.md`。源码、测试和完整文档通过 `BUILD-ENVIRONMENT.txt` 中的 `source_sha` 定位。打包检查核对最终运行包的必要文件、模式与校验清单。
+当前完整运行包由 `install_release_support_tree` 复制 `bin/xczs`、`config/`、`systemd/`、`libexec/`、`install.sh`、`LICENSE-APACHE` 和 `docs/runtime-package.md`，后者在包内重命名为 `README.md`。源码、测试和完整文档通过 `BUILD-ENVIRONMENT.txt` 中的 `source_sha` 定位。打包检查核对最终运行包的必要文件、模式与校验清单。
 
 ## 输出与签名
 

@@ -1,17 +1,17 @@
 [Unit]
 Description=Xczs browser file manager
-Documentation=file:/usr/share/doc/xczs/operations.md
+Documentation=https://github.com/isarmg/xczs/blob/main/docs/runtime-package.md
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=xczs
-Group=xczs
+User=isarmg-xczs
+Group=isarmg-xczs
 UMask=0077
-StateDirectory=xczs
-StateDirectoryMode=0700
-ExecStart=/opt/xczs/bin/xczs run --config /etc/xczs/xczs.json
+RuntimeDirectory=isarmg/xczs
+RuntimeDirectoryMode=0700
+ExecStart=/opt/isarmg/xczs/bin/xczs run --config /etc/isarmg/xczs/config.json
 Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=120s
@@ -20,16 +20,17 @@ LimitNOFILE=65536
 
 NoNewPrivileges=yes
 PrivateDevices=yes
-PrivateTmp=yes
 ProtectClock=yes
 ProtectControlGroups=yes
-ProtectHome=yes
+ProtectHome=read-only
 ProtectHostname=yes
 ProtectKernelLogs=yes
 ProtectKernelModules=yes
 ProtectKernelTunables=yes
 ProtectSystem=strict
-ReadWritePaths=/srv/xczs
+# Keep this path in sync with config.json serve_path.
+# The installer renders both roots from the selected JSON.
+ReadWritePaths=/var/lib/isarmg/xczs /srv/xczs
 RestrictNamespaces=yes
 RestrictRealtime=yes
 RestrictSUIDSGID=yes

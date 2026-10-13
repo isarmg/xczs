@@ -25,13 +25,27 @@ fn private(path: &Path) {
     fs::set_permissions(path, fs::Permissions::from_mode(0o700)).unwrap();
 }
 fn output(config: &Path, args: &[&str]) -> Output {
-    isolated_command()
-        .args(args)
-        .arg("--config")
-        .arg(config)
-        .arg("--json")
-        .output()
-        .unwrap()
+    use std::io::Write;
+    let mut command = isolated_command();
+    command.args(args).arg("--config").arg(config).arg("--json");
+    if args.first() == Some(&"init") {
+        command.args(["--username", "test-admin"]);
+        let mut child = command
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(b"test-password")
+            .unwrap();
+        child.wait_with_output().unwrap()
+    } else {
+        command.output().unwrap()
+    }
 }
 fn report(output: &Output) -> Value {
     serde_json::from_slice(&output.stdout).unwrap_or_else(|_| {
@@ -84,7 +98,7 @@ fn explicit_initialization_read_only_diagnostics_and_real_readiness() {
     let bind = socket.local_addr().unwrap();
     drop(socket);
     let config = temporary.path().join("config.json");
-    let mut settings = json!({"data_dir":data,"serve_path":shared,"bind":["127.0.0.1"],"port":bind.port(),"development":true,"min_free_space":0,"auth":["test-admin:$argon2id$v=19$m=19456,t=2,p=1$HdPI2G8k0h+yEgnqIt2rSw$P+MRyz7wH+b/iPY+He/9DApcy6yB9TAoo7j2JG1Smzs"]});
+    let mut settings = json!({"data_dir":data,"serve_path":shared,"bind":bind.to_string(),"development":true,"min_free_space":0});
     fs::write(&config, serde_json::to_vec(&settings).unwrap()).unwrap();
     fs::set_permissions(&config, fs::Permissions::from_mode(0o600)).unwrap();
     let empty = state(&data);
@@ -136,10 +150,7 @@ fn explicit_initialization_read_only_diagnostics_and_real_readiness() {
         initialized_state,
         "repeated init changed current data"
     );
-    let parent_traversal = output(
-        &temporary.path().join("data/../config.json"),
-        &["config", "validate"],
-    );
+    let parent_traversal = output(&temporary.path().join("data/../config.json"), &["check"]);
     assert!(!parent_traversal.status.success());
     report(&parent_traversal);
     assert_eq!(state(&data), initialized_state);
@@ -155,7 +166,7 @@ fn explicit_initialization_read_only_diagnostics_and_real_readiness() {
     );
     assert_eq!(state(&data), initialized_state);
     fs::rename(&saved_probe, &probe).unwrap();
-    let valid = output(&config, &["config", "validate"]);
+    let valid = output(&config, &["check"]);
     assert!(
         valid.status.success(),
         "{}",
@@ -193,13 +204,13 @@ fn explicit_initialization_read_only_diagnostics_and_real_readiness() {
         assert_eq!(report(&rejected)["code"], "state.maintenance_pending");
         assert_eq!(state(&data), pending_state);
     }
-    assert!(output(&config, &["config", "validate"]).status.success());
+    assert!(output(&config, &["check"]).status.success());
     assert_eq!(state(&data), pending_state);
     fs::remove_file(&pending).unwrap();
     let original = fs::read(&config).unwrap();
     settings["unexpected_private_field"] = json!("never-emit-this-secret");
     fs::write(&config, serde_json::to_vec(&settings).unwrap()).unwrap();
-    let unknown = output(&config, &["config", "validate"]);
+    let unknown = output(&config, &["check"]);
     assert!(!unknown.status.success());
     report(&unknown);
     assert!(!String::from_utf8_lossy(&unknown.stdout).contains("never-emit-this-secret"));
@@ -275,7 +286,7 @@ fn explicit_initialization_read_only_diagnostics_and_real_readiness() {
     // rejection is retried; corruption, permissions, and schema failures fail immediately.
     let validation_deadline = Instant::now() + Duration::from_secs(5);
     let while_running = loop {
-        let result = output(&config, &["config", "validate"]);
+        let result = output(&config, &["check"]);
         if result.status.success() {
             break result;
         };
@@ -303,7 +314,7 @@ fn explicit_initialization_read_only_diagnostics_and_real_readiness() {
     let second_socket = TcpListener::bind("127.0.0.1:0").unwrap();
     let second_bind = second_socket.local_addr().unwrap();
     drop(second_socket);
-    let second = output(&config, &["run", "--port", &second_bind.port().to_string()]);
+    let second = output(&config, &["run", "--bind", &second_bind.to_string()]);
     assert!(!second.status.success());
     report(&second);
     assert!(output(&config, &["status"]).status.success());
@@ -423,4 +434,185 @@ fn assert_http_error(
     assert!(record["code"].is_string(), "{record}");
     assert_eq!(record["request_id"].as_str(), Some(request_id.as_str()));
     request_id.clone()
+}
+
+#[test]
+fn stdin_initialization_persists_accounts_without_rewriting_configuration() {
+    use std::io::Write;
+    let temporary = tempfile::tempdir().unwrap();
+    fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    let data = temporary.path().join("data");
+    let shared = temporary.path().join("shared");
+    private(&shared);
+    let socket = TcpListener::bind("127.0.0.1:0").unwrap();
+    let bind = socket.local_addr().unwrap();
+    drop(socket);
+    let config = temporary.path().join("config.json");
+    let settings = serde_json::to_vec(&json!({
+        "data_dir": data, "serve_path": shared, "bind": bind.to_string(),
+        "development": true, "min_free_space": 0
+    }))
+    .unwrap();
+    fs::write(&config, &settings).unwrap();
+    fs::set_permissions(&config, fs::Permissions::from_mode(0o600)).unwrap();
+    let initialize = |password: &[u8]| {
+        let mut child = isolated_command()
+            .args(["init", "--username", "custom-admin", "--config"])
+            .arg(&config)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        // Oversized input may close the pipe as soon as the reader reaches its bound.
+        let _ = child.stdin.take().unwrap().write_all(password);
+        child.wait_with_output().unwrap()
+    };
+    for password in [Vec::new(), vec![b'x'; 70_000]] {
+        let failed = initialize(&password);
+        assert!(!failed.status.success());
+        assert!(!data.join("state.sqlite3").exists());
+        assert!(
+            !data
+                .join("administrator/administrator-accounts.json")
+                .exists()
+        );
+        assert_eq!(fs::read(&config).unwrap(), settings);
+    }
+    let initialized = initialize(b"a strong deployment test password\n");
+    assert!(
+        initialized.status.success(),
+        "{}",
+        String::from_utf8_lossy(&initialized.stderr)
+    );
+    assert_eq!(fs::read(&config).unwrap(), settings);
+    let accounts = data.join("administrator/administrator-accounts.json");
+    let saved = fs::read(&accounts).unwrap();
+    let account: Value = serde_json::from_slice(&saved).unwrap();
+    assert_eq!(account["accounts"][0]["id"], "custom-admin");
+    assert_eq!(account["accounts"][0]["username"], "custom-admin");
+    assert!(!String::from_utf8_lossy(&saved).contains("a strong deployment test password"));
+    assert!(
+        !initialize(b"another strong deployment password\n")
+            .status
+            .success()
+    );
+    assert_eq!(fs::read(&accounts).unwrap(), saved);
+    assert_eq!(fs::read(&config).unwrap(), settings);
+    let validated = output(&config, &["check"]);
+    assert!(
+        validated.status.success(),
+        "{}",
+        String::from_utf8_lossy(&validated.stderr)
+    );
+    let mut running = Running(
+        isolated_command()
+            .args(["run", "--config"])
+            .arg(&config)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    let deadline = Instant::now() + Duration::from_secs(15);
+    loop {
+        let status = output(&config, &["status"]);
+        if status.status.success() {
+            assert_eq!(report(&status)["ready"], true);
+            break;
+        }
+        assert!(
+            running.0.try_wait().unwrap().is_none(),
+            "server exited before readiness"
+        );
+        assert!(Instant::now() < deadline, "server did not become ready");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    let client = reqwest::blocking::Client::builder()
+        .no_proxy()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .unwrap();
+    let login = client
+        .post(format!("http://{bind}/api/v1/auth/login"))
+        .header("origin", format!("http://{bind}"))
+        .header("sec-fetch-site", "same-origin")
+        .header("content-type", "application/json")
+        .body(
+            json!({"username":"custom-admin", "password":"a strong deployment test password"})
+                .to_string(),
+        )
+        .send()
+        .unwrap();
+    assert!(
+        login.status().is_success(),
+        "persisted administrator login failed: {}",
+        login.status()
+    );
+    assert_eq!(fs::read(&config).unwrap(), settings);
+}
+
+#[test]
+fn shared_fresh_install_contract_and_offline_password_reset() {
+    use std::io::Write;
+    let temporary = tempfile::tempdir().unwrap();
+    fs::set_permissions(temporary.path(), fs::Permissions::from_mode(0o700)).unwrap();
+    let data = temporary.path().join("state");
+    let shared = temporary.path().join("files");
+    private(&shared);
+    let config = temporary.path().join("config.json");
+    fs::write(
+        &config,
+        json!({
+            "data_dir":data,"serve_path":shared,"bind":"127.0.0.1:0",
+            "development":true,"min_free_space":0,"log_level":"info",
+            "trusted_proxies":["127.0.0.1"]
+        })
+        .to_string(),
+    )
+    .unwrap();
+    fs::set_permissions(&config, fs::Permissions::from_mode(0o600)).unwrap();
+    xcss::testkit::assert_deployment_cli_contract(
+        Path::new(BINARY),
+        &config,
+        &data,
+        &[
+            "state.sqlite3",
+            "tags.db",
+            "administrator/administrator-accounts.json",
+        ],
+    );
+    let account_path = data.join("administrator/administrator-accounts.json");
+    let before: Value = serde_json::from_slice(&fs::read(&account_path).unwrap()).unwrap();
+    let mut reset = isolated_command()
+        .args(["admin", "reset-password", "--username", "admin", "--config"])
+        .arg(&config)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    reset
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"a newly chosen administrator password\n")
+        .unwrap();
+    let result = reset.wait_with_output().unwrap();
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let after: Value = serde_json::from_slice(&fs::read(&account_path).unwrap()).unwrap();
+    assert_eq!(before["accounts"][0]["id"], after["accounts"][0]["id"]);
+    assert_eq!(
+        before["accounts"][0]["session_version"].as_u64().unwrap() + 1,
+        after["accounts"][0]["session_version"].as_u64().unwrap()
+    );
+    assert_ne!(
+        before["accounts"][0]["password_hash"],
+        after["accounts"][0]["password_hash"]
+    );
+    assert!(output(&config, &["check"]).status.success());
 }

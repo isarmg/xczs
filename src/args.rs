@@ -1,25 +1,18 @@
 use anyhow::{Context, Result, bail, ensure};
 use clap::{Arg, ArgAction, ArgMatches, Command, value_parser};
-use rustix::{
-    fs::fgetxattr,
-    io::Errno,
-    process::{getegid, geteuid},
-};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeMap;
 use std::env;
 use std::ffi::OsString;
 use std::fmt;
-use std::fs::{File, Metadata, OpenOptions};
-use std::io::Read;
-use std::net::IpAddr;
+use std::fs::Metadata;
+use std::net::SocketAddr;
 use std::ops::Deref;
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 use xcss::config::{ConfigSource, EnvMapping, EnvValueKind, Override};
 
-use crate::auth::AuthConfig;
 use crate::http_logger::HttpLogger;
 
 const DEFAULT_MAX_UPLOAD_SIZE: u64 = 100 * 1024 * 1024 * 1024;
@@ -35,12 +28,6 @@ const DEFAULT_REQUEST_TIMEOUT: u64 = 300;
 const DEFAULT_TAG_SCAN_INTERVAL_SECONDS: u64 = 3600;
 const DEFAULT_MAX_TAG_SCAN_ENTRIES: usize = 1_000_000;
 const MAX_TIMEOUT_SECONDS: u64 = 365 * 24 * 60 * 60;
-const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
-const CONFIG_FILE_TYPE_MASK: u32 = 0o170000;
-const CONFIG_REGULAR_FILE_TYPE: u32 = 0o100000;
-const CONFIG_PERMISSION_MASK: u32 = 0o7777;
-const CONFIG_POSIX_ACL_XATTR: &str = "system.posix_acl_access";
-const MAX_BIND_ADDRESSES: usize = 128;
 const STATE_DATABASE_FILE_NAME: &str = "state.sqlite3";
 const LONG_VERSION: &str = concat!(
     env!("CARGO_PKG_VERSION"),
@@ -77,7 +64,6 @@ struct PathIdentity {
     resolved_path: Option<PathBuf>,
     entry: EntryIdentity,
     object: Option<ObjectIdentity>,
-    links: Option<u64>,
 }
 
 impl PathIdentity {
@@ -126,7 +112,7 @@ impl PathIdentity {
         }
 
         let entry_path = parent.join(file_name);
-        let (object, links, resolved_path) = match std::fs::metadata(&entry_path) {
+        let (object, resolved_path) = match std::fs::metadata(&entry_path) {
             Ok(metadata) => {
                 let object = ObjectIdentity::from_metadata(&metadata);
                 let resolved_path = std::fs::canonicalize(&entry_path).with_context(|| {
@@ -147,13 +133,9 @@ impl PathIdentity {
                         entry_path.display()
                     );
                 }
-                (
-                    Some(object),
-                    Some(resolved_metadata.nlink()),
-                    Some(resolved_path),
-                )
+                (Some(object), Some(resolved_path))
             }
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (None, None, None),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (None, None),
             Err(error) => {
                 return Err(error).with_context(|| {
                     format!(
@@ -178,7 +160,6 @@ impl PathIdentity {
                 name: file_name.to_os_string(),
             },
             object,
-            links,
         })
     }
 
@@ -243,38 +224,36 @@ fn ensure_outside_shared_root(
     Ok(())
 }
 
-fn ensure_distinct_path_identities(
-    left: &PathIdentity,
-    left_name: &str,
-    right: &PathIdentity,
-    right_name: &str,
-) -> Result<()> {
-    if left.shares_entry_or_object_with(right) {
-        bail!(
-            "{left_name} `{}` conflicts by entry or object identity with {right_name} `{}`",
-            left.entry_path.display(),
-            right.entry_path.display()
-        );
-    }
-    Ok(())
-}
-
 pub fn build_cli() -> Command {
     Command::new(env!("CARGO_CRATE_NAME"))
+        .subcommand_required(true)
         .version(LONG_VERSION)
         .long_version(LONG_VERSION)
         .author(env!("CARGO_PKG_AUTHORS"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
         .subcommand(
-            Command::new("hash-password")
-                .about("Interactively generate a current administrator password hash"),
+            Command::new("init")
+                .about("Explicitly initialize current data; read initial password from stdin")
+                .arg(
+                    Arg::new("username")
+                        .long("username")
+                        .default_value("admin")
+                        .help("Initial administrator username (password is read from stdin)"),
+                ),
         )
-        .subcommand(Command::new("init").about("Explicitly initialize current data"))
         .subcommand(Command::new("run").about("Run a previously initialized instance"))
         .subcommand(Command::new("config").subcommand_required(true).subcommand(
-            Command::new("validate").about("Read-only current configuration and data validation"),
+            Command::new("validate").about("Validate configuration values without requiring initialized data"),
         ))
         .subcommand(Command::new("status").about("Query live business readiness"))
+        .subcommand(
+            Command::new("check").about("Read-only offline state, schema and account checks"),
+        )
+        .subcommand(Command::new("admin").subcommand_required(true).subcommand(
+            Command::new("reset-password").about(
+                "Reset the persisted administrator password from stdin; stop the service first",
+            ).arg(Arg::new("username").long("username").default_value("admin")),
+        ))
         .arg(
             Arg::new("json")
                 .long("json")
@@ -286,7 +265,7 @@ pub fn build_cli() -> Command {
                 .long("serve-path")
                 .global(true)
                 .value_parser(value_parser!(PathBuf))
-                .help("Existing directory to manage [default: .]"),
+                .help("Explicit absolute path of the existing directory to manage"),
         )
         .arg(
             Arg::new("config")
@@ -294,14 +273,18 @@ pub fn build_cli() -> Command {
                 .short('c')
                 .long("config")
                 .value_parser(value_parser!(PathBuf))
-                .help("Specify configuration file")
+                .default_value("/etc/isarmg/xczs/config.json")
+                .help("Specify private JSON configuration file")
                 .value_name("file"),
         )
         .arg(
             Arg::new("development")
                 .global(true)
                 .long("development")
-                .action(ArgAction::SetTrue)
+                .num_args(0..=1)
+                .default_missing_value("true")
+                .require_equals(true)
+                .value_parser(value_parser!(bool))
                 .help("Enable xcss HTTP development mode on loopback only"),
         )
         .arg(
@@ -333,21 +316,12 @@ pub fn build_cli() -> Command {
                 .global(true)
                 .short('b')
                 .long("bind")
-                .value_parser(value_parser!(IpAddr))
-                .help("Specify IP address to bind [default: 127.0.0.1]")
-                .action(ArgAction::Append)
-                .value_delimiter(',')
-                .value_name("addrs"),
+                .value_parser(value_parser!(SocketAddr))
+                .help("Listen socket address [default: 127.0.0.1:5000]")
+                .value_name("address:port"),
         )
-        .arg(
-            Arg::new("port")
-                .global(true)
-                .short('p')
-                .long("port")
-                .value_parser(value_parser!(u16))
-                .help("Specify port to listen on [default: 5000]")
-                .value_name("port"),
-        )
+        .arg(Arg::new("trusted-proxies").global(true).long("trusted-proxies")
+            .action(ArgAction::Append).value_delimiter(',').value_name("IP_OR_CIDR"))
         .arg(
             Arg::new("log-format")
                 .global(true)
@@ -356,12 +330,10 @@ pub fn build_cli() -> Command {
                 .help("Customize HTTP log format"),
         )
         .arg(
-            Arg::new("log-file")
+            Arg::new("log-level")
                 .global(true)
-                .long("log-file")
-                .value_name("file")
-                .value_parser(value_parser!(PathBuf))
-                .help("Specify the file to save logs to instead of stderr"),
+                .long("log-level")
+                .value_name("level"),
         )
         .arg(
             Arg::new("max-upload-size")
@@ -453,17 +425,12 @@ pub struct Args {
     pub serve_path: PathBuf,
     #[serde(rename = "data_dir")]
     pub state_dir: Option<PathBuf>,
-    #[serde(deserialize_with = "deserialize_bind_addrs")]
-    #[serde(rename = "bind")]
-    #[serde(default = "default_addrs")]
-    pub addrs: Vec<IpAddr>,
-    #[serde(default = "default_port")]
-    pub port: u16,
-    pub auth: AuthConfig,
+    pub bind: SocketAddr,
+    pub trusted_proxies: Vec<String>,
     #[serde(deserialize_with = "deserialize_log_http")]
     #[serde(rename = "log_format")]
     pub http_logger: HttpLogger,
-    pub log_file: Option<PathBuf>,
+    pub log_level: String,
     pub max_upload_size: u64,
     pub upload_idle_timeout: u64,
     pub upload_total_timeout: u64,
@@ -524,13 +491,12 @@ impl Default for Args {
     fn default() -> Self {
         Self {
             serve_path: default_serve_path(),
-            state_dir: None,
-            addrs: default_addrs(),
-            port: default_port(),
-            auth: AuthConfig::default(),
+            state_dir: Some(PathBuf::from("/var/lib/isarmg/xczs")),
+            bind: default_bind(),
+            trusted_proxies: Vec::new(),
             development: false,
             http_logger: HttpLogger::default(),
-            log_file: None,
+            log_level: "info".to_owned(),
             max_upload_size: DEFAULT_MAX_UPLOAD_SIZE,
             upload_idle_timeout: DEFAULT_UPLOAD_IDLE_TIMEOUT,
             upload_total_timeout: DEFAULT_UPLOAD_TOTAL_TIMEOUT,
@@ -551,10 +517,7 @@ impl Args {
     /// Merge command-line arguments with the optional configuration file and
     /// validate the resulting runtime settings.
     pub fn parse(matches: ArgMatches) -> Result<Args> {
-        let config_path = matches
-            .get_one::<PathBuf>("config")
-            .map(|path| normalize_config_path(path))
-            .transpose()?;
+        let config_path = selected_config_path(&matches)?;
         let config = config_path.as_deref().map(read_config).transpose()?;
         let config_identity = config_path
             .as_deref()
@@ -571,11 +534,7 @@ impl Args {
             env::var(name).ok()
         })?;
         let mut command_line = Vec::new();
-        for (argument, field) in [
-            ("serve-path", "serve_path"),
-            ("data-dir", "data_dir"),
-            ("log-file", "log_file"),
-        ] {
+        for (argument, field) in [("serve-path", "serve_path"), ("data-dir", "data_dir")] {
             if let Some(path) = matches.get_one::<PathBuf>(argument) {
                 command_line.push(Override::new(
                     format!("/{field}"),
@@ -583,17 +542,20 @@ impl Args {
                 ));
             }
         }
-        if let Some(port) = matches.get_one::<u16>("port") {
-            command_line.push(Override::new("/port", *port));
+        if let Some(development) = matches.get_one::<bool>("development") {
+            command_line.push(Override::new("/development", *development));
         }
-        if matches.get_flag("development") {
-            command_line.push(Override::new("/development", true));
+        if let Some(bind) = matches.get_one::<SocketAddr>("bind") {
+            command_line.push(Override::new("/bind", bind.to_string()));
         }
-        if let Some(addrs) = matches.get_many::<IpAddr>("bind") {
+        if let Some(proxies) = matches.get_many::<String>("trusted-proxies") {
             command_line.push(Override::new(
-                "/bind",
-                serde_json::to_value(addrs.copied().collect::<Vec<_>>())?,
+                "/trusted_proxies",
+                serde_json::to_value(proxies.cloned().collect::<Vec<_>>())?,
             ));
+        }
+        if let Some(level) = matches.get_one::<String>("log-level") {
+            command_line.push(Override::new("/log_level", level.clone()));
         }
         if let Some(format) = matches.get_one::<String>("log-format") {
             command_line.push(Override::new("/log_format", format.clone()));
@@ -642,26 +604,23 @@ impl Args {
         args.config_sources = loaded.sources;
         validate_development_web_selection(&args)?;
         if matches.subcommand_matches("init").is_some() {
+            ensure!(
+                args.serve_path.is_absolute(),
+                "serve_path must be an explicitly configured absolute path"
+            );
             let directory = args
                 .state_dir
                 .as_deref()
                 .context("data_dir is required for init")?;
-            xcss::server_cli::runtime_allowed(directory).map_err(xcss::server_cli::CliError)?;
             xcss::server_cli::create_empty_private_directory(directory)
                 .map_err(xcss::server_cli::CliError)?;
+        }
+        if matches.subcommand_matches("config").is_some() {
+            return args.validate_configuration();
         }
         let args = args.validate()?;
         if let Some(config_identity) = config_identity.as_ref() {
             ensure_outside_shared_root(config_identity, "Configuration file", &args.serve_path)?;
-            if let Some(log_file) = args.log_file.as_deref() {
-                let log_identity = PathIdentity::inspect(log_file, "Log file")?;
-                ensure_distinct_path_identities(
-                    config_identity,
-                    "Configuration file",
-                    &log_identity,
-                    "log file",
-                )?;
-            }
             if let Some(state_db) = args.state_database_path() {
                 Self::ensure_no_state_db_identity_conflict(
                     &state_db,
@@ -679,8 +638,41 @@ impl Args {
     /// Keeping this boundary on `Args` prevents embedders from bypassing the
     /// invariants that the runtime relies on when it constructs semaphores and
     /// computes request deadlines.
-    pub fn validate(mut self) -> Result<Self> {
-        validate_development_web_selection(&self)?;
+    /// Validate only values, without requiring initialized state or touching databases.
+    pub fn validate_configuration(self) -> Result<Self> {
+        validate_intrinsic(&self, ConfigSource::File)?;
+        ensure!(
+            self.serve_path.is_absolute(),
+            "serve_path must be an explicitly configured absolute path"
+        );
+        let state = self.state_dir.as_deref().context("data_dir is required")?;
+        ensure!(state.is_absolute(), "data_dir must be an absolute path");
+        ensure!(
+            !state.starts_with(&self.serve_path) && !self.serve_path.starts_with(state),
+            "data_dir and serve_path must not overlap"
+        );
+        ensure!(
+            self.upload_total_timeout >= self.upload_idle_timeout,
+            "upload-total-timeout must be greater than or equal to upload-idle-timeout"
+        );
+        ensure!(
+            !self.development || self.bind.ip().is_loopback(),
+            "development mode requires a loopback bind address"
+        );
+        Ok(self)
+    }
+
+    pub fn validate(self) -> Result<Self> {
+        let mut self_value = self.validate_configuration()?;
+        self_value.validate_paths()
+    }
+
+    fn validate_paths(&mut self) -> Result<Self> {
+        validate_development_web_selection(self)?;
+        ensure!(
+            self.serve_path.is_absolute(),
+            "serve_path must be an explicitly configured absolute path"
+        );
         self.serve_path = Self::sanitize_path(&self.serve_path)?;
         if !self
             .serve_path
@@ -699,30 +691,9 @@ impl Args {
             );
         }
 
-        let log_identity = if let Some(log_file) = self.log_file.as_deref() {
-            let identity = PathIdentity::inspect(log_file, "Log file")?;
-            ensure_outside_shared_root(&identity, "Log file", &self.serve_path)?;
-            if identity.links.is_some_and(|links| links != 1) {
-                bail!(
-                    "Existing log file `{}` must have exactly one hard link",
-                    identity.entry_path.display()
-                );
-            }
-            self.log_file = Some(identity.entry_path.clone());
-            Some(identity)
-        } else {
-            None
-        };
-
         if let Some(state_dir) = self.state_dir.as_deref() {
             self.state_dir = Some(Self::sanitize_state_dir_path(state_dir, &self.serve_path)?);
         }
-        if let (Some(state_db), Some(log_identity)) =
-            (self.state_database_path(), log_identity.as_ref())
-        {
-            Self::ensure_no_state_db_identity_conflict(&state_db, log_identity, "Log file")?;
-        }
-
         let timeout_origin = Instant::now();
         validate_timeout(
             "upload-idle-timeout",
@@ -749,19 +720,8 @@ impl Args {
                 bail!("{name} must be greater than 0");
             }
         }
-        if self.addrs.is_empty() {
-            bail!("bind must contain at least one IP address");
-        }
-        if self.development && self.addrs.iter().any(|address| !address.is_loopback()) {
-            bail!("development mode requires exclusively loopback bind addresses");
-        }
-        if self.addrs.len() > MAX_BIND_ADDRESSES {
-            bail!("bind must not contain more than {MAX_BIND_ADDRESSES} IP addresses");
-        }
-        let mut sorted_addrs = self.addrs.clone();
-        sorted_addrs.sort_unstable();
-        if sorted_addrs.windows(2).any(|pair| pair[0] == pair[1]) {
-            bail!("bind must not contain duplicate IP addresses");
+        if self.development && !self.bind.ip().is_loopback() {
+            bail!("development mode requires a loopback bind address");
         }
         if self.max_search_entries > MAX_SEARCH_ENTRIES {
             bail!("max-search-entries must not exceed {MAX_SEARCH_ENTRIES}");
@@ -788,20 +748,13 @@ impl Args {
             );
         }
 
-        if !self.auth.has_users() {
-            bail!(
-                "At least one administrator username account is required; generate a hash with `xczs hash-password`, \
-                 add it under `auth:` in a protected JSON file, then start with `--config <file>`"
-            );
-        }
-
         if self.state_dir.is_none() {
             bail!(
                 "A persistent SQLite state directory is required; use `--data-dir <dir>` or set `data_dir` in the configuration file"
             );
         }
 
-        Ok(self)
+        Ok(self.clone())
     }
 
     fn sanitize_path<P: AsRef<Path>>(path: P) -> Result<PathBuf> {
@@ -810,11 +763,7 @@ impl Args {
             bail!("Path `{}` doesn't exist", path.display());
         }
 
-        env::current_dir()
-            .and_then(|mut p| {
-                p.push(path); // If path is absolute, it replaces the current path.
-                std::fs::canonicalize(p)
-            })
+        std::fs::canonicalize(path)
             .with_context(|| format!("Failed to access path `{}`", path.display()))
     }
 
@@ -1027,39 +976,6 @@ impl Args {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct ConfigFileSnapshot {
-    device: u64,
-    inode: u64,
-    mode: u32,
-    links: u64,
-    uid: u32,
-    gid: u32,
-    size: u64,
-    modified_seconds: i64,
-    modified_nanoseconds: i64,
-    changed_seconds: i64,
-    changed_nanoseconds: i64,
-}
-
-impl ConfigFileSnapshot {
-    fn from_metadata(metadata: &Metadata) -> Self {
-        Self {
-            device: metadata.dev(),
-            inode: metadata.ino(),
-            mode: metadata.mode(),
-            links: metadata.nlink(),
-            uid: metadata.uid(),
-            gid: metadata.gid(),
-            size: metadata.size(),
-            modified_seconds: metadata.mtime(),
-            modified_nanoseconds: metadata.mtime_nsec(),
-            changed_seconds: metadata.ctime(),
-            changed_nanoseconds: metadata.ctime_nsec(),
-        }
-    }
-}
-
 struct ReadConfig {
     contents: String,
     object: ObjectIdentity,
@@ -1070,182 +986,22 @@ impl fmt::Debug for ReadConfig {
         formatter
             .debug_struct("ReadConfig")
             .field("contents", &"<redacted>")
-            .field("object", &self.object)
             .finish()
     }
 }
 
 fn read_config(path: &Path) -> Result<ReadConfig> {
-    let mut file = OpenOptions::new()
-        .read(true)
-        // Opening a FIFO or device supplied in place of the config must not
-        // block startup before the descriptor type can be verified.
-        .custom_flags((rustix::fs::OFlags::NONBLOCK | rustix::fs::OFlags::NOFOLLOW).bits() as i32)
-        .open(path)
-        .with_context(|| format!("Failed to read config at {}", path.display()))?;
-    let expected_uid = geteuid().as_raw();
-    let expected_gid = getegid().as_raw();
-    read_open_config(&mut file, path, |file| {
-        inspect_open_config(file, path, expected_uid, expected_gid)
-    })
-}
-
-fn read_open_config(
-    file: &mut File,
-    path: &Path,
-    mut inspect: impl FnMut(&File) -> Result<ConfigFileSnapshot>,
-) -> Result<ReadConfig> {
-    let before = inspect(file)?;
-
-    let mut bytes = Vec::with_capacity(before.size.min(MAX_CONFIG_BYTES) as usize);
-    file.by_ref()
-        .take(MAX_CONFIG_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .with_context(|| format!("Failed to read config at {}", path.display()))?;
-    if bytes.len() as u64 > MAX_CONFIG_BYTES {
-        bail!(
-            "Config at {} exceeds the {MAX_CONFIG_BYTES}-byte limit",
-            path.display()
-        );
-    }
-    let after = inspect(file)?;
-    ensure_config_snapshot_stable(before, after, path, "while it was being read")?;
-
-    let contents = String::from_utf8(bytes)
-        .with_context(|| format!("Config at {} is not valid UTF-8", path.display()))?;
+    let before = ObjectIdentity::from_metadata(&std::fs::symlink_metadata(path)?);
+    let bytes = xcss::config::read_private_file(path)?;
+    let after = ObjectIdentity::from_metadata(&std::fs::symlink_metadata(path)?);
+    ensure!(
+        before == after,
+        "Configuration file changed while being read"
+    );
     Ok(ReadConfig {
-        contents,
-        object: ObjectIdentity {
-            device: after.device,
-            inode: after.inode,
-        },
+        contents: String::from_utf8(bytes)?,
+        object: after,
     })
-}
-
-fn inspect_open_config(
-    file: &File,
-    path: &Path,
-    expected_uid: u32,
-    expected_gid: u32,
-) -> Result<ConfigFileSnapshot> {
-    inspect_open_config_with(
-        path,
-        expected_uid,
-        expected_gid,
-        || snapshot_open_config(file, path),
-        || config_has_extended_acl(file, path),
-    )
-}
-
-fn inspect_open_config_with(
-    path: &Path,
-    expected_uid: u32,
-    expected_gid: u32,
-    mut snapshot: impl FnMut() -> Result<ConfigFileSnapshot>,
-    inspect_acl: impl FnOnce() -> Result<bool>,
-) -> Result<ConfigFileSnapshot> {
-    let before_acl = snapshot()?;
-    let has_extended_acl = inspect_acl()?;
-    validate_config_security(
-        before_acl,
-        has_extended_acl,
-        expected_uid,
-        expected_gid,
-        path,
-    )?;
-    let after_acl = snapshot()?;
-    ensure_config_snapshot_stable(
-        before_acl,
-        after_acl,
-        path,
-        "while its security properties were being verified",
-    )?;
-    Ok(after_acl)
-}
-
-fn snapshot_open_config(file: &File, path: &Path) -> Result<ConfigFileSnapshot> {
-    // `File::metadata` performs fstat on this already-open descriptor; it
-    // never resolves the configured path again.
-    file.metadata()
-        .map(|metadata| ConfigFileSnapshot::from_metadata(&metadata))
-        .with_context(|| format!("Failed to inspect config at {}", path.display()))
-}
-
-fn config_has_extended_acl(file: &File, path: &Path) -> Result<bool> {
-    let mut empty_value = [0_u8; 0];
-    match fgetxattr(file, CONFIG_POSIX_ACL_XATTR, &mut empty_value) {
-        Ok(_) => Ok(true),
-        Err(error) if error == Errno::NODATA || error == Errno::NOTSUP => Ok(false),
-        Err(error) => Err(std::io::Error::from(error)).with_context(|| {
-            format!(
-                "Failed to inspect the POSIX access ACL on config at {}",
-                path.display()
-            )
-        }),
-    }
-}
-
-fn validate_config_security(
-    snapshot: ConfigFileSnapshot,
-    has_extended_acl: bool,
-    expected_uid: u32,
-    expected_gid: u32,
-    path: &Path,
-) -> Result<()> {
-    if snapshot.mode & CONFIG_FILE_TYPE_MASK != CONFIG_REGULAR_FILE_TYPE {
-        bail!("Config at {} must be a regular file", path.display());
-    }
-    if snapshot.links != 1 {
-        bail!(
-            "Config at {} must have exactly one hard link",
-            path.display()
-        );
-    }
-    if snapshot.uid != 0 && snapshot.uid != expected_uid {
-        bail!(
-            "Config at {} must be owned by root (uid 0) or the effective service user (uid {expected_uid})",
-            path.display(),
-        );
-    }
-
-    let permissions = snapshot.mode & CONFIG_PERMISSION_MASK;
-    if !matches!(permissions, 0o400 | 0o440 | 0o600 | 0o640) {
-        bail!(
-            "Config at {} must have permissions 0400, 0440, 0600, or 0640",
-            path.display()
-        );
-    }
-    if permissions & 0o040 != 0 && snapshot.gid != expected_gid {
-        bail!(
-            "Config at {} with group-read permissions must belong to the effective service group (gid {expected_gid})",
-            path.display(),
-        );
-    }
-    if has_extended_acl {
-        bail!(
-            "Config at {} must not have an extended POSIX access ACL",
-            path.display()
-        );
-    }
-    if snapshot.size > MAX_CONFIG_BYTES {
-        bail!(
-            "Config at {} exceeds the {MAX_CONFIG_BYTES}-byte limit",
-            path.display()
-        );
-    }
-    Ok(())
-}
-
-fn ensure_config_snapshot_stable(
-    before: ConfigFileSnapshot,
-    after: ConfigFileSnapshot,
-    path: &Path,
-    operation: &str,
-) -> Result<()> {
-    if before != after {
-        bail!("Config at {} changed {operation}", path.display());
-    }
-    Ok(())
 }
 
 fn validate_timeout(name: &str, seconds: u64, origin: Instant) -> Result<()> {
@@ -1261,26 +1017,6 @@ fn validate_timeout(name: &str, seconds: u64, origin: Instant) -> Result<()> {
     Ok(())
 }
 
-fn parse_bind_addrs(addrs: &[&str]) -> Result<Vec<IpAddr>> {
-    let mut bind_addrs = Vec::with_capacity(addrs.len());
-    for addr in addrs {
-        let Ok(ip) = addr.parse::<IpAddr>() else {
-            bail!("Invalid bind address `{addr}`: expected an IP address");
-        };
-        bind_addrs.push(ip);
-    }
-    Ok(bind_addrs)
-}
-
-fn deserialize_bind_addrs<'de, D>(deserializer: D) -> Result<Vec<IpAddr>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let addrs: Vec<String> = Deserialize::deserialize(deserializer)?;
-    let values: Vec<&str> = addrs.iter().map(String::as_str).collect();
-    parse_bind_addrs(&values).map_err(serde::de::Error::custom)
-}
-
 fn deserialize_log_http<'de, D>(deserializer: D) -> Result<HttpLogger, D::Error>
 where
     D: Deserializer<'de>,
@@ -1290,21 +1026,17 @@ where
 }
 
 fn default_serve_path() -> PathBuf {
-    PathBuf::from(".")
+    PathBuf::new()
 }
 
-fn default_addrs() -> Vec<IpAddr> {
-    vec![IpAddr::from([127, 0, 0, 1])]
-}
-
-fn default_port() -> u16 {
-    5000
+fn default_bind() -> SocketAddr {
+    SocketAddr::from(([127, 0, 0, 1], 5000))
 }
 
 #[cfg(test)]
 mod tests;
 
-fn configuration_environment() -> [EnvMapping<'static>; 19] {
+fn configuration_environment() -> [EnvMapping<'static>; 18] {
     [
         EnvMapping {
             variable: "XCZS_SERVE_PATH",
@@ -1324,17 +1056,7 @@ fn configuration_environment() -> [EnvMapping<'static>; 19] {
         EnvMapping {
             variable: "XCZS_BIND",
             path: "/bind",
-            kind: EnvValueKind::Json,
-        },
-        EnvMapping {
-            variable: "XCZS_PORT",
-            path: "/port",
-            kind: EnvValueKind::UnsignedInteger,
-        },
-        EnvMapping {
-            variable: "XCZS_AUTH",
-            path: "/auth",
-            kind: EnvValueKind::Json,
+            kind: EnvValueKind::String,
         },
         EnvMapping {
             variable: "XCZS_LOG_FORMAT",
@@ -1342,8 +1064,13 @@ fn configuration_environment() -> [EnvMapping<'static>; 19] {
             kind: EnvValueKind::String,
         },
         EnvMapping {
-            variable: "XCZS_LOG_FILE",
-            path: "/log_file",
+            variable: "XCZS_TRUSTED_PROXIES",
+            path: "/trusted_proxies",
+            kind: EnvValueKind::Json,
+        },
+        EnvMapping {
+            variable: "XCZS_LOG_LEVEL",
+            path: "/log_level",
             kind: EnvValueKind::String,
         },
         EnvMapping {
@@ -1405,13 +1132,13 @@ fn configuration_environment() -> [EnvMapping<'static>; 19] {
 }
 
 fn validate_development_web_selection(args: &Args) -> Result<()> {
-    let Some(directory) = env::var_os("XCSS_DEV_WEB_DIR") else {
+    let Some(directory) = env::var_os("XCZS_DEV_WEB_DIR") else {
         return Ok(());
     };
     let invalid = || {
         xcss::config::ConfigError::new(
             xcss::config::Reason::InvalidValue,
-            "/XCSS_DEV_WEB_DIR",
+            "/XCZS_DEV_WEB_DIR",
             ConfigSource::Environment,
         )
     };
@@ -1427,13 +1154,19 @@ fn validate_development_web_selection(args: &Args) -> Result<()> {
 fn validate_intrinsic(args: &Args, source: ConfigSource) -> Result<(), xcss::config::ConfigError> {
     let invalid =
         |path| xcss::config::ConfigError::new(xcss::config::Reason::InvalidValue, path, source);
-    let mut addresses = args.addrs.clone();
-    addresses.sort_unstable();
-    if addresses.is_empty()
-        || addresses.len() > MAX_BIND_ADDRESSES
-        || addresses.windows(2).any(|pair| pair[0] == pair[1])
-    {
-        return Err(invalid("/bind"));
+    if !matches!(
+        args.log_level.as_str(),
+        "off" | "error" | "warn" | "info" | "debug" | "trace"
+    ) {
+        return Err(invalid("/log_level"));
+    }
+    xcss::client_ip::TrustedProxies::parse(&args.trusted_proxies)
+        .map_err(|_| invalid("/trusted_proxies"))?;
+    if args.state_dir.is_none() {
+        return Err(invalid("/data_dir"));
+    }
+    if !args.serve_path.as_os_str().is_empty() && !args.serve_path.is_absolute() {
+        return Err(invalid("/serve_path"));
     }
     for (path, value) in [
         ("/max_concurrent_uploads", args.max_concurrent_uploads),
@@ -1474,4 +1207,19 @@ pub fn normalize_config_path(path: &Path) -> Result<PathBuf> {
         "config path cannot contain parent traversal"
     );
     Ok(std::path::absolute(path)?)
+}
+
+/// A missing implicit default is allowed; explicit paths and unsafe files fail.
+pub fn selected_config_path(matches: &ArgMatches) -> Result<Option<PathBuf>> {
+    let path = normalize_config_path(
+        matches
+            .get_one::<PathBuf>("config")
+            .expect("default config path"),
+    )?;
+    if matches.value_source("config") == Some(clap::parser::ValueSource::DefaultValue)
+        && matches!(std::fs::symlink_metadata(&path), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
+    {
+        return Ok(None);
+    }
+    Ok(Some(path))
 }

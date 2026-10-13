@@ -2,9 +2,7 @@ use super::*;
 
 use assert_fs::prelude::*;
 use std::ffi::OsStr;
-use std::os::fd::AsRawFd;
-
-const TEST_ACCOUNT: &str = "user:$argon2id$v=19$m=19456,t=2,p=1$HdPI2G8k0h+yEgnqIt2rSw$P+MRyz7wH+b/iPY+He/9DApcy6yB9TAoo7j2JG1Smzs";
+use std::os::unix::fs::OpenOptionsExt;
 
 fn private_state_dir() -> assert_fs::TempDir {
     let state_dir = assert_fs::TempDir::new().unwrap();
@@ -14,28 +12,11 @@ fn private_state_dir() -> assert_fs::TempDir {
 
 fn make_config_private(path: &Path) {
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600)).unwrap();
-    if let Err(error) = rustix::fs::removexattr(path, CONFIG_POSIX_ACL_XATTR) {
-        assert!(
-            error == Errno::NODATA || error == Errno::NOTSUP,
-            "failed to remove an inherited config ACL: {error}"
-        );
-    }
-}
-
-fn config_snapshot(mode: u32, uid: u32, gid: u32) -> ConfigFileSnapshot {
-    ConfigFileSnapshot {
-        device: 1,
-        inode: 2,
-        mode: CONFIG_REGULAR_FILE_TYPE | mode,
-        links: 1,
-        uid,
-        gid,
-        size: 128,
-        modified_seconds: 3,
-        modified_nanoseconds: 4,
-        changed_seconds: 5,
-        changed_nanoseconds: 6,
-    }
+    std::fs::set_permissions(
+        path.parent().unwrap(),
+        std::fs::Permissions::from_mode(0o700),
+    )
+    .unwrap();
 }
 
 fn matches_with_state<I, T>(values: I, state_dir: &Path) -> ArgMatches
@@ -67,15 +48,35 @@ where
                 .mode(0o600)
                 .open(&config_path)
                 .unwrap();
-            serde_json::to_writer(&mut config, &serde_json::json!({"auth":[TEST_ACCOUNT]}))
-                .unwrap();
+            serde_json::to_writer(&mut config, &serde_json::json!({})).unwrap();
             std::fs::set_permissions(&config_path, std::fs::Permissions::from_mode(0o600)).unwrap();
         }
         values.push("--config".into());
         values.push(config_path.into_os_string());
     }
+    let config_has_root = values
+        .iter()
+        .position(|value| value == "--config" || value == "-c")
+        .and_then(|index| values.get(index + 1))
+        .and_then(|path| std::fs::read(path).ok())
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .is_some_and(|value| value.get("serve_path").is_some());
+    if !values.iter().any(|value| value == "--serve-path") && !config_has_root {
+        values.push("--serve-path".into());
+        values.push(std::env::current_dir().unwrap().into_os_string());
+    }
     values.push("--data-dir".into());
     values.push(state_dir.as_os_str().to_os_string());
+    if !values.iter().any(|value| {
+        value == "run"
+            || value == "init"
+            || value == "config"
+            || value == "check"
+            || value == "status"
+            || value == "admin"
+    }) {
+        values.insert(1, "run".into());
+    }
     build_cli().try_get_matches_from(values).unwrap()
 }
 
@@ -86,8 +87,7 @@ fn test_default() {
     let args = Args::parse(matches).unwrap();
     let cwd = Args::sanitize_path(std::env::current_dir().unwrap()).unwrap();
     assert_eq!(args.serve_path, cwd);
-    assert_eq!(args.port, default_port());
-    assert_eq!(args.addrs, vec![IpAddr::from([127, 0, 0, 1])]);
+    assert_eq!(args.bind, default_bind());
     assert!(!args.development);
     assert_eq!(args.max_upload_size, DEFAULT_MAX_UPLOAD_SIZE);
     assert_eq!(args.upload_idle_timeout, DEFAULT_UPLOAD_IDLE_TIMEOUT);
@@ -104,7 +104,7 @@ fn test_default() {
 }
 
 #[test]
-fn test_args_from_empty_config_file_requires_auth() {
+fn empty_config_file_is_invalid_json() {
     let tmpdir = assert_fs::TempDir::new().unwrap();
     let config_file = tmpdir.child("config.json");
     config_file.write_str("").unwrap();
@@ -112,7 +112,7 @@ fn test_args_from_empty_config_file_requires_auth() {
 
     let cli = build_cli();
     let matches = cli
-        .try_get_matches_from(vec!["", "-c", &config_file.to_string_lossy()])
+        .try_get_matches_from(vec!["", "run", "-c", &config_file.to_string_lossy()])
         .unwrap();
     let err = Args::parse(matches).unwrap_err();
     assert!(
@@ -123,14 +123,14 @@ fn test_args_from_empty_config_file_requires_auth() {
 
 #[test]
 fn development_mode_is_explicit_and_requires_only_loopback_bindings() {
-    for bind in ["127.0.0.1", "::1"] {
+    for bind in ["127.0.0.1:5000", "[::1]:5000"] {
         let state_dir = private_state_dir();
         let matches = matches_with_state(["", "--development", "--bind", bind], state_dir.path());
         let args = Args::parse(matches).unwrap();
         assert!(args.development);
-        assert!(args.addrs.iter().all(IpAddr::is_loopback));
+        assert!(args.bind.ip().is_loopback());
     }
-    for bind in ["0.0.0.0", "::", "192.0.2.1"] {
+    for bind in ["0.0.0.0:5000", "[::]:5000", "192.0.2.1:5000"] {
         let state_dir = private_state_dir();
         let matches = matches_with_state(["", "--development", "--bind", bind], state_dir.path());
         assert!(
@@ -152,16 +152,18 @@ fn oversized_config_file_is_rejected_before_parsing() {
     let tmpdir = assert_fs::TempDir::new().unwrap();
     let config_file = tmpdir.child("config.json");
     config_file
-        .write_binary(&vec![b' '; MAX_CONFIG_BYTES as usize + 1])
+        .write_binary(&vec![b' '; xcss::config::MAX_CONFIG_BYTES + 1])
         .unwrap();
     make_config_private(config_file.path());
 
     let matches = build_cli()
-        .try_get_matches_from(vec!["", "-c", &config_file.to_string_lossy()])
+        .try_get_matches_from(vec!["", "run", "-c", &config_file.to_string_lossy()])
         .unwrap();
     let error = Args::parse(matches).expect_err("an oversized config was accepted");
     assert!(
-        error.to_string().contains("exceeds the") && error.to_string().contains("byte limit"),
+        error
+            .downcast_ref::<xcss::config::ConfigError>()
+            .is_some_and(|error| error.reason == xcss::config::Reason::LimitExceeded),
         "unexpected error: {error:#}"
     );
 }
@@ -172,236 +174,14 @@ fn symbolic_link_config_file_is_rejected() {
     let target = tmpdir.child("target.json");
     let config_file = tmpdir.child("config.json");
     target
-        .write_str(&serde_json::json!({"auth":[TEST_ACCOUNT]}).to_string())
+        .write_str(&serde_json::json!({}).to_string())
         .unwrap();
     std::os::unix::fs::symlink(target.path(), config_file.path()).unwrap();
 
     let error = read_config(config_file.path()).expect_err("a symlink config was accepted");
     assert!(
-        error.to_string().contains("Failed to read config"),
+        error.downcast_ref::<xcss::config::ConfigError>().is_some(),
         "unexpected error: {error:#}"
-    );
-}
-
-#[test]
-fn config_security_accepts_only_the_documented_owner_group_and_mode_combinations() {
-    let expected_uid = 1000;
-    let expected_gid = 2000;
-    for (mode, uid, gid) in [
-        (0o400, expected_uid, 3000),
-        (0o600, 0, 3000),
-        (0o440, 0, expected_gid),
-        (0o440, expected_uid, expected_gid),
-        (0o640, 0, expected_gid),
-        (0o640, expected_uid, expected_gid),
-    ] {
-        validate_config_security(
-            config_snapshot(mode, uid, gid),
-            false,
-            expected_uid,
-            expected_gid,
-            Path::new("config.json"),
-        )
-        .unwrap();
-    }
-
-    let wrong_owner = validate_config_security(
-        config_snapshot(0o600, expected_uid + 1, expected_gid),
-        false,
-        expected_uid,
-        expected_gid,
-        Path::new("config.json"),
-    )
-    .expect_err("a config owned by an unrelated user was accepted");
-    assert!(wrong_owner.to_string().contains("root (uid 0)"));
-
-    let wrong_group = validate_config_security(
-        config_snapshot(0o640, 0, expected_gid + 1),
-        false,
-        expected_uid,
-        expected_gid,
-        Path::new("config.json"),
-    )
-    .expect_err("group-readable config with an unrelated group was accepted");
-    assert!(wrong_group.to_string().contains("effective service group"));
-
-    for mode in [0o000, 0o444, 0o460, 0o620, 0o660, 0o700, 0o4600] {
-        let error = validate_config_security(
-            config_snapshot(mode, expected_uid, expected_gid),
-            false,
-            expected_uid,
-            expected_gid,
-            Path::new("config.json"),
-        )
-        .expect_err("an undocumented config mode was accepted");
-        assert!(error.to_string().contains("0400, 0440, 0600, or 0640"));
-    }
-}
-
-#[test]
-fn config_security_rejects_hard_links_and_extended_access_acls() {
-    let mut hard_linked = config_snapshot(0o600, 1000, 2000);
-    hard_linked.links = 2;
-    let hard_link_error =
-        validate_config_security(hard_linked, false, 1000, 2000, Path::new("config.json"))
-            .expect_err("a multiply-linked config was accepted");
-    assert!(
-        hard_link_error
-            .to_string()
-            .contains("exactly one hard link")
-    );
-
-    let acl_error = validate_config_security(
-        config_snapshot(0o600, 1000, 2000),
-        true,
-        1000,
-        2000,
-        Path::new("config.json"),
-    )
-    .expect_err("a config with an extended access ACL was accepted");
-    assert!(acl_error.to_string().contains("extended POSIX access ACL"));
-}
-
-#[test]
-fn config_snapshot_stability_covers_identity_content_and_security_metadata() {
-    let before = config_snapshot(0o600, 1000, 2000);
-    let changed = [
-        ConfigFileSnapshot {
-            device: before.device + 1,
-            ..before
-        },
-        ConfigFileSnapshot {
-            inode: before.inode + 1,
-            ..before
-        },
-        ConfigFileSnapshot {
-            mode: before.mode ^ 0o200,
-            ..before
-        },
-        ConfigFileSnapshot {
-            links: before.links + 1,
-            ..before
-        },
-        ConfigFileSnapshot {
-            uid: before.uid + 1,
-            ..before
-        },
-        ConfigFileSnapshot {
-            gid: before.gid + 1,
-            ..before
-        },
-        ConfigFileSnapshot {
-            size: before.size + 1,
-            ..before
-        },
-        ConfigFileSnapshot {
-            modified_seconds: before.modified_seconds + 1,
-            ..before
-        },
-        ConfigFileSnapshot {
-            modified_nanoseconds: before.modified_nanoseconds + 1,
-            ..before
-        },
-        ConfigFileSnapshot {
-            changed_seconds: before.changed_seconds + 1,
-            ..before
-        },
-        ConfigFileSnapshot {
-            changed_nanoseconds: before.changed_nanoseconds + 1,
-            ..before
-        },
-    ];
-
-    ensure_config_snapshot_stable(
-        before,
-        before,
-        Path::new("config.json"),
-        "while it was being read",
-    )
-    .unwrap();
-    for after in changed {
-        let error = ensure_config_snapshot_stable(
-            before,
-            after,
-            Path::new("config.json"),
-            "while it was being read",
-        )
-        .expect_err("a changed config snapshot was accepted");
-        assert!(
-            error
-                .to_string()
-                .contains("changed while it was being read")
-        );
-    }
-}
-
-#[test]
-fn injected_acl_inspection_rejects_acl_and_probe_time_metadata_changes() {
-    let before = config_snapshot(0o600, 1000, 2000);
-    let acl_error = inspect_open_config_with(
-        Path::new("config.json"),
-        1000,
-        2000,
-        || Ok(before),
-        || Ok(true),
-    )
-    .expect_err("an injected extended ACL was accepted");
-    assert!(acl_error.to_string().contains("extended POSIX access ACL"));
-
-    let after = ConfigFileSnapshot {
-        mode: before.mode ^ 0o200,
-        ..before
-    };
-    let mut snapshots = [before, after].into_iter();
-    let changed_error = inspect_open_config_with(
-        Path::new("config.json"),
-        1000,
-        2000,
-        || {
-            Ok(snapshots
-                .next()
-                .expect("the inspector requested two snapshots"))
-        },
-        || Ok(false),
-    )
-    .expect_err("metadata changed during ACL inspection was accepted");
-    assert!(
-        changed_error
-            .to_string()
-            .contains("changed while its security properties were being verified")
-    );
-}
-
-#[test]
-fn injected_reader_reuses_one_fd_and_rejects_changed_post_read_snapshot() {
-    let tmpdir = assert_fs::TempDir::new().unwrap();
-    let config = tmpdir.child("config.json");
-    config.write_str("auth: []\n").unwrap();
-    make_config_private(config.path());
-    let mut file = OpenOptions::new().read(true).open(config.path()).unwrap();
-
-    let mut before = config_snapshot(0o600, 1000, 2000);
-    before.size = "auth: []\n".len() as u64;
-    let after = ConfigFileSnapshot {
-        changed_nanoseconds: before.changed_nanoseconds + 1,
-        ..before
-    };
-    let mut calls = 0;
-    let mut observed_fds = Vec::new();
-    let error = read_open_config(&mut file, config.path(), |opened| {
-        observed_fds.push(opened.as_raw_fd());
-        calls += 1;
-        Ok(if calls == 1 { before } else { after })
-    })
-    .expect_err("metadata changed during config reading was accepted");
-
-    assert_eq!(calls, 2);
-    assert_eq!(observed_fds.len(), 2);
-    assert_eq!(observed_fds[0], observed_fds[1]);
-    assert!(
-        error
-            .to_string()
-            .contains("changed while it was being read")
     );
 }
 
@@ -412,14 +192,22 @@ fn read_config_rejects_a_real_hard_link_and_insecure_mode() {
     insecure.write_str("auth: []\n").unwrap();
     std::fs::set_permissions(insecure.path(), std::fs::Permissions::from_mode(0o644)).unwrap();
     let mode_error = read_config(insecure.path()).expect_err("a 0644 config was accepted");
-    assert!(mode_error.to_string().contains("0400, 0440, 0600, or 0640"));
+    assert!(
+        mode_error
+            .downcast_ref::<xcss::config::ConfigError>()
+            .is_some()
+    );
 
     let linked = tmpdir.child("linked.json");
     linked.write_str("auth: []\n").unwrap();
     make_config_private(linked.path());
     std::fs::hard_link(linked.path(), tmpdir.child("alias.json").path()).unwrap();
     let link_error = read_config(linked.path()).expect_err("a hard-linked config was accepted");
-    assert!(link_error.to_string().contains("exactly one hard link"));
+    assert!(
+        link_error
+            .downcast_ref::<xcss::config::ConfigError>()
+            .is_some()
+    );
 }
 
 #[test]
@@ -448,7 +236,7 @@ fn path_identity_matches_canonical_entries_and_existing_objects() {
 }
 
 #[test]
-fn configuration_and_log_paths_cannot_resolve_into_the_shared_root() {
+fn configuration_cannot_resolve_into_the_shared_root() {
     let shared = assert_fs::TempDir::new().unwrap();
     let state_dir = private_state_dir();
     let alias_dir = assert_fs::TempDir::new().unwrap();
@@ -457,9 +245,7 @@ fn configuration_and_log_paths_cannot_resolve_into_the_shared_root() {
 
     let config = shared.child("config.json");
     config
-        .write_str(
-            &serde_json::json!({"auth":[TEST_ACCOUNT],"data_dir":state_dir.path()}).to_string(),
-        )
+        .write_str(&serde_json::json!({"data_dir":state_dir.path()}).to_string())
         .unwrap();
     make_config_private(config.path());
     for config_path in [
@@ -469,6 +255,7 @@ fn configuration_and_log_paths_cannot_resolve_into_the_shared_root() {
         let matches = build_cli()
             .try_get_matches_from([
                 OsString::from("xczs"),
+                OsString::from("run"),
                 OsString::from("--serve-path"),
                 shared.path().as_os_str().to_owned(),
                 OsString::from("--config"),
@@ -478,130 +265,13 @@ fn configuration_and_log_paths_cannot_resolve_into_the_shared_root() {
         let error = Args::parse(matches)
             .expect_err("a configuration path inside the shared root was accepted");
         assert!(
-            error.to_string().contains("resolve into shared path"),
+            error.to_string().contains("resolve into shared path")
+                || error
+                    .downcast_ref::<xcss::config::ConfigError>()
+                    .is_some_and(|error| error.reason == xcss::config::Reason::UnsafeFile),
             "unexpected error: {error:#}"
         );
     }
-
-    let inside_log = shared.child("inside.log");
-    inside_log.write_str("existing log").unwrap();
-    let outside_log_link = alias_dir.child("outside-log-link");
-    std::os::unix::fs::symlink(inside_log.path(), outside_log_link.path()).unwrap();
-    for log_path in [
-        shared.path().join("new.log"),
-        shared_alias.path().join("new.log"),
-        outside_log_link.path().to_path_buf(),
-    ] {
-        let error = Args {
-            serve_path: shared.path().to_path_buf(),
-            state_dir: Some(state_dir.path().to_path_buf()),
-            auth: AuthConfig::new(&[TEST_ACCOUNT]).unwrap(),
-            log_file: Some(log_path),
-            ..Args::default()
-        }
-        .validate()
-        .expect_err("a log path resolving inside the shared root was accepted");
-        assert!(
-            error.to_string().contains("resolve into shared path"),
-            "unexpected error: {error:#}"
-        );
-    }
-
-    let hard_link = alias_dir.child("hard-linked-log");
-    std::fs::hard_link(inside_log.path(), hard_link.path()).unwrap();
-    let error = Args {
-        serve_path: shared.path().to_path_buf(),
-        state_dir: Some(state_dir.path().to_path_buf()),
-        auth: AuthConfig::new(&[TEST_ACCOUNT]).unwrap(),
-        log_file: Some(hard_link.path().to_path_buf()),
-        ..Args::default()
-    }
-    .validate()
-    .expect_err("a hard-linked log alias of a shared object was accepted");
-    assert!(error.to_string().contains("exactly one hard link"));
-}
-
-#[test]
-fn configuration_and_log_paths_must_have_distinct_identities() {
-    let shared = assert_fs::TempDir::new().unwrap();
-    let state_dir = private_state_dir();
-    let config_dir = assert_fs::TempDir::new().unwrap();
-    let config = config_dir.child("config.json");
-
-    for log_path in [
-        config.path().to_path_buf(),
-        config_dir.path().join("config-log-alias"),
-    ] {
-        if log_path.as_path() != config.path() {
-            std::os::unix::fs::symlink(config.path(), &log_path).unwrap();
-        }
-        config
-            .write_str(&serde_json::json!({"auth":[TEST_ACCOUNT],"data_dir":state_dir.path(),"log_file":log_path}).to_string())
-            .unwrap();
-        make_config_private(config.path());
-        let matches = build_cli()
-            .try_get_matches_from([
-                OsString::from("xczs"),
-                OsString::from("--serve-path"),
-                shared.path().as_os_str().to_owned(),
-                OsString::from("--config"),
-                config.path().as_os_str().to_owned(),
-            ])
-            .unwrap();
-        let error = Args::parse(matches)
-            .expect_err("configuration and log identity collision was accepted");
-        assert!(
-            error
-                .to_string()
-                .contains("conflicts by entry or object identity with log file"),
-            "unexpected error: {error:#}"
-        );
-    }
-}
-
-#[test]
-fn state_database_sidecar_conflicts_include_entry_and_object_aliases() {
-    let shared = assert_fs::TempDir::new().unwrap();
-    let state_dir = private_state_dir();
-    let alias_dir = assert_fs::TempDir::new().unwrap();
-    let state_alias = alias_dir.child("state-alias");
-    std::os::unix::fs::symlink(state_dir.path(), state_alias.path()).unwrap();
-
-    let aliased_entry = state_alias.path().join("state.sqlite3-wal");
-    let error = Args {
-        serve_path: shared.path().to_path_buf(),
-        state_dir: Some(state_dir.path().to_path_buf()),
-        auth: AuthConfig::new(&[TEST_ACCOUNT]).unwrap(),
-        log_file: Some(aliased_entry),
-        ..Args::default()
-    }
-    .validate()
-    .expect_err("an aliased SQLite sidecar entry was accepted as the log path");
-    assert!(
-        error
-            .to_string()
-            .contains("conflicts with SQLite state database")
-    );
-
-    let sidecar = state_dir.path().join("state.sqlite3-shm");
-    std::fs::write(&sidecar, "existing sidecar").unwrap();
-    std::fs::set_permissions(&sidecar, std::fs::Permissions::from_mode(0o600)).unwrap();
-    let object_alias = alias_dir.child("sidecar-object-alias");
-    std::os::unix::fs::symlink(&sidecar, object_alias.path()).unwrap();
-    let error = Args {
-        serve_path: shared.path().to_path_buf(),
-        state_dir: Some(state_dir.path().to_path_buf()),
-        auth: AuthConfig::new(&[TEST_ACCOUNT]).unwrap(),
-        log_file: Some(object_alias.path().to_path_buf()),
-        ..Args::default()
-    }
-    .validate()
-    .expect_err("an aliased SQLite sidecar object was accepted as the log path");
-    assert!(
-        error
-            .to_string()
-            .contains("conflicts with SQLite state database")
-    );
 }
 
 #[test]
@@ -623,7 +293,6 @@ fn state_directory_rejects_a_renameable_ancestor_chain() {
         Args {
             serve_path: shared.path().to_path_buf(),
             state_dir: Some(state_dir.path().to_path_buf()),
-            auth: AuthConfig::new(&[TEST_ACCOUNT]).unwrap(),
             ..Args::default()
         }
         .validate()
@@ -646,17 +315,24 @@ fn state_directory_rejects_a_renameable_ancestor_chain() {
 
 #[test]
 fn direct_validation_enforces_runtime_invariants() {
+    let state_dir = private_state_dir();
     let tmpdir = assert_fs::TempDir::new().unwrap();
     let args = Args {
         serve_path: tmpdir.path().to_path_buf(),
         max_concurrent_uploads: 0,
-        auth: AuthConfig::new(&[TEST_ACCOUNT]).unwrap(),
+        state_dir: Some(state_dir.path().to_path_buf()),
         ..Args::default()
     };
     let error = args
         .validate()
         .expect_err("library configuration bypassed validation");
-    assert!(error.to_string().contains("max-concurrent-uploads"));
+    assert_eq!(
+        error
+            .downcast_ref::<xcss::config::ConfigError>()
+            .unwrap()
+            .path,
+        "/max_concurrent_uploads"
+    );
 }
 
 #[test]
@@ -667,13 +343,11 @@ fn validated_config_exposes_only_a_normalized_read_view() {
     let args = Args {
         serve_path: relative,
         state_dir: Some(state_dir.path().to_path_buf()),
-        auth: AuthConfig::new(&[TEST_ACCOUNT]).unwrap(),
         ..Args::default()
     };
     let config = ValidatedConfig::try_from(args).unwrap();
     assert!(config.serve_path.is_absolute());
     assert!(config.serve_path.is_dir());
-    assert!(config.auth.has_users());
 }
 
 #[test]
@@ -682,13 +356,13 @@ fn config_without_bind_uses_the_loopback_default() {
     let state_dir = private_state_dir();
     let config_file = tmpdir.child("config.json");
     config_file
-        .write_str(&serde_json::json!({"auth":[TEST_ACCOUNT]}).to_string())
+        .write_str(&serde_json::json!({}).to_string())
         .unwrap();
     make_config_private(config_file.path());
 
     let matches = matches_with_state(["", "-c", &config_file.to_string_lossy()], state_dir.path());
     let args = Args::parse(matches).unwrap();
-    assert_eq!(args.addrs, vec![IpAddr::from([127, 0, 0, 1])]);
+    assert_eq!(args.bind, default_bind());
 }
 
 #[test]
@@ -697,15 +371,15 @@ fn test_args_from_config_file1() {
     let config_dir = assert_fs::TempDir::new().unwrap();
     let state_dir = private_state_dir();
     let config_file = config_dir.child("config.json");
-    let contents = serde_json::json!({"serve_path":tmpdir.path(),"bind":["0.0.0.0"],"port":3000,"auth":[TEST_ACCOUNT]}).to_string();
+    let contents =
+        serde_json::json!({"serve_path":tmpdir.path(),"bind":"0.0.0.0:3000"}).to_string();
     config_file.write_str(&contents).unwrap();
     make_config_private(config_file.path());
 
     let matches = matches_with_state(["", "-c", &config_file.to_string_lossy()], state_dir.path());
     let args = Args::parse(matches).unwrap();
     assert_eq!(args.serve_path, Args::sanitize_path(&tmpdir).unwrap());
-    assert_eq!(args.addrs, vec!["0.0.0.0".parse::<IpAddr>().unwrap()]);
-    assert_eq!(args.port, 3000);
+    assert_eq!(args.bind, "0.0.0.0:3000".parse::<SocketAddr>().unwrap());
 }
 
 #[test]
@@ -714,14 +388,13 @@ fn test_file_serve_path_from_config_is_rejected() {
     let shared_file = tmpdir.child("shared.txt");
     shared_file.write_str("contents").unwrap();
     let config_file = tmpdir.child("config.json");
-    let contents =
-        serde_json::json!({"serve_path":shared_file.path(),"auth":[TEST_ACCOUNT]}).to_string();
+    let contents = serde_json::json!({"serve_path":shared_file.path()}).to_string();
     config_file.write_str(&contents).unwrap();
     make_config_private(config_file.path());
 
     let cli = build_cli();
     let matches = cli
-        .try_get_matches_from(vec!["", "-c", &config_file.to_string_lossy()])
+        .try_get_matches_from(vec!["", "run", "-c", &config_file.to_string_lossy()])
         .unwrap();
     let err = Args::parse(matches).unwrap_err();
     assert!(
@@ -731,24 +404,16 @@ fn test_file_serve_path_from_config_is_rejected() {
 }
 
 #[test]
-fn test_args_from_config_file2() {
+fn multiple_bind_addresses_are_rejected() {
     let tmpdir = assert_fs::TempDir::new().unwrap();
     let state_dir = private_state_dir();
     let config_file = tmpdir.child("config.json");
-    let contents =
-        serde_json::json!({"bind":["127.0.0.1","192.168.8.10"],"auth":[TEST_ACCOUNT]}).to_string();
+    let contents = serde_json::json!({"bind":["127.0.0.1","192.168.8.10"]}).to_string();
     config_file.write_str(&contents).unwrap();
     make_config_private(config_file.path());
 
     let matches = matches_with_state(["", "-c", &config_file.to_string_lossy()], state_dir.path());
-    let args = Args::parse(matches).unwrap();
-    assert_eq!(
-        args.addrs,
-        vec![
-            "127.0.0.1".parse::<IpAddr>().unwrap(),
-            "192.168.8.10".parse::<IpAddr>().unwrap()
-        ]
-    );
+    assert!(Args::parse(matches).is_err());
 }
 
 #[test]
@@ -756,12 +421,12 @@ fn empty_bind_list_is_rejected() {
     let tmpdir = assert_fs::TempDir::new().unwrap();
     let config_file = tmpdir.child("config.json");
     config_file
-        .write_str(&serde_json::json!({"bind":[],"auth":[TEST_ACCOUNT]}).to_string())
+        .write_str(&serde_json::json!({"bind":[]}).to_string())
         .unwrap();
     make_config_private(config_file.path());
 
     let matches = build_cli()
-        .try_get_matches_from(vec!["", "-c", &config_file.to_string_lossy()])
+        .try_get_matches_from(vec!["", "run", "-c", &config_file.to_string_lossy()])
         .unwrap();
     let error = Args::parse(matches).expect_err("an empty bind list was accepted");
     assert!(
@@ -775,18 +440,19 @@ fn empty_bind_list_is_rejected() {
 fn test_non_ip_bind_config_is_rejected() {
     let tmpdir = assert_fs::TempDir::new().unwrap();
     let config_file = tmpdir.child("config.json");
-    let contents = serde_json::json!({"serve_path":tmpdir.path(),"bind":["not-an-ip-address"],"auth":[TEST_ACCOUNT]}).to_string();
+    let contents =
+        serde_json::json!({"serve_path":tmpdir.path(),"bind":"not-an-ip-address:5000"}).to_string();
     config_file.write_str(&contents).unwrap();
     make_config_private(config_file.path());
 
     let cli = build_cli();
     let matches = cli
-        .try_get_matches_from(vec!["", "-c", &config_file.to_string_lossy()])
+        .try_get_matches_from(vec!["", "run", "-c", &config_file.to_string_lossy()])
         .unwrap();
     let err = Args::parse(matches).unwrap_err();
     assert!(
         err.downcast_ref::<xcss::config::ConfigError>()
-            .is_some_and(|error| error.reason == xcss::config::Reason::InvalidValue)
+            .is_some_and(|error| error.path == "/bind")
     );
 }
 
@@ -954,5 +620,127 @@ fn semaphore_limits_above_tokios_maximum_are_rejected() {
                     == format!("/{}", name.trim_start_matches("--").replace('-', "_"))),
             "unexpected error for {name}: {error:#}"
         );
+    }
+}
+
+#[test]
+fn shared_root_must_be_explicit_and_absolute() {
+    for serve_path in [
+        PathBuf::new(),
+        PathBuf::from("."),
+        PathBuf::from("relative"),
+    ] {
+        let error = Args {
+            serve_path,
+            ..Args::default()
+        }
+        .validate()
+        .unwrap_err();
+        assert!(
+            error.to_string().contains("absolute")
+                || error
+                    .downcast_ref::<xcss::config::ConfigError>()
+                    .is_some_and(|error| error.path == "/serve_path"),
+            "{error:#}"
+        );
+    }
+}
+
+#[test]
+fn removed_port_and_array_bind_are_not_aliases() {
+    for args in [
+        vec!["xczs", "--port", "5000"],
+        vec!["xczs", "--bind", "127.0.0.1"],
+        vec!["xczs", "--bind", "127.0.0.1:1,127.0.0.2:1"],
+    ] {
+        assert!(build_cli().try_get_matches_from(args).is_err());
+    }
+    assert!(serde_json::from_str::<Args>(r#"{"port":5000}"#).is_err());
+    assert!(serde_json::from_str::<Args>(r#"{"bind":["127.0.0.1"]}"#).is_err());
+}
+
+#[test]
+fn private_reader_requires_owned_0600_file_and_0700_parent() {
+    let directory = private_state_dir();
+    let file = directory.child("config.json");
+    file.write_str("{}").unwrap();
+    make_config_private(file.path());
+    assert!(read_config(file.path()).is_ok());
+    for mode in [0o400, 0o440, 0o640, 0o644] {
+        std::fs::set_permissions(file.path(), std::fs::Permissions::from_mode(mode)).unwrap();
+        assert!(read_config(file.path()).is_err());
+    }
+    make_config_private(file.path());
+    std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o750)).unwrap();
+    assert!(read_config(file.path()).is_err());
+}
+
+#[test]
+fn common_defaults_and_config_selection_are_explicit() {
+    let args = Args::default();
+    assert_eq!(
+        args.state_dir.as_deref(),
+        Some(Path::new("/var/lib/isarmg/xczs"))
+    );
+    assert!(!args.development);
+    assert_eq!(args.bind, "127.0.0.1:5000".parse().unwrap());
+    assert!(args.serve_path.as_os_str().is_empty());
+    let matches = build_cli().try_get_matches_from(["xczs", "run"]).unwrap();
+    assert_eq!(
+        matches.get_one::<PathBuf>("config").unwrap(),
+        Path::new("/etc/isarmg/xczs/config.json")
+    );
+    let temp = private_state_dir();
+    let missing = temp.path().join("missing.json");
+    let matches = build_cli()
+        .try_get_matches_from([
+            OsString::from("xczs"),
+            OsString::from("run"),
+            OsString::from("--config"),
+            missing.clone().into_os_string(),
+        ])
+        .unwrap();
+    assert_eq!(selected_config_path(&matches).unwrap(), Some(missing));
+    assert!(Args::parse(matches).is_err());
+}
+
+#[test]
+fn development_false_can_override_true_from_json() {
+    let shared = private_state_dir();
+    let config_dir = private_state_dir();
+    let state = private_state_dir();
+    let config = config_dir.child("config.json");
+    config
+        .write_str(
+            &serde_json::json!({"serve_path": shared.path(), "development": true}).to_string(),
+        )
+        .unwrap();
+    make_config_private(config.path());
+    let matches = matches_with_state(
+        [
+            "xczs",
+            "--config",
+            &config.path().to_string_lossy(),
+            "--development=false",
+        ],
+        state.path(),
+    );
+    assert!(!Args::parse(matches).unwrap().development);
+}
+
+#[test]
+fn invalid_low_priority_paths_cannot_be_hidden_by_cli_overrides() {
+    for config in [r#"{"data_dir":null}"#, r#"{"serve_path":"relative"}"#] {
+        let result = xcss::config::resolve_validated(
+            &Args::default(),
+            Some(config.as_bytes()),
+            &[],
+            &[
+                Override::new("/serve_path", "/srv/xczs"),
+                Override::new("/data_dir", "/var/lib/isarmg/xczs"),
+            ],
+            validate_intrinsic,
+        );
+        assert!(result.is_err());
     }
 }

@@ -211,7 +211,7 @@ cargo test --locked --test args -- --list
 
 因此普通集成测试不应写入开发者的真实共享目录。新增测试时优先复用 fixture，不要硬编码 `/srv/xczs`、5000 端口或个人目录。
 
-测试账号和固定密码只属于测试环境。不要把 [fixtures.rs](../../tests/support/fixtures.rs) 中的 PHC、Cookie 处理或账号配置复制到生产配置。
+测试账号和固定密码只属于测试环境。不要把 [fixtures.rs](../../tests/support/fixtures.rs) 中的固定密码或 Cookie 处理复制到生产环境。
 
 ## 8.5 Node 前端单元测试
 

@@ -251,7 +251,7 @@ expected_version="$(
   node "$repository/scripts/release-version.mjs" \
     "$version" "$source_sha" "$repository/Cargo.lock"
 )"
-actual_version="$("$package_root/xczs" --version)"
+actual_version="$("$package_root/bin/xczs" --version)"
 [[ "$actual_version" == "$expected_version" ]] || {
   printf 'Expected packaged version %s; found %s.\n' \
     "$expected_version" "$actual_version" >&2
@@ -261,13 +261,13 @@ actual_version="$("$package_root/xczs" --version)"
   printf 'Formal release package omitted its embedded Web inventory.\n' >&2
   exit 1
 }
-"$package_root/xczs" web-assets | cmp - "$package_root/WEB-ASSETS.json"
+"$package_root/bin/xczs" web-assets | cmp - "$package_root/WEB-ASSETS.json"
 grep -Fxq "source_sha=$source_sha" \
   "$package_root/BUILD-ENVIRONMENT.txt"
 grep -Fxq "source_version=$version" \
   "$package_root/BUILD-ENVIRONMENT.txt"
 
-bash "$project_dir/scripts/check-release-runtime.sh" "$package_root/xczs"
+bash "$project_dir/scripts/check-release-runtime.sh" "$package_root/bin/xczs"
 
 if [[ -n "${XCZS_FORMAL_E2E_EXPORT_DIR:-}" ]]; then
   [[ ! -e "$XCZS_FORMAL_E2E_EXPORT_DIR" ]] || {

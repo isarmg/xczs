@@ -52,12 +52,9 @@ const binary = process.env.XCZS_FRONTEND_BINARY || join(
   "debug",
   "xczs",
 );
-const testPasswordHash =
-  "$argon2id$v=19$m=19456,t=2,p=1$HdPI2G8k0h+yEgnqIt2rSw$P+MRyz7wH+b/iPY+He/9DApcy6yB9TAoo7j2JG1Smzs";
-const testAccounts = [`frontend-test-0:${testPasswordHash}`];
 const authConfig = join(authRoot, "xczs.json");
-const authJson = JSON.stringify({auth:testAccounts});
-writeFileSync(authConfig, authJson, { flag:"wx",mode:0o600 });
+const authJson = JSON.stringify({});
+writeFileSync(authConfig, authJson, { flag: "wx", mode: 0o600 });
 chmodSync(authConfig, 0o600);
 
 mkdirSync(join(shareRoot, "existing-folder"));
@@ -74,27 +71,29 @@ writeFileSync(join(shareRoot, "overwrite-target.txt"), "original content");
 writeFileSync(join(shareRoot, "delete-me.txt"), "delete target");
 
 const runtimeArguments = [
-    "--serve-path",
-    shareRoot,
-    "--bind",
-    "127.0.0.1",
-    "--port",
-    "0",
-    "--min-free-space",
-    "0",
-    "--data-dir",
-    stateRoot,
-    "--config",
-    authConfig,
-  ];
-const initialization = spawnSync(binary,["init",...runtimeArguments],{cwd:projectRoot,stdio:"inherit"});
-if(initialization.status!==0) throw new Error("explicit frontend fixture initialization failed");
-const child = spawn(binary,runtimeArguments,
+  "--serve-path", shareRoot,
+  "--bind", "127.0.0.1:0",
+  "--trusted-proxies", "127.0.0.1/32",
+  "--min-free-space", "0",
+  "--data-dir", stateRoot,
+  "--config", authConfig,
+];
+const initialization = spawnSync(
+  binary,
+  ["init", "--username", "frontend-test-0", ...runtimeArguments],
   {
     cwd: projectRoot,
-    stdio: ["ignore", "pipe", "inherit"],
+    input: "test-password\n",
+    stdio: ["pipe", "inherit", "inherit"],
   },
 );
+if (initialization.status !== 0) {
+  throw new Error("explicit frontend fixture initialization failed");
+}
+const child = spawn(binary, ["run", ...runtimeArguments], {
+  cwd: projectRoot,
+  stdio: ["ignore", "pipe", "inherit"],
+});
 
 let proxyServer;
 let stopping = false;

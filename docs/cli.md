@@ -1,56 +1,55 @@
 # 当前服务命令
 
-所有命令使用同一份当前 JSON 配置：`xczs --config /absolute/config.json --data-dir /absolute/data ...`。配置来源优先级为命令行、明确映射的环境变量、文件、默认值。未知字段、重复字段、错误类型和坏的低优先级配置都会被拒绝；诊断不会打印秘密值。`config validate --json` 中 `sources` 是字段的来源，`schema_identity` 是校验过的当前结构身份，`state_paths` 列出全部私有持久状态的绝对路径。
+所有命令共享当前 JSON 配置；优先级为显式 CLI > `XCZS_*` 环境变量 > JSON > 默认值。每层独立严格校验，不用高优先级值隐藏坏配置。未知字段、重复字段和错误类型被拒绝，诊断不输出秘密。
 
 ```sh
 xczs --help
-xczs --version
-xczs init --config /absolute/config.json --data-dir /absolute/data
-xczs config validate --config /absolute/config.json --data-dir /absolute/data --json
-xczs run --config /absolute/config.json --data-dir /absolute/data
-xczs status --config /absolute/config.json --data-dir /absolute/data --json
+xczs init --config /absolute/config.json --username admin
+xczs config validate --config /absolute/config.json --json
+xczs check --config /absolute/config.json --json
+xczs run --config /absolute/config.json
+xczs status --config /absolute/config.json --json
+xczs admin reset-password --config /absolute/config.json --username admin
 ```
 
-`init` 是创建当前状态库、标签库及已配置管理员私有凭据存储的唯一部署入口，只接受尚未初始化的私有空目录。管理员先在 `auth` 中声明，密码通过 `hash-password` 生成符合当前策略的 Argon2id PHC；`init` 不提供交互创建账号或 `--username` 参数。配置和管理员凭据必须先有效；已有数据不会被覆盖。数据目录应属于服务账号、权限为 `0700`，私有文件权限为 `0600`。Xczs 发行包沿用其编译绑定的发行身份校验，运行命令是 `run`。
+`init` 和 `admin reset-password` 从 stdin 读取密码到 EOF，允许一个末尾换行；推荐 `systemd-ask-password` 或秘密管理器管道。没有配置哈希 bootstrap 或 hash-password 命令。init 只接受新状态，run 不会创建或重置账户。网页内的账号改名/改密仍由统一管理员服务管理，文件 ACL 使用不变的稳定 ID。
 
-`run` 只接受完整的当前数据；缺失数据库、管理员、结构漂移或身份不符均失败，不隐式初始化或重置账号。运行及写入维护命令使用同一个数据目录维护锁；整个运行期间持有实例锁。`.state-maintenance-pending.json` 存在时拒绝运行、初始化或写入维护；只读检查仍可运行。
+`config validate` 仅验证值、来源和配置文件权限，不要求 state/数据库/账号存在，也不写状态。`check` 只读检查当前目录、SQLite 快照、schema 和管理员文件。`status` 查询活动实例，核对服务身份与真实 readiness。维护命令和运行进程互斥；存在维护标记时拒绝运行与写入维护。
 
-`config validate` 用私有 SQLite 快照检验状态库和标签库，并只读验证静态管理员文件；原库、WAL、SHM 和业务文件保持不变。`status` 查询当前监听地址的 `/readyz`，核对服务身份和真实业务就绪；端口占用、其他服务、连接失败或未就绪均返回非零退出码。`--json` 输出单个机器记录；失败返回稳定 `code/message/details` 错误记录。帮助和版本查询不要求初始化。
+## 配置
 
-服务运行时，活动写事务可能使 `config validate --json` 返回 `snapshot.busy`；快照采集前后发生正常数据库提交、WAL 更新或 journal 创建、移除时，可能返回 `snapshot.source_changed`。这两个错误的 `retryable` 为 `true`，本次检查仍以非零退出码结束；应等待写入停止后重新执行原命令，不能据此重置数据。检查仍会拒绝文件身份、权限、链接或结构不符的状态；不能把其他错误一律当成并发写入重试。
+- 全局 `--config` 默认 `/etc/isarmg/xczs/config.json`。隐式默认文件不存在可用 CLI/环境配置；显式文件缺失、权限或格式错误会失败。
+- 配置由服务账号拥有，单硬链接文件 `0600`、父目录 `0700`。
+- `data_dir` 默认 `/var/lib/isarmg/xczs`，是唯一内部状态根。数据库、管理员和日志均放在其中。
+- `serve_path` 必填绝对路径，与状态根互不包含，不默认工作目录。
+- `bind` 是单个 SocketAddr 字符串，默认 `127.0.0.1:5000`；IPv6 示例 `[::1]:5000`。
+- `development` 默认 false，只能配合 loopback HTTP；`--development=false` 可显式覆盖。
+- `trusted_proxies` 默认 []，为 IP/CIDR 字符串数组。只有 socket peer 受信时解析 X-Forwarded-For，从右向左选第一个不受信地址；无效受信链被拒绝。日志、认证限流、审计共享一次解析结果。不用 Forwarded/X-Forwarded-Proto 决定认证来源或协议。
+- `log_level` 默认 info，可选 off/error/warn/info/debug/trace。共享 UTC JSON 日志固定在 `data_dir/logs/xczs.jsonl`，每文件 8 MiB、保留 4 个归档。配置验证和离线检查不打开运行日志。
 
-共享配置、命令、快照与日志均固定到同一 xcss Git 完整提交和精确版本；Web 包使用封存制品的真实 SHA-512 完整性。每次正式发行从这些精确输入独立构建并验证最终制品，源码检查和 Linux 发行物验收分别记录。
-
-Xczs 使用 `serve_path`、`data_dir`、`auth` 等 snake_case JSON 字段；命令行共享根为 `--serve-path /absolute/shared-root`。状态目录与共享根均需完整备份；人工标签、管理员文件和上传/操作状态不可由文件扫描恢复。
-
-`init` 同时创建 `data_dir/logs` 私有目录；`run` 验证该目录后写入共享 JSON 日志。默认单文件上限 8 MiB、保留 4 个归档，总上限 40 MiB。配置和状态命令不打开运行日志文件。
+当前 CLI 不接受独立 port、IP 数组、auth bootstrap 或任意 log_file 路径，也不提供旧格式别名。
 
 ## 环境变量
 
-仅下列 19 个变量映射到运行时配置；未声明的变量不会自动映射。`XCZS_BIND` 和 `XCZS_AUTH` 使用完整 JSON 数组，布尔值使用 `true` / `false`，整数字段使用无符号十进制数。命令行显式参数优先于这些变量，其次是 JSON 文件与默认值；每层的无效值都会使命令失败，不能靠更高层覆盖隐藏错误。
-
-| 环境变量 | 配置字段 | 作用 |
+| 变量 | JSON 字段 | 格式 |
 |---|---|---|
-| `XCZS_SERVE_PATH` | `serve_path` | 指定共享文件根目录，使用绝对路径 |
-| `XCZS_DATA_DIR` | `data_dir` | 指定私有状态目录，使用绝对路径 |
-| `XCZS_DEVELOPMENT` | `development` | 显式选择仅限回环地址的开发 HTTP 模式 |
-| `XCZS_BIND` | `bind` | 指定监听 IP 地址数组，例如 `["127.0.0.1"]` |
-| `XCZS_PORT` | `port` | 指定监听端口 |
-| `XCZS_AUTH` | `auth` | 指定管理员名称和 Argon2id PHC 数组，不使用明文密码 |
-| `XCZS_LOG_FORMAT` | `log_format` | 指定日志记录格式 |
-| `XCZS_LOG_FILE` | `log_file` | 指定日志文件路径 |
-| `XCZS_MAX_UPLOAD_SIZE` | `max_upload_size` | 限制单个上传文件的字节数 |
-| `XCZS_UPLOAD_IDLE_TIMEOUT` | `upload_idle_timeout` | 限制上传正文连续无数据的秒数 |
-| `XCZS_UPLOAD_TOTAL_TIMEOUT` | `upload_total_timeout` | 限制单次上传请求的总秒数 |
-| `XCZS_MAX_CONCURRENT_UPLOADS` | `max_concurrent_uploads` | 限制同时占用上传槽的请求数量 |
-| `XCZS_MIN_FREE_SPACE` | `min_free_space` | 指定共享根需要保留的可用字节数 |
-| `XCZS_MAX_CONNECTIONS` | `max_connections` | 限制并发连接数量 |
-| `XCZS_MAX_SEARCH_ENTRIES` | `max_search_entries` | 限制一次搜索遍历的条目数 |
-| `XCZS_MAX_CONCURRENT_SEARCHES` | `max_concurrent_searches` | 限制同时执行的搜索数量 |
-| `XCZS_REQUEST_TIMEOUT` | `request_timeout` | 限制普通请求总秒数 |
-| `XCZS_TAG_SCAN_INTERVAL_SECONDS` | `tag_scan_interval_seconds` | 指定标签扫描间隔秒数 |
-| `XCZS_MAX_TAG_SCAN_ENTRIES` | `max_tag_scan_entries` | 限制标签扫描遍历的条目数 |
+| XCZS_SERVE_PATH | serve_path | 绝对路径 |
+| XCZS_DATA_DIR | data_dir | 绝对路径 |
+| XCZS_BIND | bind | SocketAddr |
+| XCZS_DEVELOPMENT | development | true/false |
+| XCZS_TRUSTED_PROXIES | trusted_proxies | JSON IP/CIDR 数组 |
+| XCZS_LOG_LEVEL | log_level | 小写级别 |
+| XCZS_LOG_FORMAT | log_format | 访问日志格式 |
+| XCZS_MAX_UPLOAD_SIZE | max_upload_size | 字节整数 |
+| XCZS_UPLOAD_IDLE_TIMEOUT | upload_idle_timeout | 秒整数 |
+| XCZS_UPLOAD_TOTAL_TIMEOUT | upload_total_timeout | 秒整数 |
+| XCZS_MAX_CONCURRENT_UPLOADS | max_concurrent_uploads | 整数 |
+| XCZS_MIN_FREE_SPACE | min_free_space | 字节整数 |
+| XCZS_MAX_CONNECTIONS | max_connections | 整数 |
+| XCZS_MAX_SEARCH_ENTRIES | max_search_entries | 整数 |
+| XCZS_MAX_CONCURRENT_SEARCHES | max_concurrent_searches | 整数 |
+| XCZS_REQUEST_TIMEOUT | request_timeout | 秒整数 |
+| XCZS_TAG_SCAN_INTERVAL_SECONDS | tag_scan_interval_seconds | 秒整数 |
+| XCZS_MAX_TAG_SCAN_ENTRIES | max_tag_scan_entries | 整数 |
 
-部署时优先使用受保护的 JSON 文件保存管理员 PHC；不要把凭据或完整私有配置复制到命令历史和公开日志。`config validate --json` 只读核对有效配置、字段来源和当前状态。修改运行配置后，需要按[运维说明](operations.md)重启服务。
-
-访问日志时间统一输出 UTC RFC3339（`Z`）。`$time_iso8601` 与 `$time_utc` 使用同一 UTC 时刻。文件修改时间与完整扫描时间也显示 UTC。
+源码开发资源目录仅使用 `XCZS_DEV_WEB_DIR`，必须是 unbound 开发构建并显式开启 development；它不是发行包要求。状态检查遇到 snapshot.busy/source_changed 时可等待写入暂停后重试，不要重置数据。

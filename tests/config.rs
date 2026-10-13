@@ -5,10 +5,7 @@ mod utils;
 
 use assert_cmd::prelude::*;
 use assert_fs::TempDir;
-use fixtures::{
-    ADMIN_ACCOUNT, Error, TEST_PASSWORD, TestServer, USER_ACCOUNT, read_bound_url, tmpdir,
-    with_new_upload_headers,
-};
+use fixtures::{Error, TEST_PASSWORD, TestServer, read_bound_url, tmpdir, with_new_upload_headers};
 use predicates::str::contains;
 use reqwest::Method;
 use rstest::rstest;
@@ -26,15 +23,16 @@ fn use_config_file(tmpdir: TempDir) -> Result<(), Error> {
     let state_dir = private_state_dir()?;
     let mut command = Command::new(assert_cmd::cargo::cargo_bin!());
     command
+        .arg("run")
         .arg("--development")
         .arg("--serve-path")
         .arg(tmpdir.path())
-        .arg("-p")
-        .arg("0")
+        .args(["--bind", "127.0.0.1:0"])
         .args(["--min-free-space", "0"])
         .arg("--data-dir")
         .arg(state_dir.path())
         .args(["--config", &config_path]);
+    command.env("XCZS_TEST_INITIAL_USERNAME", "user");
     fixtures::initialize_test_instance(&command);
     let mut child = command.stdout(Stdio::piped()).spawn()?;
 
@@ -81,10 +79,11 @@ fn unknown_config_field_is_rejected(tmpdir: TempDir, #[case] field: &str) -> Res
     let config_path = tmpdir.path().join("unknown-field.json");
     write_private_config(
         &config_path,
-        serde_json::to_vec(&serde_json::json!({"auth":[USER_ACCOUNT],field:true}))?,
+        serde_json::to_vec(&serde_json::json!({field:true}))?,
     )?;
 
     Command::new(assert_cmd::cargo::cargo_bin!())
+        .arg("run")
         .arg("--serve-path")
         .arg(tmpdir.path())
         .args([
@@ -107,11 +106,12 @@ fn unknown_json_log_variable_is_rejected(tmpdir: TempDir) -> Result<(), Error> {
     write_private_config(
         &config_path,
         serde_json::to_vec(
-            &serde_json::json!({"auth":[USER_ACCOUNT],"data_dir":state_dir.path(),"log_format":"$stauts"}),
+            &serde_json::json!({"data_dir":state_dir.path(),"log_format":"$stauts"}),
         )?,
     )?;
     let matches = build_cli().try_get_matches_from([
         "xczs",
+        "run",
         "--serve-path",
         tmpdir.path().to_str().expect("UTF-8 test path"),
         "--config",
@@ -130,28 +130,29 @@ fn unknown_json_log_variable_is_rejected(tmpdir: TempDir) -> Result<(), Error> {
 }
 
 #[rstest]
-fn duplicate_json_bind_address_is_rejected(tmpdir: TempDir) -> Result<(), Error> {
+fn legacy_json_bind_array_is_rejected(tmpdir: TempDir) -> Result<(), Error> {
     let state_dir = private_state_dir()?;
     let config_path = tmpdir.path().join("duplicate-bind.json");
     write_private_config(
         &config_path,
         serde_json::to_vec(
-            &serde_json::json!({"auth":[USER_ACCOUNT],"data_dir":state_dir.path(),"bind":["127.0.0.1","127.0.0.1"]}),
+            &serde_json::json!({"data_dir":state_dir.path(),"bind":["127.0.0.1","127.0.0.1"]}),
         )?,
     )?;
     let matches = build_cli().try_get_matches_from([
         "xczs",
+        "run",
         "--serve-path",
         tmpdir.path().to_str().expect("UTF-8 test path"),
         "--config",
         config_path.to_str().expect("UTF-8 config path"),
     ])?;
 
-    let error = Args::parse(matches).expect_err("duplicate JSON bind address was accepted");
+    let error = Args::parse(matches).expect_err("legacy JSON bind array was accepted");
     let violation = error
         .downcast_ref::<xcss::config::ConfigError>()
-        .expect("duplicate file bind must use the configuration contract");
-    assert_eq!(violation.reason, xcss::config::Reason::InvalidValue);
+        .expect("array bind must use the configuration contract");
+    assert_eq!(violation.reason, xcss::config::Reason::TypeMismatch);
     assert_eq!(violation.source, xcss::config::ConfigSource::File);
     assert_eq!(violation.path, "/bind");
     assert!(!error.to_string().contains("127.0.0.1"));
@@ -160,16 +161,10 @@ fn duplicate_json_bind_address_is_rejected(tmpdir: TempDir) -> Result<(), Error>
 
 #[rstest]
 fn deployment_json_example_parses(tmpdir: TempDir) -> Result<(), Error> {
-    const PLACEHOLDER: &str = "admin:$argon2id$REPLACE_WITH_A_REAL_HASH";
-    const STATE_DIR: &str = "/var/lib/xczs";
+    const STATE_DIR: &str = "/var/lib/isarmg/xczs";
 
-    let example = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("config/xczs.json.example");
+    let example = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("config/config.json.example");
     let template = std::fs::read_to_string(example)?;
-    assert_eq!(
-        template.matches(PLACEHOLDER).count(),
-        1,
-        "deployment account placeholder must occur exactly once"
-    );
     assert_eq!(
         template.matches(STATE_DIR).count(),
         1,
@@ -182,13 +177,13 @@ fn deployment_json_example_parses(tmpdir: TempDir) -> Result<(), Error> {
     std::fs::set_permissions(&state_dir, std::fs::Permissions::from_mode(0o700))?;
     let config_dir = TempDir::new()?;
     let mut rendered: serde_json::Value = serde_json::from_str(&template)?;
-    rendered["auth"] = serde_json::json!([ADMIN_ACCOUNT]);
     rendered["data_dir"] = serde_json::json!(state_dir);
     let rendered = serde_json::to_vec(&rendered)?;
     let config = config_dir.path().join("xczs.json");
     write_private_config(&config, rendered)?;
     let matches = build_cli().try_get_matches_from([
         "xczs",
+        "run",
         "--serve-path",
         tmpdir.path().to_str().expect("UTF-8 test path"),
         "--config",
@@ -198,10 +193,8 @@ fn deployment_json_example_parses(tmpdir: TempDir) -> Result<(), Error> {
 
     assert_eq!(args.serve_path, std::fs::canonicalize(tmpdir.path())?);
     assert_eq!(args.state_dir.as_deref(), Some(state_dir.as_path()));
-    assert_eq!(args.addrs, [std::net::IpAddr::from([127, 0, 0, 1])]);
+    assert_eq!(args.bind, "127.0.0.1:5000".parse().unwrap());
     assert!(!args.development);
-    assert_eq!(args.port, 5000);
-    assert!(args.auth.has_users());
     Ok(())
 }
 
@@ -213,13 +206,12 @@ fn cli_state_dir_overrides_json_state_dir(tmpdir: TempDir) -> Result<(), Error> 
     let config = config_dir.path().join("state-dir.json");
     write_private_config(
         &config,
-        serde_json::to_vec(
-            &serde_json::json!({"auth":[USER_ACCOUNT],"data_dir":json_state_dir.path()}),
-        )?,
+        serde_json::to_vec(&serde_json::json!({"data_dir":json_state_dir.path()}))?,
     )?;
 
     let json_matches = build_cli().try_get_matches_from([
         "xczs",
+        "run",
         "--serve-path",
         tmpdir.path().to_str().expect("UTF-8 test path"),
         "--config",
@@ -230,6 +222,7 @@ fn cli_state_dir_overrides_json_state_dir(tmpdir: TempDir) -> Result<(), Error> 
 
     let cli_matches = build_cli().try_get_matches_from([
         "xczs",
+        "run",
         "--serve-path",
         tmpdir.path().to_str().expect("UTF-8 test path"),
         "--config",
@@ -243,15 +236,13 @@ fn cli_state_dir_overrides_json_state_dir(tmpdir: TempDir) -> Result<(), Error> 
 }
 
 #[test]
-fn deployment_service_provisions_a_private_state_directory() -> Result<(), Error> {
-    let service = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("deploy/xczs.service");
+fn deployment_service_uses_the_single_current_layout() -> Result<(), Error> {
+    let service = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("systemd/xczs.service");
     let service = std::fs::read_to_string(service)?;
-    assert!(service.lines().any(|line| line == "StateDirectory=xczs"));
-    assert!(
-        service
-            .lines()
-            .any(|line| line == "StateDirectoryMode=0700")
-    );
+    assert!(service.lines().any(|line| line == "User=isarmg-xczs"));
+    assert!(service.lines().any(|line| line == "Group=isarmg-xczs"));
+    assert!(service.contains("/opt/isarmg/xczs/bin/xczs"));
+    assert!(service.contains("/etc/isarmg/xczs/config.json"));
     Ok(())
 }
 
@@ -269,12 +260,11 @@ fn state_dir_rejects_configuration_file_collisions(
     let config_path = PathBuf::from(config_path);
     write_private_config(
         &config_path,
-        serde_json::to_vec(
-            &serde_json::json!({"auth":[USER_ACCOUNT],"data_dir":state_dir.path()}),
-        )?,
+        serde_json::to_vec(&serde_json::json!({"data_dir":state_dir.path()}))?,
     )?;
     let matches = build_cli().try_get_matches_from([
         "xczs",
+        "run",
         "--serve-path",
         tmpdir.path().to_str().expect("UTF-8 test path"),
         "--config",
@@ -306,6 +296,10 @@ fn private_state_dir() -> Result<TempDir, Error> {
 }
 
 fn write_private_config(path: &Path, contents: impl AsRef<[u8]>) -> Result<(), Error> {
+    std::fs::set_permissions(
+        path.parent().unwrap(),
+        std::fs::Permissions::from_mode(0o700),
+    )?;
     std::fs::write(path, contents)?;
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))?;
     if let Err(error) = rustix::fs::removexattr(path, "system.posix_acl_access")

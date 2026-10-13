@@ -260,7 +260,6 @@ mod tests {
     use super::*;
     use crate::{
         Args,
-        auth::AuthConfig,
         server::{
             ServerLifecycle,
             operation_registry::{BeginOperation, OperationFingerprint, OperationStatus},
@@ -269,8 +268,6 @@ mod tests {
     use sqlx::Connection as _;
     use std::os::unix::fs::PermissionsExt;
 
-    const TEST_ACCOUNT: &str = "user:$argon2id$v=19$m=19456,t=2,p=1$HdPI2G8k0h+yEgnqIt2rSw$P+MRyz7wH+b/iPY+He/9DApcy6yB9TAoo7j2JG1Smzs";
-
     fn server(root: &Path) -> (Arc<Server>, assert_fs::TempDir) {
         let state_dir = assert_fs::TempDir::new().unwrap();
         std::fs::set_permissions(state_dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -278,7 +275,6 @@ mod tests {
             Args {
                 serve_path: root.to_path_buf(),
                 state_dir: Some(state_dir.path().to_path_buf()),
-                auth: AuthConfig::new(&[TEST_ACCOUNT]).unwrap(),
                 ..Args::default()
             },
             ServerLifecycle::new(),

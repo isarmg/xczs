@@ -7,13 +7,15 @@
 ```sh
 sudo systemctl status xczs --no-pager --full
 sudo journalctl -u xczs -n 100 --no-pager
-sudo -u xczs /opt/xczs/bin/xczs config validate --config /etc/xczs/xczs.json --json
+sudo -u isarmg-xczs /opt/isarmg/xczs/bin/xczs check --config /etc/isarmg/xczs/config.json --json
 ```
+
+`check` 为离线诊断；若服务正在运行，先安排维护窗口正常停服。
 
 | 症状 | 检查 | 正常结果与下一步 |
 |---|---|---|
 | 程序无法执行 | CPU、glibc/加载器、内核 `openat2` | 使用 Linux AMD64 GNU 匹配制品 |
-| 配置校验失败 | 错误字段、文件权限、路径和 ACL | 按[权限要求](operations.md#2-配置和权限)修正后复查 |
+| 配置校验失败 | 错误字段、文件权限、路径和 ACL | 按[权限要求](operations.md#配置和权限)修正后复查 |
 | 状态未初始化 | 所选私有目录和实例来源 | 全新实例执行 `init`；已有实例使用原状态目录 |
 | `snapshot.busy` / `snapshot.source_changed` | 检查期间的正常写入 | 等待写入停止后重试只读校验；保留原状态 |
 | 共享根或 Schema 不匹配 | 程序身份、根 dev/inode、数据库 | 使用同一当前实例的根和状态；停止写入调查其他情况 |

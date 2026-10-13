@@ -1,5 +1,5 @@
 use super::*;
-use crate::{Args, auth::AuthConfig, server::ServerLifecycle};
+use crate::{Args, server::ServerLifecycle};
 use std::os::unix::fs::PermissionsExt;
 use tower::ServiceExt;
 
@@ -8,12 +8,17 @@ async fn relink_preserves_admission_retry_contract() {
     let root = tempfile::tempdir().unwrap();
     let state = tempfile::tempdir().unwrap();
     std::fs::set_permissions(state.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
-    let server = Arc::new(Server::initialize_with_lifecycle_for_test(Args {
-            serve_path: root.path().to_owned(),
-            state_dir: Some(state.path().to_owned()),
-            auth: AuthConfig::new(&["user:$argon2id$v=19$m=19456,t=2,p=1$HdPI2G8k0h+yEgnqIt2rSw$P+MRyz7wH+b/iPY+He/9DApcy6yB9TAoo7j2JG1Smzs"]).unwrap(),
-            ..Args::default()
-        }, ServerLifecycle::new()).unwrap());
+    let server = Arc::new(
+        Server::initialize_with_lifecycle_for_test(
+            Args {
+                serve_path: root.path().to_owned(),
+                state_dir: Some(state.path().to_owned()),
+                ..Args::default()
+            },
+            ServerLifecycle::new(),
+        )
+        .unwrap(),
+    );
     let sample = |path: &str, ino| super::super::db::Sample {
         path: path.into(),
         parent: "".into(),
@@ -188,12 +193,17 @@ async fn deleted_tag_identity_is_not_reused() {
     let root = tempfile::tempdir().unwrap();
     let state = tempfile::tempdir().unwrap();
     std::fs::set_permissions(state.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
-    let server = Arc::new(Server::initialize_with_lifecycle_for_test(Args {
-            serve_path: root.path().to_owned(),
-            state_dir: Some(state.path().to_owned()),
-            auth: AuthConfig::new(&["user:$argon2id$v=19$m=19456,t=2,p=1$HdPI2G8k0h+yEgnqIt2rSw$P+MRyz7wH+b/iPY+He/9DApcy6yB9TAoo7j2JG1Smzs"]).unwrap(),
-            ..Args::default()
-        }, ServerLifecycle::new()).unwrap());
+    let server = Arc::new(
+        Server::initialize_with_lifecycle_for_test(
+            Args {
+                serve_path: root.path().to_owned(),
+                state_dir: Some(state.path().to_owned()),
+                ..Args::default()
+            },
+            ServerLifecycle::new(),
+        )
+        .unwrap(),
+    );
 
     let db = &server.tagging.db;
     let sample = super::super::db::Sample {

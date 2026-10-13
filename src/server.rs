@@ -361,19 +361,26 @@ impl Server {
             .as_ref()
             .is_some_and(|directory| !directory.join("state.sqlite3").exists())
         {
-            Self::initialize(args.clone())?;
+            Self::initialize(args.clone(), "user", "test-password")?;
         }
         Self::init_with_lifecycle(args, lifecycle)
     }
 
     /// Create current product state only at an explicit initialization boundary.
-    pub fn initialize(args: Args) -> Result<()> {
-        let args = args.validate()?;
+    pub fn initialize(args: Args, username: &str, password: &str) -> Result<()> {
+        anyhow::ensure!(
+            args.serve_path.is_absolute(),
+            "serve_path must be an explicitly configured absolute path"
+        );
+        anyhow::ensure!(args.serve_path.is_dir(), "Shared path must be a directory");
+        xcss::admin_auth::require_canonical_administrator_username(username)?;
+        xcss::admin_auth::validate_password(password)?;
         Self::check_reserved_path_conflicts(&args.serve_path)?;
         let directory = args.state_dir.as_ref().context("data_dir is required")?;
-        xcss::server_cli::runtime_allowed(directory).map_err(xcss::server_cli::CliError)?;
         xcss::server_cli::create_empty_private_directory(directory)
             .map_err(xcss::server_cli::CliError)?;
+        let args = args.validate()?;
+        let directory = args.state_dir.as_ref().context("data_dir is required")?;
         let state = xcss::state_file::PrivateStateDirectory::open(directory)?;
         let _maintenance = state.try_maintenance_lock()?;
         xcss::server_cli::runtime_allowed(directory).map_err(xcss::server_cli::CliError)?;
@@ -388,7 +395,24 @@ impl Server {
         tagging::db::Database::initialize(&directory.join("tags.db"), &args.serve_path)?;
         let accounts = xcss::fs_safety::PrivateDirectory::open_existing(directory)?
             .create_child(&xcss::fs_safety::EntryName::new("administrator")?)?;
-        let _administrator = args.auth.administrator_service_with_directory(accounts)?;
+        crate::auth::initialize_administrator(accounts, username, password)?;
+        Ok(())
+    }
+
+    /// Offline administrator recovery; holds the same maintenance boundary as init.
+    pub fn reset_password(args: &Args, username: &str, password: &str) -> Result<()> {
+        xcss::admin_auth::require_canonical_administrator_username(username)?;
+        let hash = xcss::admin_auth::hash_password(password)?;
+        let directory = args.state_dir.as_deref().context("data_dir is required")?;
+        let state = xcss::state_file::PrivateStateDirectory::open(directory)?;
+        let _maintenance = state.try_maintenance_lock()?;
+        xcss::server_cli::runtime_allowed(directory).map_err(xcss::server_cli::CliError)?;
+        Self::validate_current(args)?;
+        let accounts =
+            xcss::fs_safety::PrivateDirectory::open_existing(directory.join("administrator"))?;
+        xcss::admin_static::StaticAdministratorStore::reset_persistent_password(
+            accounts, username, &hash,
+        )?;
         Ok(())
     }
 
@@ -419,11 +443,16 @@ impl Server {
             state_store::RootIdentity { device, inode },
         )?;
         tagging::db::Database::validate_current(&directory.join("tags.db"), &args.serve_path)?;
-        xcss::server_cli::validate_static_administrator_accounts(
-            &directory.join("administrator"),
-            &args.auth.configured_ids(),
-        )
-        .map_err(xcss::server_cli::CliError)?;
+        let account_directory =
+            xcss::fs_safety::PrivateDirectory::open_existing(directory.join("administrator"))?;
+        let accounts = xcss::admin_static::StaticAdministratorStore::load_persistent_accounts(
+            &account_directory,
+            None,
+        )?;
+        anyhow::ensure!(
+            accounts.len() == 1,
+            "Exactly one initialized administrator is required"
+        );
         state_store::expected_schema_identity()
     }
 
@@ -487,7 +516,7 @@ impl Server {
         Self::check_reserved_path_conflicts(&args.serve_path)?;
         // Reject unsafe or forbidden development resource selection before
         // creating administrator state, root locks, or any business database.
-        let development_web = match std::env::var_os("XCSS_DEV_WEB_DIR") {
+        let development_web = match std::env::var_os("XCZS_DEV_WEB_DIR") {
             Some(directory) => {
                 anyhow::ensure!(
                     args.development && env!("XCZS_BUILD_GIT_SHA") == "unbound",
@@ -509,9 +538,7 @@ impl Server {
             &xcss::fs_safety::EntryName::new("administrator-accounts.json")?,
             1024 * 1024,
         )?;
-        let administrator = args
-            .auth
-            .administrator_service_with_directory(account_root)?;
+        let administrator = crate::auth::administrator_service_with_directory(account_root)?;
         let administrator_origin = if args.development {
             xcss::admin_auth::AdministratorOriginMode::LoopbackDevelopmentHttp
         } else {

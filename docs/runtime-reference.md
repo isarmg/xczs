@@ -38,15 +38,15 @@ SQLite 提交与共享根中的 mkdir、rename、文件同步和目录 `fsync` �
 
 ## 请求与网关
 
-仓库内 nginx 示例固定 HTTP/1.1 回源，传递单值 `Host`、`X-Forwarded-For` 和 `X-Forwarded-Proto`，关闭请求重放与缓存，并只对 exact `POST /api/v1/auth/login` 所在 location 使用来源 IP 请求速率、连接数和短正文时限。未知 HTTP Host 由默认 server 拒绝，合法 HTTP server 只跳转到配置中的固定规范 HTTPS 域名；未知 HTTPS SNI/Host 在默认 server 拒绝。Xczs 的内部路由本身也只接受规范 URI，尾斜杠、重复斜杠和非规范百分号编码不会成为另一个登录入口。
+自行管理的 HTTPS 网关应固定规范 Host，关闭写请求重放与缓存，并对登录入口独立设置速率、连接与正文预算。Xczs 不附带代理软件配置。内部路由只接受规范 URI，尾斜杠、重复斜杠和非规范百分号编码不会成为另一个登录入口。
 
-xcss 统一限制登录正文为 16 KiB、读取期限 10 秒、全局 32/每个真实 TCP 来源 4 个读取许可；取消或失败释放许可。失败预算为五分钟内每来源 20 次、每规范账号 10 次，最多两个 Argon2id 计算槽，取得计算槽最多等待两秒。失败预算耗尽返回 `429 auth.rate_limited` 和保守的 `Retry-After: 300`。这些是共享平台政策，不由 Xczs 实现或配置；网关仍须独立按真实客户端 IP 限速。
+xcss 统一限制登录正文为 16 KiB、读取期限 10 秒、全局 32/每个统一解析来源 4 个读取许可；取消或失败释放许可。失败预算为五分钟内每来源 20 次、每规范账号 10 次，最多两个 Argon2id 计算槽，取得计算槽最多等待两秒。失败预算耗尽返回 `429 auth.rate_limited` 和保守的 `Retry-After: 300`。这些是共享平台政策，不由 Xczs 实现或配置；网关仍须独立按真实客户端 IP 限速。
 
-生产模式固定要求 HTTPS Origin，并与唯一规范 Host/URI authority 和 `Sec-Fetch-Site: same-origin` 一致；不读取 Forwarded 或 X-Forwarded-* 来决定认证、scheme 或限流来源。nginx 必须终止 TLS、覆盖 Host 为规范域名，并通过防火墙、网络命名空间或精确 ACL 阻止客户端及不可信本机进程直连后端。仅显式 `--development` 允许 HTTP，且所有监听地址必须为 loopback；不能用于公网部署。
+生产模式固定要求 HTTPS Origin，并与唯一规范 Host/URI authority 和 `Sec-Fetch-Site: same-origin` 一致；不从转发头推导认证协议；`trusted_proxies` 明确受信时，统一 ClientIp 从 X-Forwarded-For 解析客户端 IP，日志与限流共享该值，其他来源忽略该头。HTTPS 网关必须终止 TLS、覆盖 Host 为规范域名，并通过防火墙、网络命名空间或精确 ACL 阻止客户端及不可信本机进程直连后端。仅显式 `--development` 允许 HTTP，且所有监听地址必须为 loopback；不能用于公网部署。
 
 Xczs 的普通文件和 Range 正文没有总时长/最低速率限制，但每个源文件分块的门控等待及读取连续 30 秒未完成会使正文报错，已经取得的分块在套接字连续 30 秒没有写入进展也会关闭连接。两项 idle deadline 独立重置；公网网关仍应设置符合业务容量的响应总时长、最低速率和空闲策略，不能把它们当作完整的慢客户端或总时长防护。
 
-后端必须由主机防火墙或网络 ACL 限制为仅网关可达。回环端口不区分 nginx 和其他本机进程；不可信本机进程必须隔离。TLS 私钥、Cookie、CSRF、完整 PHC 和文件内容不得进入诊断工单或公开日志。
+后端必须由主机防火墙或网络 ACL 限制为仅网关可达。回环端口不区分网关 和其他本机进程；不可信本机进程必须隔离。TLS 私钥、Cookie、CSRF、完整 PHC 和文件内容不得进入诊断工单或公开日志。
 
 ## 健康检查
 

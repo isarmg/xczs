@@ -1,15 +1,14 @@
 use anyhow::{Context, Result, anyhow};
 use log::{error, info, warn};
 use std::{
-    io::{self, Write},
-    net::{IpAddr, SocketAddr},
+    io::{self, Read, Write},
+    net::SocketAddr,
     sync::Arc,
 };
 use xcss::server_runtime::{
     BoundListeners, HttpServer, ProcessSignals, ProductDescriptor, ServerRuntime, health_check,
 };
 use xczs::args::{Args, build_cli};
-use xczs::auth::hash_password;
 use xczs::{logger, server::Server};
 
 fn main() -> std::process::ExitCode {
@@ -74,26 +73,27 @@ async fn run(raw_args: Vec<std::ffi::OsString>) -> Result<()> {
             );
         }
     };
-    if matches.subcommand_matches("hash-password").is_some() {
-        let password = rpassword::prompt_password("Password: ")?;
-        validate_cli_password(&password)?;
-        let confirmation = rpassword::prompt_password("Confirm password: ")?;
-        if password != confirmation {
-            anyhow::bail!("Passwords do not match");
-        }
-        println!("{}", hash_password(&password)?);
-        return Ok(());
-    }
-    let mode = matches.subcommand_name().unwrap_or("run").to_owned();
+    let mode = matches
+        .subcommand_name()
+        .expect("CLI requires a subcommand")
+        .to_owned();
     let json = matches.get_flag("json");
-    let config_path = matches
-        .get_one::<std::path::PathBuf>("config")
-        .map(|path| xczs::args::normalize_config_path(path))
-        .transpose()?;
+    let config_path = xczs::args::selected_config_path(&matches)?;
+    let initial_username = matches
+        .subcommand_matches("init")
+        .and_then(|init| init.get_one::<String>("username"))
+        .cloned();
+    let reset_username = matches
+        .subcommand_matches("admin")
+        .and_then(|admin| admin.subcommand_matches("reset-password"))
+        .and_then(|reset| reset.get_one::<String>("username"))
+        .cloned();
     let args = Args::parse(matches)?;
     match mode.as_str() {
         "init" => {
-            Server::initialize(args)?;
+            let username = initial_username.as_deref().unwrap_or("admin");
+            let password = read_initial_password(std::io::stdin().lock())?;
+            Server::initialize(args, username, &password)?;
             xcss::log::LogRecord::common("xczs", xcss::log::CommonEvent::InitializationCompleted)?
                 .emit_stderr()?;
             println!(
@@ -103,25 +103,34 @@ async fn run(raw_args: Vec<std::ffi::OsString>) -> Result<()> {
             return Ok(());
         }
         "config" => {
-            let schema = Server::validate_current(&args)?;
-            let mut paths = vec![
-                args.state_dir.as_ref().unwrap().clone(),
-                args.serve_path.clone(),
-            ];
-            if let Some(path) = config_path {
-                paths.push(path.canonicalize()?);
-            }
             println!(
                 "{}",
-                serde_json::json!({"status":"valid", "schema_identity":schema, "sources":args.config_sources, "state_paths":paths})
+                serde_json::json!({"status":"valid", "sources":args.config_sources, "config_path":config_path})
             );
             return Ok(());
         }
+        "check" => {
+            let schema = Server::validate_current(&args)?;
+            println!(
+                "{}",
+                serde_json::json!({"status":"valid", "schema_identity":schema, "state_paths":[args.state_dir, args.serve_path]})
+            );
+            return Ok(());
+        }
+        "admin" => {
+            let password = read_initial_password(std::io::stdin().lock())?;
+            Server::reset_password(
+                &args,
+                reset_username.as_deref().unwrap_or("admin"),
+                &password,
+            )?;
+            println!("{}", serde_json::json!({"status":"password_reset"}));
+            return Ok(());
+        }
         "status" => {
-            let report =
-                xcss::server_cli::query_status(SocketAddr::new(args.addrs[0], args.port), "xczs")
-                    .await
-                    .map_err(xcss::server_cli::CliError)?;
+            let report = xcss::server_cli::query_status(args.bind, "xczs")
+                .await
+                .map_err(xcss::server_cli::CliError)?;
             if !report.ready {
                 return Err(xcss::server_cli::CliError(
                     xcss::server_cli::ErrorEnvelope::with_code(
@@ -152,20 +161,16 @@ async fn run_server(args: Args, json: bool) -> Result<()> {
     let _common_lock = directory.try_instance_lock()?;
     xcss::server_cli::runtime_allowed(data_dir).map_err(xcss::server_cli::CliError)?;
     Server::validate_current(&args)?;
-    logger::init(args.log_file.clone(), data_dir)
+    logger::init(data_dir, args.log_level.parse()?)
         .map_err(|e| anyhow!("Failed to init logger, {e}"))?;
     info!(target:"common.config.loaded", "configuration loaded");
     xcss::server_runtime::install_panic_hook();
-    let print_addrs = args.addrs.clone();
     let max_connections = args.max_connections;
     let mut signals = ProcessSignals::install()?;
-    let listeners = BoundListeners::bind(
-        args.addrs
-            .iter()
-            .map(|address| SocketAddr::new(*address, args.port)),
-    )
-    .context("Failed to bind all configured listen addresses")?;
-    let port = listeners.addresses()[0].port();
+    let listeners =
+        BoundListeners::bind([args.bind]).context("Failed to bind configured listen address")?;
+    let bound_address = listeners.addresses()[0];
+    let port = bound_address.port();
     let runtime_handle = tokio::runtime::Handle::current();
     let mut startup = tokio::task::spawn_blocking(move || {
         let _entered = runtime_handle.enter();
@@ -226,7 +231,7 @@ async fn run_server(args: Args, json: bool) -> Result<()> {
     let listening = if json {
         serde_json::json!({"service":"xczs", "state":"listening", "port":port}).to_string() + "\n"
     } else {
-        print_listening(&print_addrs, port)
+        print_listening(bound_address)
     };
     if let Err(error) = write_listening(std::io::stdout().lock(), &listening) {
         warn!("Failed to write listening address to stdout: {error}");
@@ -259,40 +264,56 @@ fn validate_cli_password(password: &str) -> Result<()> {
         .context("Password violates the current administrator policy")
 }
 
-fn print_listening(print_addrs: &[IpAddr], port: u16) -> String {
-    let mut output = String::new();
-    let urls = print_addrs
-        .iter()
-        .map(|addr| {
-            let addr = match addr {
-                IpAddr::V4(_) => format!("{addr}:{port}"),
-                IpAddr::V6(_) => format!("[{addr}]:{port}"),
-            };
-            format!("http://{addr}/")
-        })
-        .collect::<Vec<_>>();
-
-    if urls.len() == 1 {
-        output.push_str(&format!("Listening on {}", urls[0]))
-    } else {
-        let info = urls
-            .iter()
-            .map(|v| format!("  {v}"))
-            .collect::<Vec<String>>()
-            .join("\n");
-        output.push_str(&format!("Listening on:\n{info}\n"))
-    }
-
-    output
+fn print_listening(address: SocketAddr) -> String {
+    format!("Listening on http://{address}/")
 }
 
 fn write_listening(mut output: impl Write, listening: &str) -> io::Result<()> {
     writeln!(output, "{listening}")
 }
 
+fn read_initial_password(mut input: impl std::io::Read) -> Result<String> {
+    let mut bytes = Vec::new();
+    input
+        .by_ref()
+        .take((xcss::admin_auth::PASSWORD_MAX_BYTES + 3) as u64)
+        .read_to_end(&mut bytes)?;
+    if bytes.ends_with(b"\n") {
+        bytes.pop();
+        if bytes.ends_with(b"\r") {
+            bytes.pop();
+        }
+    }
+    let password = String::from_utf8(bytes).context("Password must be UTF-8")?;
+    validate_cli_password(&password)?;
+    Ok(password)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn initial_password_is_bounded_and_accepts_one_line_ending_only() {
+        for input in [
+            "initial-password",
+            "initial-password\n",
+            "initial-password\r\n",
+        ] {
+            assert_eq!(
+                read_initial_password(input.as_bytes()).unwrap(),
+                "initial-password"
+            );
+        }
+        for input in [
+            String::new(),
+            "initial-password\nsecond".into(),
+            "initial-password\n\n".into(),
+            "x".repeat(xcss::admin_auth::PASSWORD_MAX_BYTES + 1),
+        ] {
+            assert!(read_initial_password(input.as_bytes()).is_err());
+        }
+    }
+
     #[test]
     fn cli_password_validation_uses_the_foundation_administrator_policy() {
         assert!(validate_cli_password("").is_err());

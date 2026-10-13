@@ -4,7 +4,7 @@
 
 Xczs 是一个只运行在 Linux AMD64 GNU（`x86_64-unknown-linux-gnu`）上的浏览器文件管理器：服务端把某个目录设为“共享根”，认证后的管理员可以通过网页浏览、搜索、上传、下载、移动、重命名、新建和删除其中的文件。构建与运行环境按这个目标校验。
 
-它采用“一体化二进制”部署：Rust 程序既处理 API，也返回构建时嵌入的 React、xcss CSS 和文件业务 ES modules。React 负责登录及页面结构，认证协议始终复用 xcss。生产环境通常在它前面放置 nginx，负责 TLS 和公网边界。
+它采用“一体化二进制”部署：Rust 程序既处理 API，也返回构建时嵌入的 React、xcss CSS 和文件业务 ES modules。React 负责登录及页面结构，认证协议始终复用 xcss。生产环境通常在它前面放置 HTTPS 网关，负责 TLS 和公网边界。
 
 ## 1.2 用户看到什么
 
@@ -118,7 +118,9 @@ xczs/
 ├── web/                 浏览器页面、样式和原生 ES modules
 │   └── modules/                  列表、操作、上传、API 等前端模块
 ├── config/                       唯一当前源码配置样例
-├── deploy/                       systemd、nginx 与代理头部署样例
+├── systemd/                      普通账号服务单元
+├── libexec/                      安装器内部实现
+├── install.sh                    setup/upgrade 统一入口
 ├── docs/                   设计、取舍、运维和本教学手册
 ├── scripts/                质量门、文档检查、发布打包脚本
 ├── src/                          Rust 库和可执行程序
@@ -131,7 +133,7 @@ xczs/
 └── rust-toolchain.toml           固定 Rust 1.99 工具链
 ```
 
-源码配置一律位于 `config/`，部署资产一律位于 `deploy/`，客户端一律位于 `web/`。生产安装故意使用 `/etc/xczs/xczs.json` 与 `/etc/xczs/tls/`：这是 Linux FHS/证书权限边界，不是仓库目录命名不一致，也不是历史兼容路径。
+源码配置一律位于 `config/`，部署资产一律位于 `systemd/`，客户端一律位于 `web/`。生产安装故意使用 `/etc/isarmg/xczs/config.json` ：这是 Linux FHS/证书权限边界，不是仓库目录命名不一致，也不是历史兼容路径。
 
 ### `src/` 的重点
 

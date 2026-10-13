@@ -68,7 +68,7 @@
 - 登录为何使用 xcss JSON Fetch，而不使用表单提交或 PRG？
 - Cookie 认证与 CSRF 各解决什么？
 - 为什么修改 `login.js` 可能还要更新 CSP 哈希？
-- 应用和 nginx 的登录限流如何叠加？
+- 应用和 HTTPS 网关 的登录限流如何叠加？
 
 ### 第 4 次：目录页面与列表
 
@@ -177,8 +177,8 @@ URI → RoutePath → RootedPath → 根 FD 相对打开 → fstat identity
 - [scripts/check-docs.mjs](../../scripts/check-docs.mjs)；
 - [playwright.config.js](../../playwright.config.js)；
 - [tests/support/fixtures.rs](../../tests/support/fixtures.rs)；
-- [deploy/xczs.service](../../deploy/xczs.service)；
-- [deploy/nginx-xczs.conf](../../deploy/nginx-xczs.conf)；
+- [systemd/xczs.service](../../systemd/xczs.service)；
+- [安装手册](../runtime-package.md)；
 - [docs/operations.md](../operations.md)。
 
 回答：每类错误由哪一层测试最便宜地发现？哪些生产事实无法由单元测试证明，需要部署检查和恢复演练？
@@ -360,7 +360,7 @@ rg "X-Xczs-Upload-Offset" src assets tests
 Access Control List，文件系统的额外访问控制条目。覆盖文件时需要谨慎保留。
 
 **Argon2id**
-面向密码的哈希算法，结合内存和计算成本减慢离线猜测。配置保存 PHC 字符串，不保存明文密码。
+面向密码的哈希算法，结合内存和计算成本减慢离线猜测。私有管理员存储保存 PHC 字符串，配置不保存凭据。
 
 **atomic / 原子**
 外部观察者看到操作完成或未发生，而不是中间一半。原子可见不自动等于掉电持久。

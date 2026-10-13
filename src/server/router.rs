@@ -28,22 +28,27 @@ impl Server {
         self: Arc<Self>,
         handle: xcss::server_runtime::RuntimeHandle,
     ) -> anyhow::Result<tower::util::BoxCloneSyncService<Request, Response, Infallible>> {
-        let router =
-            routes::assemble(self.clone(), handle)?.layer(axum::middleware::from_fn_with_state(
-                "xczs".to_owned(),
-                xcss::server_cli::service_identity_middleware,
-            ));
+        let router = routes::assemble(self.clone(), handle)?;
+        let trusted_proxies =
+            xcss::client_ip::TrustedProxies::parse(&self.content.args.trusted_proxies)?;
         let service = tower::service_fn(move |request| {
             let server = self.clone();
             let router = router.clone();
             async move { server.process_request(request, router).await }
         });
-        let correlated =
-            axum::Router::new()
-                .fallback_service(service)
-                .layer(axum::middleware::from_fn(
-                    xcss::server_cli::request_context_middleware,
-                ));
+        let correlated = axum::Router::new()
+            .fallback_service(service)
+            .layer(axum::middleware::from_fn_with_state(
+                trusted_proxies,
+                xcss::client_ip::middleware,
+            ))
+            .layer(axum::middleware::from_fn_with_state(
+                "xczs".to_owned(),
+                xcss::server_cli::service_identity_middleware,
+            ))
+            .layer(axum::middleware::from_fn(
+                xcss::server_cli::request_context_middleware,
+            ));
         Ok(tower::util::BoxCloneSyncService::new(correlated))
     }
 

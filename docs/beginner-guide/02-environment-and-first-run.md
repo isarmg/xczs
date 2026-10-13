@@ -83,7 +83,7 @@ target/x86_64-unknown-linux-gnu/release/xczs
 内嵌资源清单由 xcss 自动生成，覆盖 native 文件控制器与 React/font/icon/许可证资源；
 TypeScript 检查使用 `noEmit`；运行资源由 Vite 构建到 `web/runtime-dist`。调用 `xczs web-assets` 可查看程序中的精确清单。
 
-开发热更新使用未绑定的开发 binary。设置 `XCSS_DEV_WEB_DIR` 为 `web/runtime-dist` 的绝对路径，并
+开发热更新使用未绑定的开发 binary。设置 `XCZS_DEV_WEB_DIR` 为 `web/runtime-dist` 的绝对路径，并
 显式传入 `--development`。该模式只允许 loopback 监听，资源每次请求重新读取，支持新增 Vite chunk；
 重新 `npm run build:platform` 后不必重新编译 Rust。正式 binary 或没有 `--development` 时，目录
 覆盖在创建管理员账户、根锁及业务数据库之前拒绝。
@@ -112,40 +112,20 @@ printf 'Tutorial root: %s\n' "$tutorial_root"
 
 正式部署时，状态目录应由专用服务账号拥有，并放在共享根之外的稳定磁盘位置。`/tmp` 只适合本章实验。
 
-## 2.5 生成登录密码哈希
+## 2.5 准备初始管理员
 
-执行：
-
-```sh
-target/debug/xczs hash-password
-```
-
-命令会要求输入两次密码，输出形如：
-
-```text
-$argon2id$v=19$m=...$...$...
-```
-
-这是 PHC 格式的 Argon2id 密码哈希，不是原始密码。原始密码必须为 12～1024 个 UTF-8 字节，且不能包含 ASCII 控制字符。
-
-把完整账号值写入 JSON 时建议使用单引号：
-
-```text
-'admin:$argon2id$v=19$...'
-```
-
-冒号左侧是 canonical 管理员 username：3～64 个 lowercase ASCII 字节，首尾为字母数字，中间只允许字母、数字、`.`、`_`、`-`；不能包含 `@`。不要把真实密码、会话 Cookie、CSRF token 或完整生产 PHC 放进 Git、截图或公开日志。
+新实例通过 `init --username admin` 从标准输入读取密码（单行，可带末尾换行），写入受保护的管理员存储。使用安全密码输入或秘密管理器管道，不把密码放进命令参数、JSON、历史或日志。密码遵循公共管理员策略；配置不需要手工 PHC。
 
 ## 2.6 启动最小实例
 
-先复制受保护配置模板，把其中的共享根、状态目录和账号 PHC 替换为本章生成的真实值，再显式初始化状态库并启动：
+先复制受保护配置模板，把其中的共享根、状态目录替换为本章生成的真实值，再显式初始化状态库并启动：
 
 ```sh
-cp config/xczs.json.example "$tutorial_root/xczs.json"
+cp config/config.json.example "$tutorial_root/xczs.json"
 chmod 0600 "$tutorial_root/xczs.json"
-# 用编辑器替换路径、PHC，并为本章的小型临时卷设置 min_free_space: 0
-target/debug/xczs --config "$tutorial_root/xczs.json" init
-target/debug/xczs --config "$tutorial_root/xczs.json"
+# 用编辑器替换路径，并为本章的小型临时卷设置 min_free_space: 0
+target/debug/xczs --config "$tutorial_root/xczs.json" init --username admin
+target/debug/xczs --config "$tutorial_root/xczs.json" run
 ```
 
 `init` 读取并验证这份配置，创建当前状态库及管理员凭据，不启动 HTTP 服务；下一条命令才启动服务。已有当前状态库无需重复初始化，其他版本或身份不匹配的数据库不会被自动迁移。JSON 中的 `min_free_space: 0` 对应 CLI 的 `--min-free-space 0`，只用于很小的临时测试卷，生产应按容量保留余量。
@@ -185,20 +165,12 @@ curl --noproxy '*' --connect-timeout 2 --max-time 10 \
 推荐拓扑是：
 
 ```text
-浏览器 --HTTPS--> nginx --HTTP/1.1 回环连接--> Xczs
+浏览器 --HTTPS--> HTTPS 网关 --HTTP/1.1 回环连接--> Xczs
 ```
 
-nginx 负责：
+自行管理的 HTTPS 网关负责证书、固定可信域名、规范 Host、上传预算和额外限流。程序不绑定代理软件，不附带网关配置。URI 与业务路径规范由 Xczs 校验。
 
-- TLS 证书和 HTTPS；
-- 固定可信域名；
-- 用固定 Host 和受控代理头把请求转发给回环后端；
-- 登录路由的额外速率和连接限制；
-- 大文件请求体与发送超时边界。
-
-URI 和业务路径是否规范由 Xczs 自己校验；nginx 样例不会替后端证明文件路径安全。
-
-仓库提供 [nginx 示例](../../deploy/nginx-xczs.conf) 和 [代理头片段](../../deploy/xczs-proxy.conf)。测试环境则由 [tests/frontend/server.mjs](../../tests/frontend/server.mjs) 建立本地 HTTPS 代理，并在启动后端时显式把 `127.0.0.1/32` 配为受信代理；生产部署必须按真实网关地址设置同一边界。
+隔离测试环境由 [tests/frontend/server.mjs](../../tests/frontend/server.mjs) 建立本地 HTTPS 代理，并显式把 `127.0.0.1/32` 配为受信来源。生产必须按真实网关地址设置 `trusted_proxies`，默认空列表。
 
 不要把测试证书直接用于生产，也不要为了省事删除 `Secure` Cookie 或来源校验。
 
@@ -245,7 +217,7 @@ curl -k --noproxy '*' --connect-timeout 2 --max-time 30 \
 第 2.6 节已经复制了配置模板；若需要重新开始，可再次复制并立即收紧权限：
 
 ```sh
-cp config/xczs.json.example "$tutorial_root/xczs.json"
+cp config/config.json.example "$tutorial_root/xczs.json"
 chmod 0600 "$tutorial_root/xczs.json"
 ```
 
@@ -255,64 +227,56 @@ chmod 0600 "$tutorial_root/xczs.json"
 {
   "serve_path": "/tmp/xczs-learning.ABCDEFGH/shared",
   "data_dir": "/tmp/xczs-learning.ABCDEFGH/state",
-  "bind": [
-    "127.0.0.1"
-  ],
-  "port": 5000,
-  "auth": [
-    "admin:$argon2id$v=19$..."
-  ],
+  "bind": "127.0.0.1:5000",
   "min_free_space": 0
 }
 ```
 
-上面的 `ABCDEFGH` 和 PHC 都是占位符。编辑复制出的 JSON 时必须完成三项替换：把两个路径改成第 2.4 节打印的**同一个真实 `$tutorial_root` 值**，把 `auth` 改成第 2.5 节生成的完整 Argon2id PHC，并为这个临时小卷确认 `min_free_space: 0`。Xczs 不会在 JSON 内展开 shell 变量；保留示例中的 `REPLACE_WITH_A_REAL_HASH` 会因无效认证配置启动失败。
+上面的 `ABCDEFGH` 是占位符，两个路径必须改为第 2.4 节的真实绝对路径。JSON 不展开 shell 变量；临时小卷可设 `min_free_space: 0`，仅本机 HTTP 开发时设置 `development: true`。
 
 若第 2.6 节的服务仍在运行，先在原终端按 `Ctrl+C` 正常停止，再回到保有 `$tutorial_root` 的**同一个 shell**启动；否则另一个 shell 没有这个变量，旧实例也仍占用共享根锁和端口。
 
 启动：
 
 ```sh
-target/debug/xczs --config "$tutorial_root/xczs.json"
+target/debug/xczs --config "$tutorial_root/xczs.json" run
 ```
 
 JSON 采用严格字段校验。写错字段或保留已经删除的旧配置项会直接失败，不会静默忽略。这样会明确暴露不匹配，并能防止操作者误以为某个安全限制仍然生效。
 
-配置覆盖顺序是“内置默认值 → JSON → 19 个显式环境映射 → 命令行显式参数”，各层先独立校验。命令行 `--bind` 整体替换低优先级地址列表；管理员由 JSON 的 `auth` 或完整 JSON 数组形式的 `XCZS_AUTH` 声明，没有管理员 CLI 参数。部署时优先使用受保护的 JSON 保存管理员 PHC。生产使用 HTTPS 网关和绝对路径；仅本机开发才显式启用 `--development`。
-
-配置文件本身必须是不超过 1 MiB 的普通 UTF-8 文件，不能是符号链接、FIFO 或设备。Linux 上只允许 root 或服务 euid 拥有，mode 必须精确为 `0400/0440/0600/0640`；组读模式要求 gid 匹配服务 egid，还要求单硬链接且没有扩展 POSIX access ACL。文件只打开一次，ACL 探测与正文读取使用同一 fd，并在读取前后复核身份、安全属性、大小和修改时间没有变化。生产配置按命令行、19 个显式 `XCZS_*` 环境映射、JSON、默认值的优先级解析，各层均校验。完整映射和字段含义见[命令说明](../cli.md#环境变量)；未知变量不会自动变成配置字段。测试脚本的证书、密钥和测试端口变量只控制测试工具，不属于这些生产映射。
+配置优先级为 CLI > 18 个 `XCZS_*` 环境映射 > JSON > 默认值，每层独立校验。`bind` 为单个含端口 SocketAddr，`serve_path` 必须显式绝对路径。配置文件使用公共只读安全检查：服务账号拥有、单硬链接、`0600` 文件，父目录 `0700`。详细规则见[命令说明](../cli.md)。
 
 ## 2.10 常用配置及默认值
 
-当前默认值由 [src/args.rs](../../src/args.rs) 定义。下表使用 JSON 字段名；命令行参数使用 `--` 前缀并将下划线改为连字符，例如 `serve_path` 对应 `--serve-path`。`auth` 没有对应 CLI 参数，环境映射见[命令说明](../cli.md#环境变量)：
+当前默认值由 [src/args.rs](../../src/args.rs) 定义。下表使用 JSON 字段名；命令行参数使用 `--` 前缀并将下划线改为连字符，例如 `serve_path` 对应 `--serve-path`。环境映射见[命令说明](../cli.md#环境变量)：
 
 | 配置 | 默认值 | 作用 |
 | --- | ---: | --- |
-| `serve_path` | 当前工作目录 `.` | 必须已经存在且是目录的共享根 |
-| `data_dir` | 无，必须显式配置 | 位于共享根之外、权限和属主受校验的持久状态目录 |
-| `auth` | 无账号，启动校验失败 | 至少一个 `user:<argon2id PHC>` 全权限账号 |
-| `bind` | `127.0.0.1` | 监听地址，可重复指定 |
+| `serve_path` | 无，必须显式绝对路径 | 必须已经存在且是目录的共享根 |
+| `data_dir` | `/var/lib/isarmg/xczs` | 位于共享根之外、权限和属主受校验的持久状态目录 |
+| `log_level` | info | UTC 结构化轮转日志级别 |
+| `trusted_proxies` | [] | 明确受信代理 IP/CIDR |
+| `bind` | `127.0.0.1:5000` | 单个监听 SocketAddr |
 | `development` | false | 显式允许 loopback HTTP；所有监听必须为回环地址 |
-| `port` | `5000` | HTTP 后端端口 |
 | `max_upload_size` | 100 GiB | 单文件声明长度上限 |
 | `upload_idle_timeout` | 60 秒 | 上传没有进展的允许时间 |
 | `upload_total_timeout` | 24 小时 | 单次上传流程总时限 |
 | `max_concurrent_uploads` | 4 | 服务端并发上传槽 |
 | `min_free_space` | 1 GiB | 计入预留后的最低可用空间 |
-| `max_connections` | 256 | 所有 listener 共用的连接配额 |
+| `max_connections` | 256 | 单监听器的连接配额 |
 | `max_search_entries` | 10000 | 搜索最多检查的目录项，硬上限 100000 |
 | `max_concurrent_searches` | 2 | 并发目录列表和递归搜索数量 |
 | `request_timeout` | 300 秒 | 非上传请求在产生响应头前的预算；不限制已经开始的流式下载正文总时长 |
 
-`data_dir` 没有可随便接受的默认位置，必须显式配置。数据库文件固定为 `<data_dir>/state.sqlite3`。
+`data_dir` 默认 `/var/lib/isarmg/xczs`；实验必须覆盖为隔离状态目录。数据库文件固定为 `<data_dir>/state.sqlite3`。
 
 ## 2.11 启动时发生了什么
 
 从外到内依次是：
 
 1. [main.rs](../../src/main.rs) 构造 CLI；
-2. 若是 `hash-password` 子命令，生成哈希后退出；
-3. [args.rs](../../src/args.rs) 按默认值、JSON、19 个显式环境变量、CLI 的顺序合并并验证配置；
+2. 分派显式 init/run/config/check/status/admin 子命令；
+3. [args.rs](../../src/args.rs) 按默认值、JSON、18 个显式环境变量、CLI 的顺序合并并验证配置；
 4. 初始化异步日志；
 5. `Server::builder(args).build()` 锚定共享根、打开状态库并组装服务；
 6. 为每个地址创建 TCP listener；
@@ -349,7 +313,7 @@ ss -ltnp | rg ':5000\b'
 
 ### 账号参数解析失败
 
-常见原因是 PHC 没有用单引号包裹、管理员 username 不是 canonical 形式或发生重复，或者哈希不符合 xcss 当前 Argon2id 参数。配置 username 必须是 3～64 个 lowercase ASCII 字节，首尾 alnum、字符仅 `[a-z0-9._-]`；不能写 `@`、空白、Unicode 或首尾分隔符。
+初始化用户名必须符合 xcss canonical 规则：3～64 个 lowercase ASCII 字节，首尾 alnum，字符仅 `[a-z0-9._-]`。密码从 stdin 输入，使用公共密码策略。配置中不填写账户、密码或 PHC。
 
 ### 状态目录权限或位置错误
 

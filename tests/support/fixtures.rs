@@ -26,36 +26,36 @@ pub type Error = Box<dyn std::error::Error>;
 pub const BIN_FILE: &str = "😀.bin";
 pub const TEST_USER: &str = "test-admin";
 pub const TEST_PASSWORD: &str = "test-password";
-pub const TEST_ACCOUNT: &str = "test-admin:$argon2id$v=19$m=19456,t=2,p=1$HdPI2G8k0h+yEgnqIt2rSw$P+MRyz7wH+b/iPY+He/9DApcy6yB9TAoo7j2JG1Smzs";
+pub const TEST_ACCOUNT: &str = "test-admin";
 #[allow(dead_code)]
 pub const UPLOAD_STAGE_DIRECTORY: &str = ".xczs-upload-stages";
 #[allow(dead_code)]
-pub const USER_ACCOUNT: &str = "user:$argon2id$v=19$m=19456,t=2,p=1$HdPI2G8k0h+yEgnqIt2rSw$P+MRyz7wH+b/iPY+He/9DApcy6yB9TAoo7j2JG1Smzs";
+pub const USER_ACCOUNT: &str = "user";
 #[allow(dead_code)]
-pub const ADMIN_ACCOUNT: &str = "admin:$argon2id$v=19$m=19456,t=2,p=1$HdPI2G8k0h+yEgnqIt2rSw$P+MRyz7wH+b/iPY+He/9DApcy6yB9TAoo7j2JG1Smzs";
+pub const ADMIN_ACCOUNT: &str = "admin";
 const SESSION_COOKIE_NAME: &str = "admin-xczs-session";
 const CSRF_HEADER: &str = "x-csrf-token";
 
 #[allow(dead_code)]
-pub struct TestAuthConfig {
+pub struct TestConfig {
     _directory: TempDir,
     path: PathBuf,
 }
 
 #[allow(dead_code)]
-impl TestAuthConfig {
+impl TestConfig {
     pub fn path(&self) -> &Path {
         &self.path
     }
 }
 
 #[allow(dead_code)]
-pub fn test_auth_config(accounts: &[&str]) -> TestAuthConfig {
+pub fn test_config(_accounts: &[&str]) -> TestConfig {
     let directory = TempDir::new().expect("Couldn't create an auth config dir for tests");
     std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     let path = directory.path().join("xczs.json");
-    let contents = serde_json::to_string(&serde_json::json!({ "auth": accounts }))
-        .expect("Couldn't serialize test accounts");
+    let contents =
+        serde_json::to_string(&serde_json::json!({})).expect("Couldn't serialize test accounts");
     let mut file = OpenOptions::new()
         .write(true)
         .create_new(true)
@@ -74,7 +74,7 @@ pub fn test_auth_config(accounts: &[&str]) -> TestAuthConfig {
             "Couldn't remove an inherited auth config ACL: {error}"
         );
     }
-    TestAuthConfig {
+    TestConfig {
         _directory: directory,
         path,
     }
@@ -96,10 +96,12 @@ fn test_binary_command() -> Command {
 }
 
 #[allow(dead_code)]
-pub fn xczs_command(accounts: &[&str]) -> (Command, TestAuthConfig) {
-    let auth_config = test_auth_config(accounts);
+pub fn xczs_command(accounts: &[&str]) -> (Command, TestConfig) {
+    let auth_config = test_config(accounts);
     let mut command = test_binary_command();
     command.arg("--config").arg(auth_config.path());
+    assert_eq!(accounts.len(), 1);
+    command.env("XCZS_TEST_INITIAL_USERNAME", accounts[0]);
     (command, auth_config)
 }
 
@@ -382,7 +384,7 @@ where
         None
     } else {
         let account_refs = accounts.iter().map(String::as_str).collect::<Vec<_>>();
-        Some(test_auth_config(&account_refs))
+        Some(test_config(&account_refs))
     };
     let use_default_auth = auth_config.is_some()
         && accounts.len() == 1
@@ -398,12 +400,15 @@ where
         Some(state_dir)
     };
     let mut command = test_binary_command();
-    command
-        .arg("--serve-path")
-        .arg(tmpdir.path())
-        .arg("-p")
-        .arg("0")
-        .args(&args);
+    command.arg("run");
+    assert_eq!(accounts.len(), 1);
+    command.env("XCZS_TEST_INITIAL_USERNAME", &accounts[0]);
+    command.arg("--serve-path").arg(tmpdir.path()).args(&args);
+    if !args.iter().any(|value| {
+        value == "--bind" || value == "-b" || value.to_string_lossy().starts_with("--bind=")
+    }) {
+        command.args(["--bind", "127.0.0.1:0"]);
+    }
     if development {
         command.arg("--development");
     }
@@ -451,7 +456,7 @@ pub struct TestServer {
     default_session: Option<TestSession>,
     stdout_drain: Option<JoinHandle<()>>,
     automatic_state_dir: Option<TempDir>,
-    auth_config: Option<TestAuthConfig>,
+    auth_config: Option<TestConfig>,
 }
 
 #[allow(dead_code)]
@@ -484,7 +489,7 @@ impl TestServer {
         mut child: Child,
         use_default_auth: bool,
         automatic_state_dir: Option<TempDir>,
-        auth_config: Option<TestAuthConfig>,
+        auth_config: Option<TestConfig>,
     ) -> Self {
         let client = Client::builder()
             .build()
@@ -769,12 +774,12 @@ impl TestServer {
             })
         });
         let mut command = test_binary_command();
+        command.arg("run");
         command
             .arg("--serve-path")
             .arg(self.tmpdir.path())
             .arg("--development")
-            .arg("-p")
-            .arg("0")
+            .args(["--bind", "127.0.0.1:0"])
             .arg("--config")
             .arg(
                 self.auth_config
@@ -890,7 +895,16 @@ pub fn read_bound_url(child: &mut Child) -> Result<Url, Error> {
 #[allow(dead_code)]
 pub fn initialize_test_instance(command: &Command) {
     let mut initialize = Command::new(command.get_program());
-    initialize.arg("init").args(command.get_args());
+    let username = command
+        .get_envs()
+        .find(|(name, _)| *name == "XCZS_TEST_INITIAL_USERNAME")
+        .and_then(|(_, value)| value)
+        .unwrap_or(std::ffi::OsStr::new(TEST_USER));
+    initialize
+        .arg("init")
+        .arg("--username")
+        .arg(username)
+        .args(command.get_args().filter(|value| *value != "run"));
     for (name, value) in command.get_envs() {
         if let Some(value) = value {
             initialize.env(name, value);
@@ -898,8 +912,20 @@ pub fn initialize_test_instance(command: &Command) {
             initialize.env_remove(name);
         }
     }
-    let output = initialize
-        .output()
+    let mut child = initialize
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("start explicit fixture initialization");
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(TEST_PASSWORD.as_bytes())
+        .unwrap();
+    let output = child
+        .wait_with_output()
         .expect("run explicit fixture initialization");
     assert!(
         output.status.success(),

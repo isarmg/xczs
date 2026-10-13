@@ -24,7 +24,7 @@ require cargo
 require git
 require node
 require npm
-require nginx
+require python3
 require stat
 require systemd-analyze
 

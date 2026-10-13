@@ -4,12 +4,12 @@
 
 ## 9.1 一次请求经过哪里
 
-浏览器通过 HTTPS 访问 nginx，nginx 转发给回环地址上的 xczs。xczs 读取共享根的文件，并在私有 SQLite 中记录上传与操作状态。
+浏览器通过 HTTPS 访问网关，网关转发给回环地址上的 xczs。xczs 读取共享根的文件，并在私有 SQLite 中记录上传与操作状态。
 
 ```text
-浏览器 → HTTPS/nginx → 127.0.0.1:5000 xczs
+浏览器 → HTTPS/网关 → 127.0.0.1:5000 xczs
                               ├─ /srv/xczs         共享文件
-                              └─ /var/lib/xczs     私有状态
+                              └─ /var/lib/isarmg/xczs     私有状态
 ```
 
 服务使用专用 Linux 账号。网关负责证书、规范域名与入口限流，应用负责认证、请求校验和文件操作。
@@ -20,27 +20,21 @@
 每个管理员都能管理整个共享根。因此这套模型适合个人、互信家庭成员或所有成员都需要完整权限的小团队。
 用户名用于区分身份和操作归属，目录隔离仍由独立实例、共享根和系统账号提供。
 
-浏览器登录密码保存为 Argon2id PHC。生成方式：
-
-```sh
-/opt/xczs/bin/xczs hash-password
-```
-
-PHC 是可被离线尝试的认证材料，按私有配置保护。浏览器会话使用 Secure、HttpOnly Cookie，写请求同时验证同源条件和 CSRF。
+首次 `init --username admin` 从标准输入读取密码并保存为 Argon2id PHC，后续从私有管理员文件加载。浏览器会话使用 Secure、HttpOnly Cookie，写请求同时验证同源条件和 CSRF。
 完整认证字段及预算集中在[运行参考](../runtime-reference.md#请求与网关)。
 
 ## 9.3 两类目录为什么分开
 
 共享根存放用户文件，状态目录保存操作结果、上传检查点、删除任务、标签和管理员状态。
 状态目录放在共享根之外，由服务用户拥有，权限为 `0700`；私有文件使用 `0600`。
-配置放在共享根之外，以 `root:xczs 0640` 为典型权限，满足单硬链接、无扩展 access ACL 和组身份要求。
+配置放在共享根之外，使用服务账号拥有的 `0600` 文件和 `0700` 父目录。
 
 程序以共享根的设备号与 inode 绑定状态库。它在启动时检查路径、权限和身份，帮助发现挂载错误或把其他实例的状态配到了当前目录。
 已有共享根与状态作为同一实例使用；根绑定不匹配时保留原状态并调查。
 
 ## 9.4 如何选择容量参数
 
-从 [JSON 样例](../../config/xczs.json.example)和[配置参考](../cli.md)开始，按机器容量调整：
+从 [JSON 样例](../../config/config.json.example)和[配置参考](../cli.md)开始，按机器容量调整：
 
 - 上传并发影响磁盘竞争和空间预留。
 - 连接上限影响文件描述符、内存和慢客户端数量。
@@ -52,15 +46,15 @@ PHC 是可被离线尝试的认证材料，按私有配置保护。浏览器会�
 
 ## 9.5 网关如何保护写请求
 
-样例 nginx 使用规范 Host、HTTPS Origin 与固定 HTTP/1.1 回源，关闭写请求重放与代理缓存。
+自行管理的 HTTPS 网关应使用规范 Host、HTTPS Origin 与固定 HTTP/1.1 回源，关闭写请求重放与代理缓存。
 写请求可能已经提交后才发生网络错误，因此网关保留原响应语义，让客户端按原 operation/upload ID 确认结果。
 
-部署在站点根路径。应用路由、Cookie 和同源检查使用这个入口，完整样例见 [deploy](../../deploy)。
+部署在站点根路径。应用路由、Cookie 和同源检查使用这个入口，完整样例见 [安装手册](../runtime-package.md)。
 登录入口的请求大小、连接和速率控制与普通文件传输分别配置；长上传和下载按实际业务时长设置代理预算。
 
 ## 9.6 systemd 管什么
 
-[unit 样例](../../deploy/xczs.service)使用 `User=xczs`、`StateDirectory=xczs` 和受限的可写路径。
+[unit 样例](../../systemd/xczs.service)使用 `User=isarmg-xczs`、`RuntimeDirectory=isarmg/xczs` 和受限的可写路径。
 它管理进程启动、退出与重启，应用自身管理数据库初始化、就绪状态和有界停机。
 
 ```sh
@@ -90,7 +84,7 @@ curl --fail http://127.0.0.1:5000/readyz
 unit 的 `TimeoutStopSec=120s` 提供外层余量，应用的期限独立生效。
 
 维护前停止入口流量，正常停服并等待进程退出。文件系统和 SQLite 分别提交，因此必须同时保留共享根与状态的一致性，尤其是未完成上传、删除和标签。
-`.xczs-upload-stages`、删除 trash 和 `.xczs-quarantine-*` 都有状态含义；隔离对象保留供人工调查。具体范围见[当前数据的一致性](../operations.md#4-当前数据的一致性)。
+`.xczs-upload-stages`、删除 trash 和 `.xczs-quarantine-*` 都有状态含义；隔离对象保留供人工调查。具体范围见[当前数据的一致性](../operations.md#数据一致性与故障)。
 
 ## 9.9 练习：从一次错误回到正常运行
 
@@ -98,7 +92,7 @@ unit 的 `TimeoutStopSec=120s` 提供外层余量，应用的期限独立生效�
 
 1. 保存 `--version` 输出，查看一次成功的 `status --json`。
 2. 用测试文件完成上传、重命名和下载，观察相关 operation ID。
-3. 正常停服，再执行只读 `config validate`，确认仍是同一数据与根身份。
+3. 正常停服，再执行只读 `check`，确认仍是同一数据与根身份。
 4. 重新启动，检查 readiness 和原文件内容。
 
 出现异常时按[故障排查](../troubleshooting.md)定位，记录症状和证据。下一章给出源码路线与术语索引。

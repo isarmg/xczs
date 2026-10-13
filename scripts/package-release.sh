@@ -1227,7 +1227,9 @@ install_release_support_tree() {
   local entry
   local -a entries=(
     config
-    deploy
+    systemd
+    libexec
+    install.sh
     LICENSE-APACHE
     docs/runtime-package.md
   )
@@ -1282,9 +1284,10 @@ verify_release_documentation_layout() {
   for required_path in \
     README.md \
     LICENSE-APACHE \
-    config/xczs.json.example \
-    deploy/xczs.service \
-    deploy/nginx-xczs.conf
+    install.sh \
+    libexec/install.py \
+    config/config.json.example \
+    systemd/xczs.service
   do
     [[ -f "$package_root/$required_path" && \
       ! -L "$package_root/$required_path" ]] || {
@@ -1295,7 +1298,9 @@ verify_release_documentation_layout() {
   done
   [[ "$(stat -Lc '%a' -- "$package_root/README.md")" == "644" && \
     "$(stat -Lc '%a' -- "$package_root/config")" == "755" && \
-    "$(stat -Lc '%a' -- "$package_root/deploy")" == "755" ]] || {
+    "$(stat -Lc '%a' -- "$package_root/systemd")" == "755" && \
+    "$(stat -Lc '%a' -- "$package_root/install.sh")" == "755" && \
+    "$(stat -Lc '%a' -- "$package_root/libexec/install.py")" == "644" ]] || {
     printf 'Release support tree has non-canonical public modes.\n' >&2
     return 1
   }
@@ -1311,11 +1316,11 @@ write_release_web_assets_manifest() {
   # The common actual-binary gate validates this canonical inventory before
   # packaging. Bind the signed copy to the executable that is actually shipped.
   "$release_binary" web-assets > "$manifest" || return 1
-  [[ -s "$manifest" && -f "$package_root/xczs" && \
-    ! -L "$package_root/xczs" ]] || return 1
+  [[ -s "$manifest" && -f "$package_root/bin/xczs" && \
+    ! -L "$package_root/bin/xczs" ]] || return 1
   chmod 0644 "$manifest"
   manifest_checksum="$(sha256sum < "$manifest")" || return 1
-  packaged_checksum="$("$package_root/xczs" web-assets | sha256sum)" || return 1
+  packaged_checksum="$("$package_root/bin/xczs" web-assets | sha256sum)" || return 1
   [[ "$manifest_checksum" == "$packaged_checksum" ]] || {
     printf 'Packaged Web inventory does not match the shipped executable.\n' >&2
     return 1
@@ -3007,7 +3012,8 @@ install -d -m 0755 "$staged_release_directory"
 package_root="$release_stage/package/$release_name"
 install -d -m 0755 "$package_root"
 install_release_support_tree "$release_package_source" "$package_root"
-install -m 0755 "$release_binary" "$package_root/xczs"
+install -d -m 0755 "$package_root/bin"
+install -m 0755 "$release_binary" "$package_root/bin/xczs"
 write_release_web_assets_manifest "$release_binary" "$package_root"
 install -m 0644 "$release_sbom" "$package_root/xczs.cdx.json"
 install -m 0644 \

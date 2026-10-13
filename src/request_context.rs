@@ -16,7 +16,8 @@ pub struct RequestContext {
 impl RequestContext {
     pub fn new<B>(request: &Request<B>, peer: SocketAddr, logger: &HttpLogger) -> Self {
         let mut access_log = logger.data(request);
-        logger.set_runtime_value(&mut access_log, "remote_addr", || peer.ip().to_string());
+        let client_ip = xcss::client_ip::from_extensions(request.extensions()).unwrap_or(peer.ip());
+        logger.set_runtime_value(&mut access_log, "remote_addr", || client_ip.to_string());
         Self {
             peer,
             head_request: request.method() == Method::HEAD,

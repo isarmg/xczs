@@ -520,7 +520,7 @@ fn cross_site_login_and_write_requests_are_rejected(
 }
 
 #[test]
-fn configured_argon2id_account_can_log_in() -> Result<(), Error> {
+fn explicitly_initialized_account_can_log_in() -> Result<(), Error> {
     let server = server(&[] as &[&str], &[USER_ACCOUNT]);
 
     let session = server.login("user", TEST_PASSWORD)?;
@@ -562,7 +562,28 @@ fn running_server_argv_contains_only_the_protected_config_path(
 
 #[test]
 fn invalid_password_hash_is_rejected_at_startup() -> Result<(), Error> {
-    assert_invalid_auth_before_state_creation(&["user:not-an-argon2id-phc"])
+    let shared = assert_fs::TempDir::new()?;
+    let data = assert_fs::TempDir::new()?;
+    std::fs::set_permissions(data.path(), std::fs::Permissions::from_mode(0o700))?;
+    let (mut command, _config) = xczs_command(&[TEST_ACCOUNT]);
+    command
+        .arg("--serve-path")
+        .arg(shared.path())
+        .arg("--data-dir")
+        .arg(data.path());
+    fixtures::initialize_test_instance(&command);
+    let accounts = data
+        .path()
+        .join("administrator/administrator-accounts.json");
+    let mut document: Value = serde_json::from_slice(&std::fs::read(&accounts)?)?;
+    document["accounts"][0]["password_hash"] = json!("not-an-argon2id-phc");
+    std::fs::write(&accounts, serde_json::to_vec(&document)?)?;
+    let before = std::fs::read(&accounts)?;
+    let output = command.arg("run").arg("--json").output()?;
+    assert!(!output.status.success());
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("not-an-argon2id-phc"));
+    assert_eq!(std::fs::read(&accounts)?, before);
+    Ok(())
 }
 
 #[rstest]
@@ -825,7 +846,7 @@ fn authorization_header_does_not_replace_browser_session_authentication(
 }
 
 #[test]
-fn rejects_a_second_configured_administrator() -> Result<(), Error> {
+fn rejects_removed_auth_bootstrap_configuration() -> Result<(), Error> {
     assert_invalid_auth_before_state_creation(&[fixtures::ADMIN_ACCOUNT, USER_ACCOUNT])
 }
 
@@ -868,7 +889,11 @@ fn assert_invalid_auth_before_state_creation(accounts: &[&str]) -> Result<(), Er
     let data_identity = auth_fixture_identity(data_parent.path())?;
     let data_dir = data_parent.path().join("not-created");
     for mode in ["run", "init"] {
-        let (mut command, auth_config) = xczs_command(accounts);
+        let (mut command, auth_config) = xczs_command(&[TEST_ACCOUNT]);
+        std::fs::write(
+            auth_config.path(),
+            serde_json::to_vec(&json!({"auth":accounts}))?,
+        )?;
         let config_before = std::fs::read(auth_config.path())?;
         let config_identity = auth_fixture_identity(auth_config.path())?;
         let config_parent = auth_config.path().parent().unwrap();
@@ -880,7 +905,7 @@ fn assert_invalid_auth_before_state_creation(accounts: &[&str]) -> Result<(), Er
             .arg("--data-dir")
             .arg(&data_dir)
             .env_remove("XCZS_AUTH")
-            .env_remove("XCSS_DEV_WEB_DIR")
+            .env_remove("XCZS_DEV_WEB_DIR")
             .output()?;
         assert_eq!(output.status.code(), Some(1), "mode={mode}");
         assert!(output.stderr.is_empty(), "mode={mode}");
@@ -892,7 +917,7 @@ fn assert_invalid_auth_before_state_creation(accounts: &[&str]) -> Result<(), Er
                 "message": "Configuration does not satisfy the current contract.",
                 "retryable": false,
                 "details": { "violations": [{
-                    "reason": "INVALID_VALUE", "path": "/auth", "source": "file"
+                    "reason": "UNKNOWN_FIELD", "path": "/auth", "source": "file"
                 }] }
             }),
             "mode={mode}"
@@ -927,5 +952,34 @@ fn assert_invalid_auth_before_state_creation(accounts: &[&str]) -> Result<(), Er
             config_parent_identity
         );
     }
+    Ok(())
+}
+
+#[test]
+fn trusted_proxy_errors_keep_request_context() -> Result<(), Error> {
+    let config = fixtures::test_config(&[TEST_ACCOUNT]);
+    std::fs::write(
+        config.path(),
+        json!({"trusted_proxies":["127.0.0.1/32"]}).to_string(),
+    )?;
+    let server = fixtures::server(
+        ["--config", config.path().to_str().unwrap()],
+        [TEST_ACCOUNT],
+    );
+    let response = client_without_redirects()?
+        .get(server.url())
+        .header("x-forwarded-for", "not-an-address")
+        .header("x-request-id", "proxy-contract-test")
+        .send()?;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(response.headers()["x-request-id"], "proxy-contract-test");
+    assert_eq!(response.headers()[CACHE_CONTROL], "no-store");
+    let response = login_response_from(
+        &server,
+        fixtures::TEST_USER,
+        TEST_PASSWORD,
+        Some("192.0.2.8"),
+    )?;
+    assert_eq!(response.status(), StatusCode::OK);
     Ok(())
 }

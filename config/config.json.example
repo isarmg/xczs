@@ -1,13 +1,7 @@
 {
   "serve_path": "/srv/xczs",
-  "data_dir": "/var/lib/xczs",
-  "bind": [
-    "127.0.0.1"
-  ],
-  "port": 5000,
-  "auth": [
-    "admin:$argon2id$REPLACE_WITH_A_REAL_HASH"
-  ],
+  "data_dir": "/var/lib/isarmg/xczs",
+  "bind": "127.0.0.1:5000",
   "log_format": "$time_iso8601 $log_level $remote_addr $remote_user \"$request\" $status operation_id=$operation_id operation_state=$operation_state",
   "max_upload_size": 107374182400,
   "upload_idle_timeout": 60,
@@ -19,5 +13,8 @@
   "max_concurrent_searches": 2,
   "request_timeout": 300,
   "tag_scan_interval_seconds": 3600,
-  "max_tag_scan_entries": 1000000
+  "max_tag_scan_entries": 1000000,
+  "development": false,
+  "log_level": "info",
+  "trusted_proxies": []
 }

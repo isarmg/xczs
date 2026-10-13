@@ -18,17 +18,10 @@ fn production_directory_override_fails_before_persistent_state_changes() -> Resu
     std::fs::set_permissions(state.path(), std::fs::Permissions::from_mode(0o700))?;
     let (mut command, config) = fixtures::xczs_command(&[fixtures::TEST_ACCOUNT]);
     command
-        .env_remove("XCSS_DEV_WEB_DIR")
+        .env_remove("XCZS_DEV_WEB_DIR")
         .arg("--serve-path")
         .arg(root.path())
-        .args([
-            "--bind",
-            "127.0.0.1",
-            "--port",
-            "0",
-            "--min-free-space",
-            "0",
-        ])
+        .args(["--bind", "127.0.0.1:0", "--min-free-space", "0"])
         .arg("--data-dir")
         .arg(state.path());
     fixtures::initialize_test_instance(&command);
@@ -46,7 +39,7 @@ fn production_directory_override_fails_before_persistent_state_changes() -> Resu
     command
         .arg("run")
         .arg("--json")
-        .env("XCSS_DEV_WEB_DIR", root.path());
+        .env("XCZS_DEV_WEB_DIR", root.path());
     let output = command.output()?;
     assert_eq!(output.status.code(), Some(1));
     let envelope: serde_json::Value = serde_json::from_slice(&output.stdout)?;
@@ -55,7 +48,7 @@ fn production_directory_override_fails_before_persistent_state_changes() -> Resu
         envelope["details"]["violations"],
         json!([{
             "reason": "INVALID_VALUE",
-            "path": "/XCSS_DEV_WEB_DIR",
+            "path": "/XCZS_DEV_WEB_DIR",
             "source": "environment"
         }])
     );
@@ -79,7 +72,7 @@ fn production_directory_override_fails_before_persistent_state_changes() -> Resu
             envelope["details"]["violations"],
             json!([{
                 "reason": "INVALID_VALUE",
-                "path": "/XCSS_DEV_WEB_DIR",
+                "path": "/XCZS_DEV_WEB_DIR",
                 "source": "environment"
             }])
         );
@@ -102,7 +95,7 @@ fn production_directory_override_fails_before_persistent_state_changes() -> Resu
         .arg(root.path())
         .args(["--data-dir"])
         .arg(&fresh_state)
-        .env("XCSS_DEV_WEB_DIR", root.path());
+        .env("XCZS_DEV_WEB_DIR", root.path());
     let output = initialize.output()?;
     assert_eq!(output.status.code(), Some(1));
     let envelope: serde_json::Value = serde_json::from_slice(&output.stdout)?;

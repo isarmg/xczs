@@ -476,18 +476,19 @@ EOF
     'printf '\''{"format":"web-assets-v1","files":[]}'\''' \
     > "$web_manifest_source"
   chmod 0755 "$web_manifest_source"
-  install -m 0755 "$web_manifest_source" "$documentation_package/xczs"
+  install -d -m 0755 "$documentation_package/bin"
+  install -m 0755 "$web_manifest_source" "$documentation_package/bin/xczs"
   write_release_web_assets_manifest "$web_manifest_source" "$documentation_package"
   [[ "$(stat -Lc '%a' -- "$documentation_package/WEB-ASSETS.json")" == "644" ]] || {
     printf 'release self-test produced an unsafe Web manifest mode\n' >&2
     return 1
   }
-  printf '%s\n' '#!/usr/bin/env bash' 'printf tampered' > "$documentation_package/xczs"
+  printf '%s\n' '#!/usr/bin/env bash' 'printf tampered' > "$documentation_package/bin/xczs"
   if write_release_web_assets_manifest "$web_manifest_source" "$documentation_package" 2>/dev/null; then
     printf 'release self-test accepted an inventory from another executable\n' >&2
     return 1
   fi
-  install -m 0755 "$web_manifest_source" "$documentation_package/xczs"
+  install -m 0755 "$web_manifest_source" "$documentation_package/bin/xczs"
   write_release_web_assets_manifest "$web_manifest_source" "$documentation_package"
   documentation_sentinel="$documentation_package/config/.release-self-test-sentinel"
   printf 'recursive release checksum sentinel\n' > "$documentation_sentinel"

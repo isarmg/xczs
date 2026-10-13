@@ -1,13 +1,11 @@
 use super::super::ServerLifecycle;
 use super::*;
-use crate::{Args, auth::AuthConfig};
+use crate::Args;
 use std::{
     os::unix::fs::{MetadataExt, PermissionsExt},
     sync::{Arc, mpsc},
     time::Duration as StdDuration,
 };
-
-const TEST_ACCOUNT: &str = "user:$argon2id$v=19$m=19456,t=2,p=1$HdPI2G8k0h+yEgnqIt2rSw$P+MRyz7wH+b/iPY+He/9DApcy6yB9TAoo7j2JG1Smzs";
 
 fn server(root: &Path) -> (Arc<Server>, assert_fs::TempDir) {
     let state_dir = assert_fs::TempDir::new().unwrap();
@@ -17,7 +15,6 @@ fn server(root: &Path) -> (Arc<Server>, assert_fs::TempDir) {
             Args {
                 serve_path: root.to_path_buf(),
                 state_dir: Some(state_dir.path().to_path_buf()),
-                auth: AuthConfig::new(&[TEST_ACCOUNT]).unwrap(),
                 ..Args::default()
             },
             ServerLifecycle::new(),

@@ -9,8 +9,6 @@ use std::{
 };
 use tokio::sync::oneshot;
 
-const TEST_ACCOUNT: &str = "user:$argon2id$v=19$m=19456,t=2,p=1$HdPI2G8k0h+yEgnqIt2rSw$P+MRyz7wH+b/iPY+He/9DApcy6yB9TAoo7j2JG1Smzs";
-
 fn private_state_dir() -> assert_fs::TempDir {
     let state_dir = assert_fs::TempDir::new().unwrap();
     std::fs::set_permissions(state_dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
@@ -21,7 +19,6 @@ fn authenticated_args(serve_path: PathBuf, state_dir: &Path) -> Args {
     let args = Args {
         serve_path,
         state_dir: Some(state_dir.to_path_buf()),
-        auth: crate::auth::AuthConfig::new(&[TEST_ACCOUNT]).unwrap(),
         // General server tests do not exercise the production free-space
         // threshold; keeping it would make readiness depend on host /tmp use.
         min_free_space: 0,
@@ -30,7 +27,8 @@ fn authenticated_args(serve_path: PathBuf, state_dir: &Path) -> Args {
     if !state_dir.join("state.sqlite3").exists()
         && Server::check_reserved_path_conflicts(&args.serve_path).is_ok()
     {
-        Server::initialize(args.clone()).expect("explicit fixture initialization");
+        Server::initialize(args.clone(), "user", "test-password")
+            .expect("explicit fixture initialization");
     }
     args
 }
@@ -658,7 +656,7 @@ fn server_init_rejects_a_non_directory_root() {
         Err(error) => error,
     };
     assert!(
-        format!("{error:#}").contains("Not a directory"),
+        format!("{error:#}").contains("must be a directory"),
         "unexpected error: {error:#}"
     );
 }
@@ -673,11 +671,17 @@ fn server_init_rejects_unvalidated_runtime_limits() {
         Ok(_) => panic!("an invalid library configuration was accepted"),
         Err(error) => error,
     };
-    assert!(error.to_string().contains("max-concurrent-searches"));
+    assert_eq!(
+        error
+            .downcast_ref::<xcss::config::ConfigError>()
+            .unwrap()
+            .path,
+        "/max_concurrent_searches"
+    );
 }
 
 #[tokio::test]
-async fn servers_from_the_same_auth_config_have_isolated_sessions() {
+async fn independently_initialized_servers_have_isolated_sessions() {
     let temp = assert_fs::TempDir::new().unwrap();
     let first_root = temp.path().join("first");
     let second_root = temp.path().join("second");
@@ -685,21 +689,19 @@ async fn servers_from_the_same_auth_config_have_isolated_sessions() {
     std::fs::create_dir(&second_root).unwrap();
     let first_state_dir = private_state_dir();
     let second_state_dir = private_state_dir();
-    let auth = crate::auth::AuthConfig::new(&[TEST_ACCOUNT]).unwrap();
-    let make_server = |auth, serve_path, state_dir: &Path| {
+    let make_server = |serve_path, state_dir: &Path| {
         Server::initialize_with_lifecycle_for_test(
             Args {
                 serve_path,
                 state_dir: Some(state_dir.to_path_buf()),
-                auth,
                 ..Args::default()
             },
             ServerLifecycle::new(),
         )
         .unwrap()
     };
-    let first = make_server(auth.clone(), first_root, first_state_dir.path());
-    let second = make_server(auth, second_root, second_state_dir.path());
+    let first = make_server(first_root, first_state_dir.path());
+    let second = make_server(second_root, second_state_dir.path());
 
     let created = first
         .content
@@ -1342,4 +1344,23 @@ async fn current_directory_page_and_unknown_internal_routes_are_distinct() {
             assert_eq!(problem["code"], "api_endpoint_not_found");
         }
     }
+}
+
+#[test]
+fn explicit_library_init_creates_a_missing_state_directory_without_resetting_accounts() {
+    let root = assert_fs::TempDir::new().unwrap();
+    let parent = private_state_dir();
+    let state = parent.path().join("new-state");
+    let args = Args {
+        serve_path: root.path().to_path_buf(),
+        state_dir: Some(state.clone()),
+        ..Args::default()
+    };
+    assert!(!state.exists());
+    Server::initialize(args.clone(), "user", "test-password").unwrap();
+    Server::validate_current(&args).unwrap();
+    let accounts = state.join("administrator/administrator-accounts.json");
+    let saved = std::fs::read(&accounts).unwrap();
+    assert!(Server::initialize(args, "user", "test-password").is_err());
+    assert_eq!(saved, std::fs::read(accounts).unwrap());
 }

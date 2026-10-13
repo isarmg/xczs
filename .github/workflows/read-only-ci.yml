@@ -57,7 +57,7 @@ jobs:
           release_sensitive=false
           while IFS= read -r -d '' path; do
             case "$path" in
-              .github/workflows/*|deploy/*|config/xczs.yaml.example|\
+              .github/workflows/*|systemd/*|libexec/*|config/*|install.sh|\
               scripts/check-deployment.sh|scripts/check-formal-release-e2e.sh|\
               scripts/check-release.sh|scripts/check-release-runtime.sh|\
               scripts/package-release.sh|scripts/lib/package-release-self-test.sh|\
@@ -239,11 +239,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if ! command -v nginx >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install --no-install-recommends --yes nginx
-          fi
-          nginx -v
+          python3 --version
           systemd-analyze --version | sed -n '1p'
       - name: Run deployment checks
         if: ${{ !cancelled() && steps.quality_source.outcome == 'success' && steps.quality_node.outcome == 'success' && steps.quality_rust.outcome == 'success' && steps.deployment_validator.outcome == 'success' }}

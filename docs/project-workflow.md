@@ -35,7 +35,7 @@
 
 [main.rs](../src/main.rs) 只组装产品和 xcss 的唯一 `serve` 入口，不含产品自建 accept、HTTP 连接或全局信号实现。先绑定全部端口，再构造持久状态；冲突不会修改旧数据。平台认证、健康检查与文件命名空间统一保留 `/healthz`、`/readyz` 和精确 `/api/v1/auth` 子树，但不整体封禁 `/api`。
 
-xcss 的连接许可全地址共享，先等 listener 可读再取许可再 accept；默认连接数来自 Xczs 配置。HTTP/1 请求头 10 秒、缓冲 64 KiB、socket 写入空闲 30 秒。真实对端来自 `ConnectInfo`，缺失时明确失败，不能信任 X-Forwarded-For 代替。流式响应和实际 socket 结束前不会释放连接资源。
+xcss 的连接许可全地址共享，先等 listener 可读再取许可再 accept；默认连接数来自 Xczs 配置。HTTP/1 请求头 10 秒、缓冲 64 KiB、socket 写入空闲 30 秒。真实对端来自 `ConnectInfo`；统一 ClientIp 只在该 peer 匹配 trusted_proxies 时解析 X-Forwarded-For，日志与限流使用相同结果。流式响应和实际 socket 结束前不会释放连接资源。
 
 ## 3. xcss 管理员认证模型
 
@@ -43,22 +43,19 @@ xcss 的连接许可全地址共享，先等 listener 可读再取许可再 acce
 
 ```mermaid
 flowchart TD
-    RAW["受保护 JSON 中的每个 auth 值"] --> SPLIT["按第一个冒号拆分<br/>管理员 username 和 Argon2id PHC"]
-    SPLIT --> USERNAME{"canonical username？<br/>3～64 lowercase ASCII bytes；首尾 alnum；字符 [a-z0-9._-]；禁止 @"}
-    USERNAME -- 否 --> ERROR1["启动失败<br/>只报告配置项序号和错误类型"]
-    USERNAME -- 是 --> DUP{"管理员 username 重复？"}
-    DUP -- 是 --> ERROR2["启动失败"]
-    DUP -- 否 --> PHC{"精确当前 Argon2id：<br/>v19/m19456/t2/p1/salt16/output32？"}
-    PHC -- 否 --> ERROR3["启动失败<br/>不回显完整 PHC"]
-    PHC -- 是 --> STORE["保存 canonical username 与 PHC；不保存 role 字段"]
-    STORE --> FULL["xcss session 固定 role=admin<br/>拥有整个共享根完整能力"]
+    INIT["init --username：stdin 密码"] --> POLICY["xcss 校验用户名与密码"]
+    POLICY --> STORE["私有持久管理员：稳定 ID、登录名、密码哈希"]
+    RUN["显式 run"] --> READ["只读加载已有账户"]
+    STORE --> READ
+    READ --> SESSION["xcss 管理员服务与会话"]
+    SESSION --> ACL["文件 ACL 使用稳定 ID"]
 ```
 
-配置格式固定为 `canonical-admin:$argon2id$...`。canonical username 是 3～64 个小写 ASCII 字节，首尾必须为字母或数字，中间只允许 `[a-z0-9._-]`；`@`、Unicode、ASCII whitespace、控制字符和首尾分隔符均拒绝，相邻分隔符允许。先运行交互式 `xczs hash-password`，再把完整 PHC 写入受保护 JSON；CLI 不定义管理员参数。密码必须为 12–1024 个 UTF-8 字节且不含 ASCII 控制字符。`AuthConfig` 最多接受 1024 个管理员，至少一个是启动条件。Xczs 不读取普通用户、role、path rule 或权限位；所有通过认证的身份都由 xcss session 明确返回 `role: "admin"`。
+管理员仅通过显式 `init --username admin` 从标准输入初始化到私有持久账户。密码及用户名使用 xcss 当前策略；配置不接受账户或 PHC。运行时只读已有账户，网页改名与改密保留稳定 administrator ID，文件 ACL 沿用该 ID。离线维护通过 `admin reset-password`，外层持维护锁。
 
 ### 3.2 登录与单次请求认证
 
-Xczs 的认证唯一所有者是 xcss：受保护 JSON 经 `AuthConfig` 验证后映射为 Static Administrator Store，Hyper Router 接收真实 TCP peer 并处理三个当前认证 API。产品只拥有登录 HTML、响应正文类型适配、HTML 导航重定向和已认证的文件操作归属键，不实现 Session/Cookie/CSRF/密码哈希/登录限流。静态管理员不开放网页新增、改密或停用，配置变化必须重启。
+Xczs 的认证唯一所有者是 xcss。产品从受保护账户文件加载管理员服务，只负责 HTML 适配、已认证文件操作的稳定归属键与 CLI 生命周期，不复制 Session/Cookie/CSRF/密码哈希/登录限流。
 
 三个唯一端点是 POST /api/v1/auth/login、GET /api/v1/auth/session、POST /api/v1/auth/logout。登录只接受恰好 username/password 的 JSON；wire 形状错误为 400，错误凭据为 401。成功返回 authenticated、user_id、username、role=admin、csrf_token 五字段合同。认证和 CSRF 失败统一为 xcss ErrorEnvelope，不按产品路由改写成 Problem Details。
 
@@ -307,7 +304,7 @@ flowchart TD
     JSON --> API_HANDLER["进入 mkdir、move 或 rename handler"]
 ```
 
-会话验证、来源检查和 CSRF 比较位于具体写操作之前。缺失、伪造或来自另一个会话的 `X-CSRF-Token` 返回 `403`，不会创建、追加、移动或删除磁盘对象。服务把每条原始 `Origin`、`Host`、URI authority、`Sec-Fetch-Site` 和 CSRF header 交给 xcss：任何 singleton 缺失/重复/逗号拼接、非规范 scheme/authority、生产 HTTP、非 same-origin 或彼此不一致都失败关闭。外部 scheme 只从匹配显式受信代理的唯一 `X-Forwarded-Proto` 取得。Login API 尚未建立会话，因此不要求 CSRF，但仍要求同一套严格同源、正文前 admission、10 秒时限和严格 JSON；应用上限 16 KiB，生产 nginx 的 exact location 进一步限制为 4 KiB。
+会话验证、来源检查和 CSRF 比较位于具体写操作之前。缺失、伪造或来自另一个会话的 `X-CSRF-Token` 返回 `403`，不会创建、追加、移动或删除磁盘对象。服务把每条原始 `Origin`、`Host`、URI authority、`Sec-Fetch-Site` 和 CSRF header 交给 xcss：任何 singleton 缺失/重复/逗号拼接、非规范 scheme/authority、生产 HTTP、非 same-origin 或彼此不一致都失败关闭。认证协议不从代理头推导。Login API 尚未建立会话，因此不要求 CSRF，但仍要求同一套严格同源、正文前 admission、10 秒时限和严格 JSON；应用上限 16 KiB。
 
 ### 8.2 新建目录
 
@@ -765,7 +762,7 @@ Problem Details 只表示 Xczs 业务 API 失败，不改变成功资源表示�
 
 访问日志只跳过同时满足三个条件的请求：方法是 `GET`、规范化后的路径精确匹配已知内置 JavaScript/CSS/图标、响应状态是 `200`。内置资源的 `HEAD`、未知资源、资源错误，以及页面、健康检查、登录、下载和 API 请求仍照常记录；处理器返回的内部错误也始终记录。访问日志在响应正文流正常结束、返回读取错误或被提前丢弃时才写出；后两种情况使用 ERROR 级别并保留已经发送的实际 HTTP 状态。socket 写入可能发生在正文生产端已经正常结束之后，无法由访问日志正文包装器证明已送达，仍由独立连接错误记录按错误类型和 TCP peer 地址补充诊断。
 
-HTTP 访问日志从动态字段拼接阶段就使用 16 KiB 有界构造器，重复变量不会先形成巨型临时字符串；请求线程只把已经转义为单个物理行、再次经过 16 KiB 入队硬上限的日志放入容量 4096 的有界 channel，不直接写终端或文件。超长 UTF-8 文本会在字符边界截断并只带一个固定标记；自定义日志格式最多 4096 字节和 128 个解析元素，超限配置会阻止启动。未配置日志文件时，INFO/WARN/ERROR 和访问日志共用 stderr 这一条控制台 sink，stdout 仅在启动后输出监听地址；这样单 writer 不会因为先写或刷新 stdout 而阻止错误日志到达 stderr。`--log-file` 使用 `O_NOFOLLOW|O_APPEND|O_NONBLOCK|O_CLOEXEC` 打开，只接受当前服务用户拥有、仅有一个硬链接的普通文件；新文件原子创建并固定为 `0600`，已有文件必须预先就是精确 `0600`，不安全权限保持不变并阻止启动，避免 chmod 无法撤销的既往泄露或预开 fd 写权限。符号链接、异常文件类型、属主不匹配和多硬链接对象同样都会阻止启动。独立写线程批量写入并每 250 ms 刷新；刷新失败保留 dirty 状态，由下个周期或显式 flush 重试，回退诊断 sink 失败也不会 panic writer。队列满时丢弃最新记录，运行中至多每秒输出一次聚合 `dropped_newest` 告警，显式 flush 和退出仍提交累计数。退出边界调用已有日志刷新队列并最多等待 5 秒，不依赖 Tokio blocking pool；xcss 内的第二、第三信号只控制尚未结束的停机阶段。请求 URI、请求头、用户名、连接错误和 handler 错误都经过控制字符转义，认证、Cookie 与 CSRF 头继续脱敏。
+HTTP 访问日志保留 16 KiB 单行、4096 channel、4096 字节格式及 128 元素上限。独立 writer 使用 xcss UTC 结构化日志与轮转，固定输出到 `data_dir/logs/xczs.jsonl`，每份 8 MiB、四个归档；`log_level` 默认 info。队列满丢弃最新记录并聚合告警，退出刷新最多等待 5 秒。Cookie、认证与 CSRF 头继续脱敏。
 
 ### 12.2 分阶段优雅停止流程
 
@@ -809,7 +806,7 @@ flowchart TD
     TEST["./scripts/check.sh（日常开发门）"] --> TOOLCHAIN["rustc --version / cargo --version<br/>确认固定的 1.99.0 工具链"]
     TOOLCHAIN --> RUST["cargo fmt --all --check<br/>cargo clippy -D warnings + 全 targets/features 测试"]
     RELEASE["./scripts/check-release.sh（干净提交发行门）"] --> QUALITY["总行覆盖率、依赖审计、部署、浏览器与打包自测"]
-    TEST --> STATIC["ESLint 浏览器安全规则 + TypeScript strict<br/>Bash 语法/可用时 ShellCheck + Markdown 链接<br/>生产解析器 JSON + systemd/nginx + 发布来源/树自测"]
+    TEST --> STATIC["ESLint 浏览器安全规则 + TypeScript strict<br/>Bash 语法/可用时 ShellCheck + Markdown 链接<br/>生产解析器 JSON + systemd/安装器 + 发布来源/树自测"]
     STATIC --> FRONT["npm run test:frontend"]
     RUST --> ROUTES["HTTP/1、Argon2id 限流、会话、CSRF、health/ready、遍历复核、Range 与上传"]
     ROUTES --> MAINTENANCE["过期 upload DB 行/orphan 扫描、purge outbox/切片、元数据保留<br/>operation 重放/冲突/未知结果回归测试"]
@@ -826,9 +823,9 @@ flowchart TD
 
 `build.rs` 在 Cargo 构建脚本阶段同时要求目标架构 `x86_64`、操作系统 `linux`、环境 `gnu` 和 64 位指针；只有精确 `x86_64-unknown-linux-gnu` 进入应用编译。它还把构建所对应的 Git SHA 写入 `xczs --version`；正式发布脚本显式传入完整 commit SHA，普通源码目录构建则读取当前仓库引用，无法确定时显示 `unknown`。`rust-toolchain.toml` 让 rustup 在仓库目录中自动选择 Rust/rustc/Cargo 1.99.0，并提供 Clippy 与 Rustfmt；`Cargo.toml` 用 `edition = "2024"` 和 `rust-version = "1.99"` 声明源码 edition 与最低 Rust 版本。项目不提供内置 TLS，唯一 Rust 服务端构建与网关后的 HTTP 后端部署一致。
 
-JavaScript 安全门固定使用 ESLint 10.11.0 的核心规则和 `eslint-plugin-no-unsanitized` 4.1.5，检查 authored TypeScript/TSX 编译后的 JavaScript 语法、基础格式、常见动态 HTML 注入、动态执行、原生模态框以及 `fetch`/XHR 模块边界；少量策略单测同时验证常见误用会失败、合法传输模块会通过。规则服务于正常维护中的误用预防，不尝试重建完整跨过程别名和字符串求值器。TypeScript 7.0.2 另以 `strict + noEmit + isolatedModules + verbatimModuleSyntax` 检查 `web/index.ts`、`web/login.ts` 和全部生产模块；外部/解析输入保持为 `unknown` 并经守卫收窄，生产源码不保留显式或隐式 `any`。这不等价于运行时守卫或完整污点证明。统一 Shell 入口在 Git 工作区自动发现 `scripts/` 与 `tests/` 中未忽略的 `.sh` 文件，在已验证且不含 Git 元数据的发行归档中扫描同一目录，并逐个执行 `bash -n`；策略单测覆盖无 Git 元数据的成功与失败路径。本地存在 ShellCheck 时运行 warning 门，缺失时明确跳过且不联网，远程 CI 则固定安装并强制使用 0.11.0。部署门禁除 `systemd-analyze verify`、`nginx -t` 外，还会从包含空格、`&`、`#` 与反斜杠的真实 checkout fixture 读取部署文件；执行 `nginx -t` 前，生产 upstream 与全部 IPv4/IPv6 `80/443` 监听会一一改写为私有 Unix socket，并核对替换数量且拒绝任何网络监听残留，因此非 root runner 无需占用生产端口。随后检查启动隔离 nginx 与 mock upstream，分别验证规范重定向、未知 SNI、合法 SNI 下未知 Host、固定回源头、伪造入站 XFF 被 `$remote_addr` 覆盖、登录别名正文上限，以及连接/请求限制产生 `429` 后恢复 `200`。
+JavaScript 安全门固定使用 ESLint 10.11.0 的核心规则和 `eslint-plugin-no-unsanitized` 4.1.5，检查 authored TypeScript/TSX 编译后的 JavaScript 语法、基础格式、常见动态 HTML 注入、动态执行、原生模态框以及 `fetch`/XHR 模块边界；少量策略单测同时验证常见误用会失败、合法传输模块会通过。规则服务于正常维护中的误用预防，不尝试重建完整跨过程别名和字符串求值器。TypeScript 7.0.2 另以 `strict + noEmit + isolatedModules + verbatimModuleSyntax` 检查 `web/index.ts`、`web/login.ts` 和全部生产模块；外部/解析输入保持为 `unknown` 并经守卫收窄，生产源码不保留显式或隐式 `any`。这不等价于运行时守卫或完整污点证明。统一 Shell 入口在 Git 工作区自动发现 `scripts/` 与 `tests/` 中未忽略的 `.sh` 文件，在已验证且不含 Git 元数据的发行归档中扫描同一目录，并逐个执行 `bash -n`；策略单测覆盖无 Git 元数据的成功与失败路径。本地存在 ShellCheck 时运行 warning 门，缺失时明确跳过且不联网，远程 CI 则固定安装并强制使用 0.11.0。部署门禁验证安装器纯函数、所选配置与 systemd 单元；不安装或启动主机服务。
 
-远程反馈由 `.github/workflows/read-only-ci.yml` 分层执行：静态层运行 Bash/ShellCheck、ESLint、TypeScript 和文档门，Rust 层运行 Rustfmt、Clippy 与全 targets/features 测试，浏览器层分别运行 Chromium 和 Firefox；质量层另跑覆盖率、部署行为、release self-test 与 release binary smoke。主分支推送总是执行质量层；PR 先以完整 base/head 对比分类，普通业务修改保持轻量，部署、打包、工作流或依赖边界变更则执行质量层。质量层的四项检查使用各自的明确前置条件；除运行被取消或自身前置失败外，一项检查失败不会跳过其他独立项。浏览器入口从 Cargo 的结构化构建输出解析本次候选路径，不依赖默认 `target/` 或陈旧二进制。`.github/workflows/dependency-audit.yml` 在依赖清单变更及每周计划任务上运行 RustSec/npm audit，并把 yanked crate 作为失败；`.github/workflows/performance.yml` 仅在人工触发时用 release 构建扫描十万真实目录项，并对首屏 30 秒宽松基线失败关闭；标签工作流先核对精确源码，再由只读任务审计依赖、构建并校验二进制，最后仅由写权限任务复核并发布同次构建的 artifact。`.github/workflows/formal-release-e2e.yml` 可人工触发，以临时 Ed25519 密钥执行完整签名包入口并独立复核；便捷标签发行不等待该扩展验收。这些工作流除最终发布 job 外只有只读权限，checkout 不保留凭据，Action 固定完整 commit SHA；结构化 JSON 策略逐 job 检查权限、依赖和 artifact 来源。所有 Node 任务只接受 26.7.0，仓库的两个权威入口也会在运行时精确验证 `.node-version` 与 `node --version`。Rust 1.99.0、ShellCheck 0.11.0 及下载工具归档摘要也均固定。静态、Rust、浏览器、依赖审计、性能和 release binary 继续使用托管 `ubuntu-24.04`；需要 nginx 1.25.1+ 的质量 job 与正式包 E2E 使用 x64 `ubuntu-26.04`。GitHub 当前把 26.04 标为 preview，调度或镜像回归必须阻断门禁而不能触发旧语法 fallback。各 job 都把实际 `ImageVersion` 和工具版本写入日志。这些矩阵不接触生产签名密钥；正式包 E2E 只在隔离 clone 中创建临时本地 tag，且不能替代发布者对最终远端 tag 的批准。
+远程反馈由 `.github/workflows/read-only-ci.yml` 分层执行：静态层运行 Bash/ShellCheck、ESLint、TypeScript 和文档门，Rust 层运行 Rustfmt、Clippy 与全 targets/features 测试，浏览器层分别运行 Chromium 和 Firefox；质量层另跑覆盖率、部署行为、release self-test 与 release binary smoke。主分支推送总是执行质量层；PR 先以完整 base/head 对比分类，普通业务修改保持轻量，部署、打包、工作流或依赖边界变更则执行质量层。质量层的四项检查使用各自的明确前置条件；除运行被取消或自身前置失败外，一项检查失败不会跳过其他独立项。浏览器入口从 Cargo 的结构化构建输出解析本次候选路径，不依赖默认 `target/` 或陈旧二进制。`.github/workflows/dependency-audit.yml` 在依赖清单变更及每周计划任务上运行 RustSec/npm audit，并把 yanked crate 作为失败；`.github/workflows/performance.yml` 仅在人工触发时用 release 构建扫描十万真实目录项，并对首屏 30 秒宽松基线失败关闭；标签工作流先核对精确源码，再由只读任务审计依赖、构建并校验二进制，最后仅由写权限任务复核并发布同次构建的 artifact。`.github/workflows/formal-release-e2e.yml` 可人工触发，以临时 Ed25519 密钥执行完整签名包入口并独立复核；便捷标签发行不等待该扩展验收。这些工作流除最终发布 job 外只有只读权限，checkout 不保留凭据，Action 固定完整 commit SHA；结构化 JSON 策略逐 job 检查权限、依赖和 artifact 来源。所有 Node 任务只接受 26.7.0，仓库的两个权威入口也会在运行时精确验证 `.node-version` 与 `node --version`。Rust 1.99.0、ShellCheck 0.11.0 及下载工具归档摘要也均固定。静态、Rust、浏览器、依赖审计、性能和 release binary 继续使用托管 `ubuntu-24.04`；质量 job 与正式包 E2E 使用 x64 `ubuntu-26.04`。GitHub 当前把 26.04 标为 preview，调度或镜像回归必须阻断门禁而不能触发旧语法 fallback。各 job 都把实际 `ImageVersion` 和工具版本写入日志。这些矩阵不接触生产签名密钥；正式包 E2E 只在隔离 clone 中创建临时本地 tag，且不能替代发布者对最终远端 tag 的批准。
 
 正式发布脚本只接受干净且由匹配 Cargo 版本的 tag 精确指向的 HEAD。它先从摘要锁定 bare façade 生成并验证目标 commit archive，在没有 `.git` 的私有副本中用 `env -i`、固定 PATH/工具链和独立 HOME、Cargo home/target、npm cache、XDG/tmp 强制运行完整检查。Cargo 依赖先 vendor 后 offline；npm 播种器只从 lockfile 的 HTTPS URL 与 SHA-512 integrity 接受宿主 cache 内容并重新散列，随后 prefer-offline，缺失包与 npm audit 仍可能联网。宿主 RustSec DB 只有在 canonical origin、`HEAD=FETCH_HEAD`、实体 FETCH_HEAD 不得比当前时间早超过 7 天或晚超过 300 秒，并通过物理/Git/内容封存检查时才可复用；alternates、不安全元数据、symlink/submodule/特殊项、untracked 路径以及 tracked 内容/mode 漂移均拒绝。合格数据库以无硬链接私有 clone 封存 revision、fetch epoch、index/config 校验和；不合格、过期或缺失时，在任何项目或依赖代码前用 dummy lockfile 在私有数据库联网刷新。发布入口先执行 `cargo audit --db ... --no-fetch --no-yanked` sealed pre-audit；随后在私有 Cargo home 以 `cargo fetch --locked` 填充完整锁图所需的 crates.io 索引项，再用同一封存运行 `--deny yanked`，避免 cargo-audit 在空索引上只打印“无法检查”却返回成功。完整 `scripts/check-release.sh` 必须通过 `XCZS_QUALITY_AUDIT_DB` 使用同一封存，并在其他项目/依赖步骤前先审计。封存时校验 seal 与新鲜度，pre-audit 和 yanked 检查后重验 seal；完整门禁后重验 seal 与新鲜度，随后销毁质量树和该 RustSec 数据库。该私有 Cargo home 每次全新创建，因此正式打包当前要求 registry 网络可达；宿主缓存不能替代锁图索引项抓取，缺失或抓取失败即失败关闭。门禁后用独立 snapshot index 复验 tracked 内容/mode 和非忽略新增路径，再从 commit fresh extract 进行签名构建。检查后、签名前和发布前继续反复确认 exact source。source revision 只接受完整 40 或 64 位小写十六进制 object ID；签名 key 只允许 Ed25519、Ed448、RSA ≥3072 bit 或 `prime256v1`/`secp384r1`/`secp521r1` ECDSA，弱/未知/非签名算法在产生可发布签名前失败关闭，所有关键 Shell 子命令显式传播失败而不依赖 `errexit` 上下文。
 
@@ -836,7 +833,7 @@ JavaScript 安全门固定使用 ESLint 10.11.0 的核心规则和 `eslint-plugi
 
 自动 CI、部署样例和正式制品验收以 `x86_64-unknown-linux-gnu` 为基线。版本 tag 工作流先以轻量 preflight 核对 tag、Cargo 版本和完整源码身份，再运行正式制品门；构建与核对阶段无写权限，最小写权限阶段只下载指定核对任务产生的 artifact，发布绑定当前版本和源码提交的确定性说明，并回下载核验远端便捷二进制与 SHA-256。
 
-Playwright 为隔离浏览器测试而使用的端口、证书和密钥环境变量只由 Node 测试进程读取；每个测试在测试共享根下创建随机唯一子目录。Node 测试网关只呈现一个客户端地址，并在启动 Xczs 时显式信任 `127.0.0.1/32`，因此浏览器用例固定为单 worker 串行执行，避免无关用例的登录并发争抢生产全局/来源令牌桶；失败时仍进行一次诊断重试。配置同时启用 `failOnFlakyTests: true`，所以首轮失败、重试通过仍会使质量门失败，重试只用于保留诊断 trace。覆盖多次 Argon2 登录、注销和 Cookie 重放的复合认证场景单独标记为 slow test，扩展的只是该 Playwright 场景总预算，不改变登录正文、计算 admission 或其他产品 deadline。Node 在外部测试端口提供 HTTPS，并把请求代理到 Xczs 动态回环 HTTP 端口。仓库中的固定测试私钥是公开的 localhost 测试材料，绝不能部署为生产网关密钥。这些测试通过显式命令行参数启动本次 Xczs 实例，所用证书、密钥和测试端口变量不属于生产环境映射。生产配置支持的 19 个显式映射及其优先级见[命令说明](cli.md#环境变量)，不能将测试工具变量与运行时配置混为一谈。
+Playwright 为隔离浏览器测试而使用的端口、证书和密钥环境变量只由 Node 测试进程读取；每个测试在测试共享根下创建随机唯一子目录。Node 测试网关只呈现一个客户端地址，并在启动 Xczs 时显式信任 `127.0.0.1/32`，因此浏览器用例固定为单 worker 串行执行，避免无关用例的登录并发争抢生产全局/来源令牌桶；失败时仍进行一次诊断重试。配置同时启用 `failOnFlakyTests: true`，所以首轮失败、重试通过仍会使质量门失败，重试只用于保留诊断 trace。覆盖多次 Argon2 登录、注销和 Cookie 重放的复合认证场景单独标记为 slow test，扩展的只是该 Playwright 场景总预算，不改变登录正文、计算 admission 或其他产品 deadline。Node 在外部测试端口提供 HTTPS，并把请求代理到 Xczs 动态回环 HTTP 端口。仓库中的固定测试私钥是公开的 localhost 测试材料，绝不能部署为生产网关密钥。这些测试通过显式命令行参数启动本次 Xczs 实例，所用证书、密钥和测试端口变量不属于生产环境映射。生产配置支持的 18 个显式映射及其优先级见[命令说明](cli.md#环境变量)，不能将测试工具变量与运行时配置混为一谈。
 
 `src/server/maintenance.rs` 的 claim 单测验证 maintenance marker 保持清理排他性但不会跨文件系统 I/O 持有 registry mutex；`src/server/upload/tests.rs` 还验证等待 marker 同时遵守上传 deadline 和 force-shutdown。维护集成测试继续覆盖过期 session/trash 删除、活跃项跳过以及符号链接别名映射，确认实现没有在扫描开始时复制一份可能过期的 active 快照。
 

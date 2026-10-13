@@ -490,21 +490,16 @@ fn malformed_http_connection_produces_a_safe_structured_warning(
     tmpdir: TempDir,
 ) -> Result<(), Error> {
     let _test_guard = serialize_http_logger_test();
-    let log_dir = TempDir::new()?;
-    std::fs::set_permissions(log_dir.path(), std::fs::Permissions::from_mode(0o700))?;
-    let log_file = log_dir.path().join("connection.log");
     let state_dir = private_state_dir()?;
+    let log_file = state_dir.path().join("logs/xczs.jsonl");
     let (mut command, _auth_config) = xczs_command(&[TEST_ACCOUNT]);
+    command.arg("run");
     command
         .arg("--serve-path")
         .arg(tmpdir.path())
-        .arg("-p")
-        .arg("0")
-        .args(["--bind", "127.0.0.1"])
+        .args(["--bind", "127.0.0.1:0"])
         .arg("--data-dir")
         .arg(state_dir.path())
-        .arg("--log-file")
-        .arg(&log_file)
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
     fixtures::initialize_test_instance(&command);
@@ -559,16 +554,15 @@ fn startup_failure_is_written_and_flushed_to_the_configured_log(
     let state_dir = private_state_dir()?;
     let log_dir = TempDir::new()?;
     std::fs::set_permissions(log_dir.path(), std::fs::Permissions::from_mode(0o700))?;
-    let log_file = log_dir.path().join("startup.log");
+    let log_file = state_dir.path().join("logs/xczs.jsonl");
     let (mut command, _auth_config) = xczs_command(&[TEST_ACCOUNT]);
+    command.arg("run");
     command
         .arg("--serve-path")
         .arg(tmpdir.path())
         .arg("--data-dir")
         .arg(state_dir.path())
-        .args(["--bind", "20.205.243.166", "--port", "0"])
-        .arg("--log-file")
-        .arg(&log_file);
+        .args(["--bind", "20.205.243.166:0"]);
     fixtures::initialize_test_instance(&command);
     command
         .assert()
@@ -606,12 +600,12 @@ fn spawn_logged_server_with_accounts(
 ) -> Result<(Child, u16, TempDir), Error> {
     let state_dir = private_state_dir()?;
     let (mut command, _auth_config) = xczs_command(accounts);
+    command.arg("run");
     command
         .arg("--development")
         .arg("--serve-path")
         .arg(tmpdir.path())
-        .arg("-p")
-        .arg("0")
+        .args(["--bind", "127.0.0.1:0"])
         .args(args)
         .arg("--data-dir")
         .arg(state_dir.path())
@@ -687,14 +681,8 @@ fn stop_and_read(child: &mut Child) -> Result<String, Error> {
         .collect::<Vec<_>>();
     let log_path = arguments
         .windows(2)
-        .find(|pair| pair[0] == "--log-file")
-        .map(|pair| std::path::PathBuf::from(&pair[1]))
-        .or_else(|| {
-            arguments
-                .windows(2)
-                .find(|pair| pair[0] == "--data-dir")
-                .map(|pair| std::path::PathBuf::from(&pair[1]).join("logs/xczs.jsonl"))
-        })
+        .find(|pair| pair[0] == "--data-dir")
+        .map(|pair| std::path::PathBuf::from(&pair[1]).join("logs/xczs.jsonl"))
         .ok_or("logged fixture is missing its persistent log path")?;
     let status = Command::new("kill")
         .args(["-TERM", &child.id().to_string()])

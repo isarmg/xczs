@@ -24,14 +24,14 @@ fn private_state_dir() -> Result<TempDir, Error> {
     Ok(state_dir)
 }
 #[rstest]
-#[case(&["-b", "20.205.243.166"])]
+#[case(&["-b", "20.205.243.166:0"])]
 fn bind_fails(tmpdir: TempDir, #[case] args: &[&str]) -> Result<(), Error> {
     let state_dir = private_state_dir()?;
     let (mut command, _auth_config) = xczs_command(&[TEST_ACCOUNT]);
+    command.arg("run");
     command
         .arg("--serve-path")
         .arg(tmpdir.path())
-        .args(["-p", "0"])
         .arg("--data-dir")
         .arg(state_dir.path())
         .args(args);
@@ -45,23 +45,25 @@ fn bind_fails(tmpdir: TempDir, #[case] args: &[&str]) -> Result<(), Error> {
 }
 
 #[rstest]
-fn later_bind_failure_does_not_initialize_persistent_state(tmpdir: TempDir) -> Result<(), Error> {
+fn invalid_multiple_bind_input_does_not_initialize_persistent_state(
+    tmpdir: TempDir,
+) -> Result<(), Error> {
     let state_dir = private_state_dir()?;
     let (mut command, _auth_config) = xczs_command(&[TEST_ACCOUNT]);
+    command.arg("run");
     command
         .arg("--serve-path")
         .arg(tmpdir.path())
-        .args(["-p", "0"])
         .arg("--data-dir")
         .arg(state_dir.path())
-        .args(["--bind", "127.0.0.1", "--bind", "20.205.243.166"])
+        .args(["--bind", "127.0.0.1:0", "--bind", "20.205.243.166:0"])
         .assert()
-        .stderr(predicates::str::contains("current_state_invalid"))
+        .stderr(predicates::str::contains("invalid_cli_input"))
         .failure();
 
     assert!(
         !state_dir.path().join("state.sqlite3").exists(),
-        "a later bind failure must not initialize persistent state"
+        "invalid listener input must not initialize persistent state"
     );
     Ok(())
 }
@@ -71,6 +73,7 @@ fn later_bind_failure_does_not_initialize_persistent_state(tmpdir: TempDir) -> R
 #[case("localhost")]
 fn non_ip_bind_is_rejected(tmpdir: TempDir, #[case] bind: &str) -> Result<(), Error> {
     let (mut command, _auth_config) = xczs_command(&[TEST_ACCOUNT]);
+    command.arg("run");
     command
         .arg("--serve-path")
         .arg(tmpdir.path())
@@ -84,9 +87,8 @@ fn non_ip_bind_is_rejected(tmpdir: TempDir, #[case] bind: &str) -> Result<(), Er
 
 #[rstest]
 #[case(server(&[] as &[&str], &[TEST_ACCOUNT]), true, false)]
-#[case(production_server(&["-b", "0.0.0.0"], &[ADMIN_ACCOUNT]), true, false)]
-#[case(production_server(&["-b", "127.0.0.1", "-b", "::"], &[ADMIN_ACCOUNT]), true, true)]
-#[case(server(&["-b", "127.0.0.1", "-b", "::1"], &[TEST_ACCOUNT]), true, true)]
+#[case(production_server(&["-b", "0.0.0.0:0"], &[ADMIN_ACCOUNT]), true, false)]
+#[case(server(&["-b", "[::1]:0"], &[ADMIN_ACCOUNT]), false, true)]
 fn bind_ipv4_ipv6(
     #[case] server: TestServer,
     #[case] bind_ipv4: bool,
@@ -107,12 +109,10 @@ fn bind_ipv4_ipv6(
 // These listener-only tests use a valid non-default account so the fixture
 // does not spend the sole connection permit on its automatic setup login.
 #[rstest]
-fn idle_listener_does_not_starve_another_bind_when_connection_limit_is_one(
+fn sequential_requests_release_the_single_connection_permit(
     #[with(&[
         "--bind",
-        "127.0.0.1",
-        "--bind",
-        "127.0.0.2",
+        "127.0.0.1:0",
         "--max-connections",
         "1",
     ], &[ADMIN_ACCOUNT])]
@@ -122,7 +122,7 @@ fn idle_listener_does_not_starve_another_bind_when_connection_limit_is_one(
         .no_proxy()
         .timeout(Duration::from_secs(2))
         .build()?;
-    for address in ["127.0.0.1", "127.0.0.2"] {
+    for address in ["127.0.0.1", "127.0.0.1"] {
         let response = client
             .get(format!("http://{address}:{}/healthz", server.port()))
             .header("connection", "close")
@@ -133,12 +133,10 @@ fn idle_listener_does_not_starve_another_bind_when_connection_limit_is_one(
 }
 
 #[rstest]
-fn connection_limit_bounds_userspace_sockets_across_multiple_binds(
+fn connection_limit_bounds_userspace_sockets(
     #[with(&[
         "--bind",
-        "127.0.0.1",
-        "--bind",
-        "127.0.0.2",
+        "127.0.0.1:0",
         "--max-connections",
         "1",
     ], &[ADMIN_ACCOUNT])]
@@ -146,13 +144,13 @@ fn connection_limit_bounds_userspace_sockets_across_multiple_binds(
 ) -> Result<(), Error> {
     let pid = server.process_id();
     let baseline = socket_fd_count(pid)?;
-    assert!(baseline >= 2, "the fixture did not expose both listeners");
+    assert!(baseline >= 1, "the fixture did not expose its listener");
 
     let held = TcpStream::connect(("127.0.0.1", server.port()))?;
     wait_for_socket_fd_count(pid, baseline + 1)?;
 
     let mut queued_first = TcpStream::connect(("127.0.0.1", server.port()))?;
-    let mut queued_second = TcpStream::connect(("127.0.0.2", server.port()))?;
+    let mut queued_second = TcpStream::connect(("127.0.0.1", server.port()))?;
     sleep(Duration::from_millis(200));
     assert_eq!(
         socket_fd_count(pid)?,
@@ -217,12 +215,12 @@ fn wait_for_socket_fd_count(pid: u32, expected: usize) -> Result<(), Error> {
 fn validate_printed_url(tmpdir: TempDir) -> Result<(), Error> {
     let state_dir = private_state_dir()?;
     let (mut command, _auth_config) = xczs_command(&[TEST_ACCOUNT]);
+    command.arg("run");
     command
         .arg("--development")
         .arg("--serve-path")
         .arg(tmpdir.path())
-        .arg("-p")
-        .arg("0")
+        .args(["--bind", "127.0.0.1:0"])
         .arg("--data-dir")
         .arg(state_dir.path())
         .stdout(Stdio::piped());
@@ -249,11 +247,12 @@ fn closed_stdout_does_not_abort_the_server(tmpdir: TempDir) -> Result<(), Error>
 
     let state_dir = private_state_dir()?;
     let (mut command, _auth_config) = xczs_command(&[TEST_ACCOUNT]);
+    command.arg("run");
     command
         .arg("--serve-path")
         .arg(tmpdir.path())
-        .arg("--port")
-        .arg(port.to_string())
+        .arg("--bind")
+        .arg(format!("127.0.0.1:{port}"))
         .arg("--data-dir")
         .arg(state_dir.path())
         .stdout(Stdio::piped())

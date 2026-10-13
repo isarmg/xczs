@@ -30,7 +30,7 @@
 | 6 | [前端页面与交互](06-frontend-guide.md) | 页面如何启动、加载列表、显示固定操作列和刷新状态 |
 | 7 | [上传协议逐步拆解](07-upload-protocol.md) | 预检、PUT、PATCH、覆盖确认、断点续传和故障恢复 |
 | 8 | [测试、调试与安全改动](08-testing-debugging-and-change-workflow.md) | 如何运行检查、定位问题、写测试并完成一次低风险修改 |
-| 9 | [部署、安全与日常运维](09-deployment-security-and-operations.md) | nginx、systemd、健康检查、运行诊断与数据保护 |
+| 9 | [部署、安全与日常运维](09-deployment-security-and-operations.md) | HTTPS 网关、systemd、健康检查、运行诊断与数据保护 |
 | 10 | [源码阅读路线与术语表](10-reading-roadmap-and-glossary.md) | 分阶段读源码、练习、常见问题和术语速查 |
 
 如果只想完成某个任务，也可以走短路线：
@@ -64,7 +64,7 @@
 ```mermaid
 flowchart LR
     U[用户] --> B[浏览器页面]
-    B -->|HTTPS| G[nginx 网关]
+    B -->|HTTPS| G[HTTPS 网关]
     G -->|HTTP/1.1| R[Rust / Hyper 服务]
     R --> A[认证、路由与业务模块]
     A --> F[共享根目录]

@@ -1,8 +1,6 @@
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
-use xczs::{Args, auth::AuthConfig, server::Server};
-
-const TEST_ACCOUNT: &str = "user:$argon2id$v=19$m=19456,t=2,p=1$HdPI2G8k0h+yEgnqIt2rSw$P+MRyz7wH+b/iPY+He/9DApcy6yB9TAoo7j2JG1Smzs";
+use xczs::{Args, server::Server};
 
 fn private_state_dir() -> assert_fs::TempDir {
     let state_dir = assert_fs::TempDir::new().expect("create temporary state directory");
@@ -17,13 +15,13 @@ fn authenticated_args(root: &Path, state_dir: &Path) -> Args {
             .canonicalize()
             .expect("canonicalize temporary shared root"),
         state_dir: Some(state_dir.to_path_buf()),
-        auth: AuthConfig::new(&[TEST_ACCOUNT]).expect("create test account"),
         ..Args::default()
     };
     if !state_dir.join("state.sqlite3").exists()
         && Server::check_reserved_path_conflicts(&args.serve_path).is_ok()
     {
-        Server::initialize(args.clone()).expect("explicit fixture initialization");
+        Server::initialize(args.clone(), "user", "test-password")
+            .expect("explicit fixture initialization");
     }
     args
 }

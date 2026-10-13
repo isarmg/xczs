@@ -86,8 +86,7 @@ fn signal_drains_an_active_download_and_stops_accepting(
         .arg("--development")
         .arg("--serve-path")
         .arg(temp.path())
-        .args(["--bind", "127.0.0.1"])
-        .args(["--port", "0"])
+        .args(["--bind", "127.0.0.1:0"])
         .arg("--data-dir")
         .arg(state_dir.path());
     initialize_test_instance(&command);
@@ -170,8 +169,7 @@ fn shutdown_deadline_checkpoints_a_stalled_upload_before_exit() -> Result<(), Bo
         .arg("--development")
         .arg("--serve-path")
         .arg(temp.path())
-        .args(["--bind", "127.0.0.1"])
-        .args(["--port", "0"])
+        .args(["--bind", "127.0.0.1:0"])
         .args(["--min-free-space", "0"])
         .args(["--upload-idle-timeout", "120"])
         .args(["--upload-total-timeout", "3600"])

@@ -1,152 +1,46 @@
-//! Product configuration syntax only; all runtime authentication belongs to xcss.
-use anyhow::{Context, Result, anyhow, bail};
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
-use std::{collections::HashMap, fmt, sync::Arc};
-use xcss::admin_auth::require_canonical_administrator_username;
+//! Administrator credentials live only in the protected xcss account store.
+use anyhow::{Result, ensure};
+use std::sync::Arc;
 use xcss::admin_core::{AdministratorRecord, AdministratorService, Identifier};
 use xcss::admin_static::StaticAdministratorStore;
 
-/// File operations retain the immutable administrator ID as their business owner key.
-/// The field name is retained for compatibility with existing durable upload records.
+/// Stable administrator ID used by durable file operations and their ACLs.
 #[derive(Clone, Debug)]
 pub struct FilePrincipal {
     pub username: String,
 }
 
-/// Immutable account configuration loaded at startup.
-///
-/// Password hashes stay private and custom `Debug` output only exposes the
-/// configured administrator usernames. Cloning this value never clones or
-/// shares runtime sessions; each server constructs its own xcss service.
-#[derive(Clone, Default, PartialEq, Eq)]
-pub struct AuthConfig {
-    users: HashMap<String, String>,
+pub(crate) fn initialize_administrator(
+    directory: xcss::fs_safety::PrivateDirectory,
+    username: &str,
+    password: &str,
+) -> Result<()> {
+    xcss::admin_auth::require_canonical_administrator_username(username)?;
+    let record = AdministratorRecord {
+        administrator_id: Identifier::new(username)?,
+        username: username.to_owned(),
+        password_hash: xcss::admin_auth::hash_password(password)?,
+        active: true,
+        session_version: 1,
+        created_at_micros: 0,
+        updated_at_micros: 0,
+        last_login_at_micros: None,
+    };
+    StaticAdministratorStore::with_persistent_accounts([record], directory)?;
+    Ok(())
 }
 
-impl AuthConfig {
-    pub fn new(raw_accounts: &[&str]) -> Result<Self> {
-        if raw_accounts.len() > xcss::admin_core::STATIC_ADMINISTRATORS_MAX {
-            bail!("This system allows only one administrator");
-        }
-        let mut users = HashMap::new();
-
-        for (index, account) in raw_accounts.iter().enumerate() {
-            let account_number = index + 1;
-            let (user, password) = account.split_once(':').ok_or_else(|| {
-                anyhow!(
-                    "Invalid auth account #{account_number}: expected `username:<argon2id PHC>`"
-                )
-            })?;
-            if user.is_empty() || password.is_empty() {
-                bail!(
-                    "Invalid auth account #{account_number}: administrator username and Argon2id PHC must not be empty"
-                );
-            }
-            require_canonical_administrator_username(user).with_context(|| {
-                format!("Invalid administrator username in auth account #{account_number}")
-            })?;
-            if users.contains_key(user) {
-                bail!("Invalid auth account #{account_number}: duplicate administrator username");
-            }
-
-            xcss::admin_auth::require_current_password_hash(password).with_context(|| {
-                format!("Invalid Argon2id PHC in auth account #{account_number}")
-            })?;
-
-            users.insert(user.to_string(), password.to_string());
-        }
-
-        Ok(Self { users })
-    }
-
-    pub(crate) fn configured_ids(&self) -> Vec<String> {
-        let mut ids = self.users.keys().cloned().collect::<Vec<_>>();
-        ids.sort();
-        ids
-    }
-
-    pub fn has_users(&self) -> bool {
-        !self.users.is_empty()
-    }
-}
-
-impl fmt::Debug for AuthConfig {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mut users: Vec<_> = self.users.keys().collect();
-        users.sort_unstable();
-        f.debug_struct("AuthConfig").field("users", &users).finish()
-    }
-}
-
-impl<'de> Deserialize<'de> for AuthConfig {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let accounts = Vec::<String>::deserialize(deserializer)?;
-        let accounts: Vec<_> = accounts.iter().map(String::as_str).collect();
-        Self::new(&accounts).map_err(serde::de::Error::custom)
-    }
-}
-
-impl Serialize for AuthConfig {
-    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let mut accounts: Vec<_> = self
-            .users
-            .iter()
-            .map(|(user, hash)| format!("{user}:{hash}"))
-            .collect();
-        accounts.sort();
-        accounts.serialize(serializer)
-    }
-}
-
-impl AuthConfig {
-    #[cfg(test)]
-    pub(crate) fn administrator_service(
-        &self,
-    ) -> Result<Arc<AdministratorService<StaticAdministratorStore>>> {
-        self.service(None)
-    }
-
-    pub(crate) fn administrator_service_with_directory(
-        &self,
-        directory: xcss::fs_safety::PrivateDirectory,
-    ) -> Result<Arc<AdministratorService<StaticAdministratorStore>>> {
-        self.service(Some(directory))
-    }
-
-    fn service(
-        &self,
-        directory: Option<xcss::fs_safety::PrivateDirectory>,
-    ) -> Result<Arc<AdministratorService<StaticAdministratorStore>>> {
-        let records = self
-            .users
-            .iter()
-            .map(|(username, hash)| {
-                Ok(AdministratorRecord {
-                    administrator_id: Identifier::new(username.clone())?,
-                    username: username.clone(),
-                    password_hash: hash.clone(),
-                    active: true,
-                    session_version: 1,
-                    created_at_micros: 0,
-                    updated_at_micros: 0,
-                    last_login_at_micros: None,
-                })
-            })
-            .collect::<Result<Vec<_>>>()?;
-        Ok(Arc::new(AdministratorService::new(match directory {
-            Some(directory) => {
-                StaticAdministratorStore::with_persistent_accounts(records, directory)?
-            }
-            None => StaticAdministratorStore::new(records)?,
-        })))
-    }
-}
-
-pub fn hash_password(password: &str) -> Result<String> {
-    xcss::admin_auth::hash_password(password).context("Failed to hash administrator password")
+pub(crate) fn administrator_service_with_directory(
+    directory: xcss::fs_safety::PrivateDirectory,
+) -> Result<Arc<AdministratorService<StaticAdministratorStore>>> {
+    let records = StaticAdministratorStore::load_persistent_accounts(&directory, None)?;
+    ensure!(
+        records.len() == 1,
+        "Exactly one initialized administrator is required"
+    );
+    Ok(Arc::new(AdministratorService::new(
+        StaticAdministratorStore::with_persistent_accounts(records, directory)?,
+    )))
 }
 
 #[cfg(test)]

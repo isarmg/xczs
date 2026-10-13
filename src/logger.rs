@@ -13,7 +13,7 @@ use std::fs::File;
 #[cfg(test)]
 use std::io::BufWriter;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{
     Arc, OnceLock,
     atomic::{AtomicU64, Ordering},
@@ -88,6 +88,9 @@ static HTTP_LOG_QUEUE: OnceLock<(SyncSender<WriterCommand>, Arc<AtomicU64>)> = O
 /// HTTP request context is attached to the typed record before queueing; it
 /// never has to be recovered from a formatted access-log message.
 pub(crate) fn emit_http_record(access: &str, request_id: Option<&str>, is_error: bool) -> bool {
+    if !log::log_enabled!(if is_error { Level::Error } else { Level::Info }) {
+        return true;
+    }
     let Some((sender, dropped)) = HTTP_LOG_QUEUE.get() else {
         return false;
     };
@@ -127,6 +130,7 @@ pub(crate) fn emit_http_record(access: &str, request_id: Option<&str>, is_error:
 }
 
 struct AsyncLogger {
+    level: LevelFilter,
     sender: SyncSender<WriterCommand>,
     dropped: Arc<AtomicU64>,
 }
@@ -166,7 +170,7 @@ impl LogOutput {
 
 impl log::Log for AsyncLogger {
     fn enabled(&self, metadata: &Metadata) -> bool {
-        metadata.level() <= Level::Info
+        metadata.level() <= self.level
     }
 
     fn log(&self, record: &Record) {
@@ -255,10 +259,10 @@ impl log::Log for AsyncLogger {
     }
 }
 
-pub fn init(log_file: Option<PathBuf>, data_dir: &Path) -> Result<()> {
+pub fn init(data_dir: &Path, level: LevelFilter) -> Result<()> {
     xcss::server_cli::validate_runtime_log_directory(data_dir)
         .map_err(xcss::server_cli::CliError)?;
-    let path = log_file.unwrap_or_else(|| data_dir.join("logs/xczs.jsonl"));
+    let path = data_dir.join("logs/xczs.jsonl");
     let output = LogOutput::Rotating(xcss::log::RotatingLogFile::open_file(
         path,
         xcss::log::LogRetention::default(),
@@ -275,9 +279,13 @@ pub fn init(log_file: Option<PathBuf>, data_dir: &Path) -> Result<()> {
     HTTP_LOG_QUEUE
         .set((sender.clone(), dropped.clone()))
         .map_err(|_| anyhow::anyhow!("HTTP log queue is already initialized"))?;
-    let logger = AsyncLogger { sender, dropped };
+    let logger = AsyncLogger {
+        sender,
+        dropped,
+        level,
+    };
     log::set_boxed_logger(Box::new(logger))
-        .map(|_| log::set_max_level(LevelFilter::Info))
+        .map(|_| log::set_max_level(level))
         .with_context(|| "Failed to init logger")?;
     Ok(())
 }
@@ -767,6 +775,7 @@ mod tests {
         let (sender, receiver) = sync_channel(1);
         let dropped = Arc::new(AtomicU64::new(0));
         let logger = AsyncLogger {
+            level: LevelFilter::Trace,
             sender,
             dropped: dropped.clone(),
         };
@@ -801,7 +810,11 @@ mod tests {
         let dropped = Arc::new(AtomicU64::new(0));
         let writer_dropped = dropped.clone();
         let writer = thread::spawn(move || writer_loop(receiver, output, &writer_dropped));
-        let logger = AsyncLogger { sender, dropped };
+        let logger = AsyncLogger {
+            sender,
+            dropped,
+            level: LevelFilter::Trace,
+        };
 
         logger.log(
             &Record::builder()
