@@ -1,15 +1,25 @@
 use std::{path::Path, process::Command};
 
 fn main() {
+    println!("cargo:rerun-if-env-changed=XSSI_BUILD_METADATA_DIR");
     let tagging = include_str!("schema/tagging.sql");
     let tagging_fingerprint =
         xcss::sqlite::fingerprint_trusted_ddl(&[tagging]).expect("current tag schema fingerprint");
     println!("cargo:rustc-env=XCZS_TAG_SCHEMA_SHA256={tagging_fingerprint}");
     println!("cargo:rerun-if-changed=schema/tagging.sql");
 
-    let schema = include_str!("schema/product.sql");
+    let schema = format!(
+        "{}\n{}",
+        include_str!("schema/product.sql"),
+        xcss::admin_sqlite::ADMIN_PERSISTENT_DDL
+    );
+    std::fs::write(
+        std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("current_schema.sql"),
+        &schema,
+    )
+    .expect("write combined current schema");
     let fingerprint =
-        xcss::sqlite::fingerprint_trusted_ddl(&[schema]).expect("current XCZS schema fingerprint");
+        xcss::sqlite::fingerprint_trusted_ddl(&[&schema]).expect("current XCZS schema fingerprint");
     println!("cargo:rustc-env=XCZS_CURRENT_SCHEMA_SHA256={fingerprint}");
     println!("cargo:rerun-if-changed=schema/product.sql");
 
@@ -46,9 +56,17 @@ fn main() {
                     && requested == locked,
                 "xcss source must bind one exact full commit"
             );
-            requested
+            requested.to_owned()
         })
         .collect();
+    let mut revisions = revisions;
+    if revisions.is_empty()
+        && std::env::var("XCZS_BUILD_GIT_SHA").is_ok_and(|value| value == "unbound")
+        && std::env::var("PROFILE").is_ok_and(|profile| profile == "debug")
+        && std::env::var_os("XSSI_BUILD_METADATA_DIR").is_none()
+    {
+        revisions.insert("unbound".into());
+    }
     assert!(
         revisions.len() == 1,
         "one exact xcss Git revision is required"
@@ -66,6 +84,7 @@ fn main() {
         });
     xcss::web_assets::build::generate(root)
         .expect("build the Web platform with the xcss builder before compiling Server");
+    emit_offline_metadata();
 }
 
 fn emit_git_rerun_paths() {
@@ -94,6 +113,11 @@ fn build_git_sha() -> String {
     if let Ok(value) = std::env::var("XCZS_BUILD_GIT_SHA") {
         let value = value.trim();
         if value == "unbound" {
+            assert!(
+                std::env::var("PROFILE").is_ok_and(|profile| profile == "debug")
+                    && std::env::var_os("XSSI_BUILD_METADATA_DIR").is_none(),
+                "unbound identity is only valid for a development build"
+            );
             return "unbound".to_owned();
         }
         if is_valid_git_sha(value) {
@@ -122,4 +146,84 @@ fn git_output(args: &[&str]) -> Option<String> {
 
 fn is_valid_git_sha(value: &str) -> bool {
     (7..=64).contains(&value.len()) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+fn emit_offline_metadata() {
+    use sha2::{Digest, Sha256};
+    use xcss::contracts::{StateContract, StateResource, StateResourceKind, StateSchemaIdentity};
+    let Some(destination) = std::env::var_os("XSSI_BUILD_METADATA_DIR") else {
+        return;
+    };
+    let destination = std::path::PathBuf::from(destination);
+    assert!(
+        destination.is_absolute() && destination.is_dir(),
+        "explicit metadata destination must exist and be absolute"
+    );
+    let revision = std::env::var("XCZS_BUILD_GIT_SHA")
+        .expect("release metadata requires a source-bound build");
+    let hash = &xcss::sqlite::fingerprint_trusted_ddl(&[&format!(
+        "{}\n{}",
+        include_str!("schema/product.sql"),
+        xcss::admin_sqlite::ADMIN_PERSISTENT_DDL
+    )])
+    .expect("schema hash");
+    let schema =
+        xcss::contracts::SchemaIdentity::new("xczs", "1.0.0", 2, hash).expect("schema identity");
+    let contract = StateContract {
+        contract_version: xcss::contracts::STATE_CONTRACT_VERSION,
+        application: "xczs".into(),
+        application_version: std::env::var("CARGO_PKG_VERSION").unwrap(),
+        source_revision: revision.clone(),
+        schema: Some(StateSchemaIdentity {
+            revision: 2,
+            sha256: hash.into(),
+        }),
+        maintenance_locks: vec![
+            ".state-instance.lock".into(),
+            ".state-maintenance.lock".into(),
+        ],
+        resources: vec![
+            StateResource {
+                name: "state".into(),
+                kind: StateResourceKind::DataTree,
+                required: true,
+            },
+            StateResource {
+                name: "config".into(),
+                kind: StateResourceKind::Configuration,
+                required: true,
+            },
+        ],
+        external_requirements: vec![],
+        companion_contracts: vec![],
+    };
+    contract.validate().expect("current state contract");
+    let bytes = serde_json::to_vec(&contract).unwrap();
+    let digest = Sha256::digest(&bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let identity = xcss::contracts::ReleaseIdentity {
+        product: "xczs".into(),
+        version: std::env::var("CARGO_PKG_VERSION").unwrap(),
+        source_revision: revision,
+        target: xcss::server_target::SERVER_TARGET_TRIPLE.into(),
+        state_contract_sha256: digest,
+    };
+    identity.validate().expect("release identity");
+    std::fs::write(
+        destination.join("xczs-identity.json"),
+        serde_json::to_vec(&identity).unwrap(),
+    )
+    .unwrap();
+    std::fs::write(
+        destination.join("xczs-schema.json"),
+        serde_json::to_vec(&schema).unwrap(),
+    )
+    .unwrap();
+    std::fs::write(destination.join("xczs-state-contract.json"), bytes).unwrap();
+    let generated = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap())
+        .join("xcss-web-assets.rs.manifest.json");
+    std::fs::copy(generated, destination.join("xczs-web-assets.json"))
+        .expect("copy exact embedded Web manifest");
 }

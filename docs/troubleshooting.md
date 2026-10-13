@@ -7,7 +7,7 @@
 ```sh
 sudo systemctl status xczs --no-pager --full
 sudo journalctl -u xczs -n 100 --no-pager
-sudo -u isarmg-xczs /opt/isarmg/xczs/bin/xczs check --config /etc/isarmg/xczs/config.json --json
+sudo /opt/isarmg/xczs/maintenance.sh --root /opt/isarmg/xczs check
 ```
 
 `check` 为离线诊断；若服务正在运行，先安排维护窗口正常停服。
@@ -15,12 +15,12 @@ sudo -u isarmg-xczs /opt/isarmg/xczs/bin/xczs check --config /etc/isarmg/xczs/co
 | 症状 | 检查 | 正常结果与下一步 |
 |---|---|---|
 | 程序无法执行 | CPU、glibc/加载器、内核 `openat2` | 使用 Linux AMD64 GNU 匹配制品 |
-| 配置校验失败 | 错误字段、文件权限、路径和 ACL | 按[权限要求](operations.md#配置和权限)修正后复查 |
-| 状态未初始化 | 所选私有目录和实例来源 | 全新实例执行 `init`；已有实例使用原状态目录 |
+| 配置校验失败 | 错误字段、文件权限、路径和 ACL | 按[权限要求](operations.md)修正后复查 |
+| 状态未初始化 | 所选私有目录和实例来源 | 全新实例使用 xssi 安装脚本；已有当前实例使用原 ROOT 与状态目录 |
 | `snapshot.busy` / `snapshot.source_changed` | 检查期间的正常写入 | 等待写入停止后重试只读校验；保留原状态 |
 | 共享根或 Schema 不匹配 | 程序身份、根 dev/inode、数据库 | 使用同一当前实例的根和状态；停止写入调查其他情况 |
 | 登录循环或来源错误 | HTTPS、规范 Host/Origin、Cookie、代理 | 浏览器通过同一 HTTPS 域名，后端只由网关访问 |
-| `429 auth.rate_limited` | 登录请求和 `Retry-After` | 等待提示的窗口后重试，核对账户及网关限流 |
+| 认证资源繁忙 | 登录正文读取与计算容量 | 稍后重试；核对服务全局容量和外部入口预算 |
 
 ## 上传、文件操作和标签
 

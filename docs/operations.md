@@ -1,36 +1,25 @@
-# 部署与日常运维
+# 运维
 
-首次安装、升级和目录权限见[运行包安装手册](runtime-package.md)，参数见[CLI 与配置](cli.md)。统一通过包根 `install.sh setup CONFIG_JSON [USERNAME]` 安装，管理员初始密码由标准输入提供。安装完成后自行执行 `systemctl enable --now xczs.service`。升级执行 `install.sh upgrade`，只恢复升级前处于运行状态的服务。
-
-## 配置和权限
-
-普通服务账号为 `isarmg-xczs`。程序在 `/opt/isarmg/xczs/bin/xczs`，默认配置在 `/etc/isarmg/xczs/config.json`，内部状态在 `/var/lib/isarmg/xczs`。配置文件属于服务账号，权限 `0600`，父目录 `0700`。运行目录由 systemd 管理。
-
-`serve_path` 必须显式填写绝对路径，与 `data_dir` 互不包含；同一共享根仅由一个实例管理。安装器根据实际配置生成 systemd 写入白名单，不递归修改共享文件所有者。修改根路径后应重新审阅 unit 白名单。
-
-生产通过自行管理的 HTTPS 网关访问。程序不提供代理软件配置。`trusted_proxies` 默认空，只有明确列出的可信连接来源能提供有效转发地址；不要把其他本机进程默认视为可信代理。开发模式只能显式用于回环 HTTP。
-
-## 检查与维护
+程序、配置、辅助工具和日志集中在固定 ROOT；共享文件和实例数据可外置，systemd 文件位于系统目录。普通服务账号 `isarmg-xczs` 只有必要可写目录权限，程序及签名资源由 root 管理。
 
 ```sh
-sudo -u isarmg-xczs /opt/isarmg/xczs/bin/xczs config validate
-sudo systemctl stop xczs.service
-sudo -u isarmg-xczs /opt/isarmg/xczs/bin/xczs check
-sudo systemctl start xczs.service
-sudo -u isarmg-xczs /opt/isarmg/xczs/bin/xczs status --json
-sudo journalctl -u xczs --since today --no-pager
+sudo systemctl status xczs.service
+sudo /opt/isarmg/xczs/maintenance.sh --root /opt/isarmg/xczs check
+curl --fail http://127.0.0.1:5000/readyz
+sudo /opt/isarmg/xczs/upgrade.sh --root /opt/isarmg/xczs --version VERSION --xssc /absolute/xssc
 ```
 
-`config validate` 只验证配置；`check` 离线检查现有状态、账户、数据库和共享根；`status` 查询在线 readiness。重置已有管理员密码需先停服，使用 `admin reset-password --username admin` 并从标准输入传入新密码。普通启动不会初始化或重置账户。
+升级脚本验证固定产品、版本和签名后自动停服，XSSC 等待实际写入进程退出并取得维护锁，检查、备份、执行明确支持的数据步骤、替换程序、启动并验证实际版本和真实 readiness。只更新签名程序文件；不重新初始化、不改写现有配置、不丢弃新增数据。未知旧数据结构直接拒绝，不根据旧 JSON 或旧安装目录猜测迁移路径。
 
-文件日志固定为 `data_dir/logs/xczs.jsonl`，采用 UTC 结构化记录，每份最多 8 MiB，保留四个归档。`log_level` 默认 `info`。对外提供诊断信息前移除账号、Cookie、CSRF、凭据和文件内容。
+管理员改密可在管理后台完成。离线重置须停服，密码只经标准输入：
 
-停服通过 systemd。程序停止准入后给普通工作和已登记提交 30 秒宽限，再给排空 10 秒，日志刷新最多 5 秒；unit 的 120 秒超时为外层边界。人工写入共享根应放在停服窗口。
+```sh
+sudo systemctl stop xczs.service
+systemd-ask-password 'New administrator password:' | sudo /opt/isarmg/xczs/maintenance.sh \
+  --root /opt/isarmg/xczs admin-reset --username admin
+sudo systemctl start xczs.service
+```
 
-## 数据一致性与故障
+重置保留管理员稳定 ID，修改会话版本并撤销旧会话。管理员凭据、会话和认证审计保存在 `state.sqlite3` 公共表；业务文件、`tags.db`、上传状态和操作记录保留。数据库使用 `DELETE` journal 与 `synchronous=EXTRA`，管理员连接使用相同模式，关闭时先排空连接池再排空状态线程。
 
-状态目录包含 `state.sqlite3`、`tags.db`、管理员记录、日志和 sidecar；共享根包含用户文件以及受管理的上传、删除和隔离对象。备份应保留两者的一致时间点及根绑定。状态库绑定根设备号和 inode，空状态目录不能代替已有状态。
-
-服务状态页的标签备份保存在 `data_dir/tag-backups/`，不构成整站备份。`.xczs-upload-stages`、`.xczs-upload-delete-<uuid>.trash` 和 `.xczs-quarantine-<uuid>.hold` 为内部对象，不应在线手动修改。隔离对象应先停服、核对来源和内容再处理。
-
-监控 5xx/429/507、空间、inode、挂载与登录限流。结构校验失败应保留数据库和 sidecar，核对程序与共享根身份。疑似入侵先限制入口、保全摘要与时间线，再处理凭据。具体故障见[排查指南](troubleshooting.md)，发行验证见[发行指南](releasing.md)。
+日志位于 `ROOT/logs`，临时快照和运行文件在 `ROOT/run`。卸载由用户处理；不要通过删除管理员表、改数据库元数据或删除维护锁绕过故障。[故障排查](troubleshooting.md)。

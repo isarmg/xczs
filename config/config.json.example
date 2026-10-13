@@ -1,8 +1,8 @@
 {
   "serve_path": "/srv/xczs",
-  "data_dir": "/var/lib/isarmg/xczs",
+  "data_dir": "/opt/isarmg/xczs/state",
   "bind": "127.0.0.1:5000",
-  "log_format": "$time_iso8601 $log_level $remote_addr $remote_user \"$request\" $status operation_id=$operation_id operation_state=$operation_state",
+  "log_format": "$time_iso8601 $log_level $remote_user \"$request\" $status operation_id=$operation_id operation_state=$operation_state",
   "max_upload_size": 107374182400,
   "upload_idle_timeout": 60,
   "upload_total_timeout": 86400,
@@ -15,6 +15,5 @@
   "tag_scan_interval_seconds": 3600,
   "max_tag_scan_entries": 1000000,
   "development": false,
-  "log_level": "info",
-  "trusted_proxies": []
+  "log_level": "info"
 }

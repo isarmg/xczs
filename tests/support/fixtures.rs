@@ -7,7 +7,6 @@ use reqwest::header::{CONTENT_TYPE, COOKIE, SET_COOKIE};
 use reqwest::{IntoUrl, Method, Url};
 use rstest::fixture;
 use serde_json::Value;
-use std::ffi::OsString;
 use std::fs::OpenOptions;
 use std::io::{Read, Write};
 use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
@@ -47,13 +46,23 @@ impl TestConfig {
     pub fn path(&self) -> &Path {
         &self.path
     }
+
+    pub fn into_directory(self) -> TempDir {
+        self._directory
+    }
 }
 
 #[allow(dead_code)]
 pub fn test_config(_accounts: &[&str]) -> TestConfig {
     let directory = TempDir::new().expect("Couldn't create an auth config dir for tests");
     std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
-    let path = directory.path().join("xczs.json");
+    std::fs::create_dir(directory.path().join("config")).unwrap();
+    std::fs::set_permissions(
+        directory.path().join("config"),
+        std::fs::Permissions::from_mode(0o700),
+    )
+    .unwrap();
+    let path = directory.path().join("config/config.json");
     let contents =
         serde_json::to_string(&serde_json::json!({})).expect("Couldn't serialize test accounts");
     let mut file = OpenOptions::new()
@@ -99,7 +108,7 @@ fn test_binary_command() -> Command {
 pub fn xczs_command(accounts: &[&str]) -> (Command, TestConfig) {
     let auth_config = test_config(accounts);
     let mut command = test_binary_command();
-    command.arg("--config").arg(auth_config.path());
+    command.arg("--root").arg(auth_config._directory.path());
     assert_eq!(accounts.len(), 1);
     command.env("XCZS_TEST_INITIAL_USERNAME", accounts[0]);
     (command, auth_config)
@@ -321,107 +330,71 @@ pub fn tmpdir() -> TempDir {
     tmpdir
 }
 
-/// Run xczs with a temporary directory, a dynamically assigned port, and
-/// optional arguments, then wait until it reports its bound URL.
+/// Run a current ROOT instance using explicit JSON fixture settings.
 #[fixture]
 #[allow(dead_code)]
-pub fn server<I, A>(
-    #[default(&[] as &[&str])] args: I,
+pub fn server<A>(
+    #[default(serde_json::json!({}))] settings: Value,
     #[default(&[TEST_ACCOUNT] as &[&str])] accounts: A,
 ) -> TestServer
 where
-    I: IntoIterator,
-    I::Item: AsRef<std::ffi::OsStr>,
     A: IntoIterator,
     A::Item: AsRef<str>,
 {
-    server_in_mode(args, accounts, true)
+    server_in_mode(settings, accounts, true)
 }
 
 #[allow(dead_code)]
-pub fn production_server<I, A>(args: I, accounts: A) -> TestServer
+pub fn production_server<A>(settings: Value, accounts: A) -> TestServer
 where
-    I: IntoIterator,
-    I::Item: AsRef<std::ffi::OsStr>,
     A: IntoIterator,
     A::Item: AsRef<str>,
 {
-    server_in_mode(args, accounts, false)
+    server_in_mode(settings, accounts, false)
 }
 
-fn server_in_mode<I, A>(args: I, accounts: A, development: bool) -> TestServer
+fn server_in_mode<A>(mut settings: Value, accounts: A, development: bool) -> TestServer
 where
-    I: IntoIterator,
-    I::Item: AsRef<std::ffi::OsStr>,
     A: IntoIterator,
     A::Item: AsRef<str>,
 {
     let tmpdir = tmpdir();
-    let args = args
-        .into_iter()
-        .map(|value| value.as_ref().to_os_string())
-        .collect::<Vec<_>>();
     let accounts = accounts
         .into_iter()
         .map(|value| value.as_ref().to_owned())
         .collect::<Vec<_>>();
-    let has_config = args.iter().any(|value| {
-        value.to_str().is_some_and(|value| {
-            value == "--config" || value == "-c" || value.starts_with("--config=")
-        })
-    });
-    let has_min_free_space = args.iter().any(|value| {
-        value.to_str().is_some_and(|value| {
-            value == "--min-free-space" || value.starts_with("--min-free-space=")
-        })
-    });
-    let has_state_dir = args.iter().any(|value| {
-        value
-            .to_str()
-            .is_some_and(|value| value == "--data-dir" || value.starts_with("--data-dir="))
-    });
-    let auth_config = if has_config {
-        None
-    } else {
-        let account_refs = accounts.iter().map(String::as_str).collect::<Vec<_>>();
-        Some(test_config(&account_refs))
-    };
-    let use_default_auth = auth_config.is_some()
-        && accounts.len() == 1
-        && accounts
-            .first()
-            .is_some_and(|account| account == TEST_ACCOUNT);
-    let automatic_state_dir = if has_state_dir {
-        None
-    } else {
-        let state_dir = TempDir::new().expect("Couldn't create a state dir for tests");
-        std::fs::set_permissions(state_dir.path(), std::fs::Permissions::from_mode(0o700))
-            .expect("Couldn't make the test state dir private");
-        Some(state_dir)
-    };
-    let mut command = test_binary_command();
-    command.arg("run");
     assert_eq!(accounts.len(), 1);
+    let account_refs = accounts.iter().map(String::as_str).collect::<Vec<_>>();
+    let auth_config = Some(test_config(&account_refs));
+    let object = settings
+        .as_object_mut()
+        .expect("fixture settings must be an object");
+    let automatic_state_dir = if object.contains_key("data_dir") {
+        None
+    } else {
+        let directory = TempDir::new().expect("create fixture state directory");
+        std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
+        object.insert("data_dir".into(), serde_json::json!(directory.path()));
+        Some(directory)
+    };
+    object.insert("serve_path".into(), serde_json::json!(tmpdir.path()));
+    object
+        .entry("bind")
+        .or_insert(serde_json::json!("127.0.0.1:0"));
+    object
+        .entry("development")
+        .or_insert(serde_json::json!(development));
+    object
+        .entry("min_free_space")
+        .or_insert(serde_json::json!(0));
+    let use_default_auth = accounts[0] == TEST_ACCOUNT;
+    let mut command = test_binary_command();
+    command
+        .arg("--root")
+        .arg(auth_config.as_ref().unwrap()._directory.path());
     command.env("XCZS_TEST_INITIAL_USERNAME", &accounts[0]);
-    command.arg("--serve-path").arg(tmpdir.path()).args(&args);
-    if !args.iter().any(|value| {
-        value == "--bind" || value == "-b" || value.to_string_lossy().starts_with("--bind=")
-    }) {
-        command.args(["--bind", "127.0.0.1:0"]);
-    }
-    if development {
-        command.arg("--development");
-    }
-    if let Some(auth_config) = auth_config.as_ref() {
-        command.arg("--config").arg(auth_config.path());
-    }
-    if !has_min_free_space {
-        command.args(["--min-free-space", "0"]);
-    }
-    if let Some(state_dir) = &automatic_state_dir {
-        command.arg("--data-dir").arg(state_dir.path());
-    }
-    initialize_test_instance(&command);
+    configure_test_instance(&command, settings);
+    initialize_test_instance(&mut command);
     let mut child = command
         .stdout(Stdio::piped())
         .spawn()
@@ -744,61 +717,33 @@ impl TestServer {
     }
 
     pub fn restart_with_default_auth(&mut self) {
-        self.restart_with_default_auth_args(&[] as &[&str]);
+        self.restart_with_default_auth_args(serde_json::json!({}));
     }
 
-    pub fn restart_with_default_auth_args<I>(&mut self, args: I)
-    where
-        I: IntoIterator,
-        I::Item: AsRef<std::ffi::OsStr>,
-    {
+    pub fn restart_with_default_auth_args(&mut self, mut settings: Value) {
         assert!(self.use_default_auth);
         self.child.kill().expect("Couldn't kill test server");
         self.child.wait().expect("Couldn't wait for test server");
         if let Some(stdout_drain) = self.stdout_drain.take() {
             let _ = stdout_drain.join();
         }
-
-        let args = args
-            .into_iter()
-            .map(|value| value.as_ref().to_os_string())
-            .collect::<Vec<OsString>>();
-        let has_state_dir = args.iter().any(|value| {
-            value
-                .to_str()
-                .is_some_and(|value| value == "--data-dir" || value.starts_with("--data-dir="))
-        });
-        let has_min_free_space = args.iter().any(|value| {
-            value.to_str().is_some_and(|value| {
-                value == "--min-free-space" || value.starts_with("--min-free-space=")
-            })
-        });
+        let config = self
+            .auth_config
+            .as_ref()
+            .expect("restart needs its fixture ROOT");
         let mut command = test_binary_command();
-        command.arg("run");
-        command
-            .arg("--serve-path")
-            .arg(self.tmpdir.path())
-            .arg("--development")
-            .args(["--bind", "127.0.0.1:0"])
-            .arg("--config")
-            .arg(
-                self.auth_config
-                    .as_ref()
-                    .expect("default-auth restart requires the fixture-owned auth config")
-                    .path(),
-            )
-            .args(args);
-        if !has_min_free_space {
-            command.args(["--min-free-space", "0"]);
-        }
-        if !has_state_dir {
-            command.arg("--data-dir").arg(
-                self.automatic_state_dir
-                    .as_ref()
-                    .expect("restart without --data-dir requires the fixture-owned state directory")
-                    .path(),
-            );
-        }
+        command.arg("--root").arg(config._directory.path());
+        let object = settings
+            .as_object_mut()
+            .expect("fixture settings must be an object");
+        object.insert("serve_path".into(), serde_json::json!(self.tmpdir.path()));
+        object.insert("development".into(), Value::Bool(true));
+        object.insert("bind".into(), serde_json::json!("127.0.0.1:0"));
+        object
+            .entry("min_free_space")
+            .or_insert(serde_json::json!(0));
+        configure_test_instance(&command, settings);
+        prepare_test_command(&mut command, false);
         self.child = command
             .stdout(Stdio::piped())
             .spawn()
@@ -891,45 +836,62 @@ pub fn read_bound_url(child: &mut Child) -> Result<Url, Error> {
     Ok(url)
 }
 
+/// Set JSON fields directly; no retired CLI syntax is translated in fixtures.
+#[allow(dead_code)]
+pub fn configure_test_instance(command: &Command, settings: Value) {
+    let root = test_root(command);
+    let config = root.join("config/config.json");
+    let mut document: Value = serde_json::from_slice(&std::fs::read(&config).unwrap()).unwrap();
+    let object = document.as_object_mut().expect("fixture config object");
+    for (name, value) in settings.as_object().expect("fixture settings object") {
+        object.insert(name.clone(), value.clone());
+    }
+    object
+        .entry("data_dir")
+        .or_insert_with(|| serde_json::json!(root.join("state")));
+    std::fs::write(&config, serde_json::to_vec(&document).unwrap()).unwrap();
+    std::fs::set_permissions(&config, std::fs::Permissions::from_mode(0o600)).unwrap();
+}
+
+fn test_root(command: &Command) -> PathBuf {
+    let arguments = command.get_args().collect::<Vec<_>>();
+    assert_eq!(
+        arguments.len(),
+        2,
+        "runtime fixture command must only specify ROOT"
+    );
+    assert_eq!(arguments[0], "--root");
+    let root = PathBuf::from(arguments[1]);
+    assert!(root.is_absolute());
+    root
+}
+
 /// Test instances use the same explicit initialization boundary as deployments.
 #[allow(dead_code)]
-pub fn initialize_test_instance(command: &Command) {
-    let mut initialize = Command::new(command.get_program());
-    let username = command
-        .get_envs()
-        .find(|(name, _)| *name == "XCZS_TEST_INITIAL_USERNAME")
-        .and_then(|(_, value)| value)
-        .unwrap_or(std::ffi::OsStr::new(TEST_USER));
-    initialize
-        .arg("init")
-        .arg("--username")
-        .arg(username)
-        .args(command.get_args().filter(|value| *value != "run"));
-    for (name, value) in command.get_envs() {
-        if let Some(value) = value {
-            initialize.env(name, value);
-        } else {
-            initialize.env_remove(name);
-        }
+pub fn initialize_test_instance(command: &mut Command) {
+    prepare_test_command(command, true);
+}
+
+#[allow(dead_code)]
+pub fn prepare_test_command(command: &mut Command, initialize: bool) {
+    let root = test_root(command);
+    let config = root.join("config/config.json");
+    let args = xczs::Args::load(&root, &config).expect("valid fixture settings");
+    if initialize
+        && !args
+            .state_dir
+            .as_ref()
+            .unwrap()
+            .join("state.sqlite3")
+            .exists()
+    {
+        let username = command
+            .get_envs()
+            .find(|(name, _)| *name == "XCZS_TEST_INITIAL_USERNAME")
+            .and_then(|(_, value)| value)
+            .and_then(|value| value.to_str())
+            .unwrap_or(TEST_USER);
+        xczs::server::Server::initialize(args, username, TEST_PASSWORD)
+            .expect("explicit library fixture initialization");
     }
-    let mut child = initialize
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("start explicit fixture initialization");
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(TEST_PASSWORD.as_bytes())
-        .unwrap();
-    let output = child
-        .wait_with_output()
-        .expect("run explicit fixture initialization");
-    assert!(
-        output.status.success(),
-        "fixture init failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
 }

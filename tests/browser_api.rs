@@ -13,7 +13,6 @@ use reqwest::{IntoUrl, Method, Url};
 use rstest::rstest;
 use serde_json::{Value, json};
 use sqlx::{Connection as _, Row as _};
-use std::ffi::OsString;
 use std::io::Cursor;
 use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
 use std::path::Path;

@@ -19,8 +19,9 @@ fn list_api_test_server(root: &assert_fs::TempDir) -> (Arc<Server>, assert_fs::T
     std::fs::set_permissions(state_dir.path(), std::fs::Permissions::from_mode(0o700))
         .expect("restrict listing state directory");
     let mut args = Args {
+        root: state_dir.path().to_path_buf(),
         serve_path: root.path().to_path_buf(),
-        state_dir: Some(state_dir.path().to_path_buf()),
+        state_dir: Some(state_dir.path().join("state")),
         ..Args::default()
     };
     args.max_concurrent_searches = 1;

@@ -3,7 +3,11 @@ use std::fs::{File, OpenOptions};
 use std::io::{ErrorKind, Write as _};
 use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
 use std::process::Command as ProcessCommand;
-use tempfile::tempdir;
+fn tempdir() -> std::io::Result<tempfile::TempDir> {
+    tempfile::Builder::new()
+        .permissions(std::fs::Permissions::from_mode(0o700))
+        .tempdir()
+}
 
 const CAPACITY: usize = 8;
 const PER_OWNER: usize = 4;
@@ -1314,8 +1318,15 @@ async fn restart_refreshes_an_expired_commit_started_upload_barrier() -> Result<
     let identity = root(79, 83);
     let recovery_ttl = Duration::from_secs(60);
     initialize_current(&path, identity)?;
-    let store =
-        StateStore::open_with_upload_ttl(&path, &identity, CAPACITY, PER_OWNER, TTL, recovery_ttl)?;
+    let store = StateStore::open_with_upload_ttl(
+        &path,
+        &identity,
+        CAPACITY,
+        PER_OWNER,
+        TTL,
+        recovery_ttl,
+        directory.path(),
+    )?;
 
     let mut committing = upload(8, 9, 10);
     committing.state = StoredUploadState::CommitStarted;
@@ -1334,8 +1345,15 @@ async fn restart_refreshes_an_expired_commit_started_upload_barrier() -> Result<
     );
     store.shutdown_for_test();
 
-    let reopened =
-        StateStore::open_with_upload_ttl(&path, &identity, CAPACITY, PER_OWNER, TTL, recovery_ttl)?;
+    let reopened = StateStore::open_with_upload_ttl(
+        &path,
+        &identity,
+        CAPACITY,
+        PER_OWNER,
+        TTL,
+        recovery_ttl,
+        directory.path(),
+    )?;
     committing.state = StoredUploadState::Unknown;
     assert_eq!(
         reopened.upload_session(committing.key).await?,
@@ -1357,7 +1375,15 @@ async fn restart_caps_future_upload_deadlines_after_a_clock_rollback() -> Result
     let path = directory.path().join("state.sqlite3");
     let identity = root(89, 97);
     initialize_current(&path, identity)?;
-    let store = StateStore::open_with_upload_ttl(&path, &identity, CAPACITY, PER_OWNER, TTL, TTL)?;
+    let store = StateStore::open_with_upload_ttl(
+        &path,
+        &identity,
+        CAPACITY,
+        PER_OWNER,
+        TTL,
+        TTL,
+        directory.path(),
+    )?;
 
     let running = upload(9, 1, 4);
     let mut awaiting = upload(9, 2, 10);
@@ -1392,6 +1418,7 @@ async fn restart_caps_future_upload_deadlines_after_a_clock_rollback() -> Result
         PER_OWNER,
         TTL,
         Duration::ZERO,
+        directory.path(),
     )?;
     let expired = reopened.expired_upload_sessions_page(None, 8).await?;
     assert_eq!(
@@ -2159,8 +2186,16 @@ fn runtime_rejects_a_preexisting_empty_database_without_initialization() -> Resu
     fs::set_permissions(&path, Permissions::from_mode(0o600))?;
     let before = state_database_files_snapshot(&path)?;
     assert!(
-        StateStore::open_with_upload_ttl(&path, &root(107, 109), CAPACITY, PER_OWNER, TTL, TTL)
-            .is_err()
+        StateStore::open_with_upload_ttl(
+            &path,
+            &root(107, 109),
+            CAPACITY,
+            PER_OWNER,
+            TTL,
+            TTL,
+            directory.path()
+        )
+        .is_err()
     );
     assert_eq!(state_database_files_snapshot(&path)?, before);
     Ok(())

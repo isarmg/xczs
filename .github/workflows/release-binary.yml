@@ -126,62 +126,41 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund
           npm audit --audit-level=high
 
-      - name: Build and verify the release binary
+      - name: Build and verify the complete signed release package
         id: prepare_release_inputs
         shell: bash
+        env:
+          PACKAGE_SIGNING_KEY: ${{ secrets.XSSI_PACKAGE_SIGNING_KEY }}
+          XSSI_REPOSITORY_TOKEN: ${{ secrets.XSSI_REPOSITORY_TOKEN }}
         run: |
           set -euo pipefail
-          asset_name="xczs-${VERSION}-${TARGET}"
-          node node_modules/@xcss/web/dist/web-toolchain/server-cli.js \
-            --config xcss-web-build.json --mode release --no-install \
-            --source-revision "$GITHUB_SHA"
-          source_binary="target/$TARGET/release/xczs"
+          export XSSI_SIGNING_KEY="$RUNNER_TEMP/package-signing.pem"
+          umask 077
+          python3 - <<'PYKEY'
+          import os,pathlib
+          key=os.environ.pop("PACKAGE_SIGNING_KEY")
+          if not key: raise SystemExit("XSSI_PACKAGE_SIGNING_KEY is required")
+          pathlib.Path(os.environ["XSSI_SIGNING_KEY"]).write_text(key)
+          PYKEY
+          unset PACKAGE_SIGNING_KEY
+          trap 'rm -f -- "$XSSI_SIGNING_KEY"' EXIT
           install -d -m 0755 dist
-          install -m 0755 "$source_binary" "dist/$asset_name"
-
-          expected_version="$(
-            node scripts/release-version.mjs "$VERSION" "$GITHUB_SHA" Cargo.lock
-          )"
-          actual_version="$("dist/$asset_name" --version)"
-          if [[ "$actual_version" != "$expected_version" ]]; then
-            printf 'Expected version %s; found %s.\n' \
-              "$expected_version" "$actual_version" >&2
-            exit 1
-          fi
-          ldd_output="$(ldd "dist/$asset_name")"
-          printf '%s\n' "$ldd_output"
-          if [[ "$ldd_output" == *"not found"* ]]; then
-            printf 'The release binary has unresolved shared libraries.\n' >&2
-            exit 1
-          fi
-
+          ./scripts/package-release.sh --output-dir "$GITHUB_WORKSPACE/dist"
+          asset_name="xczs-${VERSION}-linux-x86_64.tar.gz"
           (
             cd dist
-            sha256sum "$asset_name" > "$asset_name.sha256"
-            sha256sum --check "$asset_name.sha256"
+            sha256sum --check SHA256SUMS
           )
           cp "docs/releases/$VERSION.md" dist/RELEASE_NOTES.md
           printf '\n源码提交：`%s`\n' "$GITHUB_SHA" >> dist/RELEASE_NOTES.md
           test -s dist/RELEASE_NOTES.md
           test -z "$(git status --porcelain --untracked-files=no)"
-
           entry_count="$(find -P dist -mindepth 1 -printf x | wc -c)"
-          if [[ "$entry_count" != "3" ]]; then
-            printf 'Expected exactly three release inputs; found %s.\n' \
-              "$entry_count" >&2
-            exit 1
-          fi
+          [[ "$entry_count" == 3 ]] || { echo 'Unexpected release inputs' >&2; exit 1; }
           release_input_digest="$(
-            (
-              cd dist
-              sha256sum \
-                "$asset_name" \
-                "$asset_name.sha256" \
-                RELEASE_NOTES.md
-            ) | sha256sum | awk '{print $1}'
+            (cd dist && sha256sum "$asset_name" SHA256SUMS RELEASE_NOTES.md) | sha256sum | awk '{print $1}'
           )"
-          printf 'release_input_digest=%s\n' "$release_input_digest" \
-            >> "$GITHUB_OUTPUT"
+          printf 'release_input_digest=%s\n' "$release_input_digest" >> "$GITHUB_OUTPUT"
 
       - name: Transfer the verified release inputs
         id: upload_release_input
@@ -274,8 +253,8 @@ jobs:
             exit 1
           fi
 
-          asset_name="xczs-${version}-${TARGET}"
-          checksum_name="${asset_name}.sha256"
+          asset_name="xczs-${version}-linux-x86_64.tar.gz"
+          checksum_name="SHA256SUMS"
           notes_name="RELEASE_NOTES.md"
           asset_path="$input_dir/$asset_name"
           checksum_path="$input_dir/$checksum_name"
@@ -310,7 +289,7 @@ jobs:
           checksum_size="$(stat -c %s "$checksum_path")"
           notes_size="$(stat -c %s "$notes_path")"
           if ((asset_size == 0 || asset_size > 268435456)); then
-            printf 'Release binary size is outside the accepted range.\n' >&2
+            printf 'Release package size is outside the accepted range.\n' >&2
             exit 1
           fi
           if ((notes_size == 0 || notes_size > 1048576)); then
@@ -323,7 +302,7 @@ jobs:
           printf '%s  %s\n' "$local_digest" "$asset_name" \
             > "$work_dir/expected.sha256"
           if ! cmp -s "$work_dir/expected.sha256" "$checksum_path"; then
-            printf 'Transferred checksum does not describe the fixed binary.\n' >&2
+            printf 'Transferred checksum does not describe the fixed archive.\n' >&2
             exit 1
           fi
           if [[ ! "$EXPECTED_RELEASE_INPUT_DIGEST" =~ ^[0-9a-f]{64}$ ]]; then

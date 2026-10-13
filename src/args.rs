@@ -1,5 +1,5 @@
 use anyhow::{Context, Result, bail, ensure};
-use clap::{Arg, ArgAction, ArgMatches, Command, value_parser};
+use clap::{Arg, ArgMatches, Command, value_parser};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeMap;
 use std::env;
@@ -11,7 +11,7 @@ use std::ops::Deref;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
-use xcss::config::{ConfigSource, EnvMapping, EnvValueKind, Override};
+use xcss::config::{ConfigSource, EnvMapping, EnvValueKind};
 
 use crate::http_logger::HttpLogger;
 
@@ -226,192 +226,15 @@ fn ensure_outside_shared_root(
 
 pub fn build_cli() -> Command {
     Command::new(env!("CARGO_CRATE_NAME"))
-        .subcommand_required(true)
         .version(LONG_VERSION)
         .long_version(LONG_VERSION)
-        .author(env!("CARGO_PKG_AUTHORS"))
         .about(env!("CARGO_PKG_DESCRIPTION"))
-        .subcommand(
-            Command::new("init")
-                .about("Explicitly initialize current data; read initial password from stdin")
-                .arg(
-                    Arg::new("username")
-                        .long("username")
-                        .default_value("admin")
-                        .help("Initial administrator username (password is read from stdin)"),
-                ),
-        )
-        .subcommand(Command::new("run").about("Run a previously initialized instance"))
-        .subcommand(Command::new("config").subcommand_required(true).subcommand(
-            Command::new("validate").about("Validate configuration values without requiring initialized data"),
-        ))
-        .subcommand(Command::new("status").about("Query live business readiness"))
-        .subcommand(
-            Command::new("check").about("Read-only offline state, schema and account checks"),
-        )
-        .subcommand(Command::new("admin").subcommand_required(true).subcommand(
-            Command::new("reset-password").about(
-                "Reset the persisted administrator password from stdin; stop the service first",
-            ).arg(Arg::new("username").long("username").default_value("admin")),
-        ))
         .arg(
-            Arg::new("json")
-                .long("json")
-                .global(true)
-                .action(ArgAction::SetTrue),
-        )
-        .arg(
-            Arg::new("serve-path")
-                .long("serve-path")
-                .global(true)
+            Arg::new("root")
+                .long("root")
                 .value_parser(value_parser!(PathBuf))
-                .help("Explicit absolute path of the existing directory to manage"),
-        )
-        .arg(
-            Arg::new("config")
-                .global(true)
-                .short('c')
-                .long("config")
-                .value_parser(value_parser!(PathBuf))
-                .default_value("/etc/isarmg/xczs/config.json")
-                .help("Specify private JSON configuration file")
-                .value_name("file"),
-        )
-        .arg(
-            Arg::new("development")
-                .global(true)
-                .long("development")
-                .num_args(0..=1)
-                .default_missing_value("true")
-                .require_equals(true)
-                .value_parser(value_parser!(bool))
-                .help("Enable xcss HTTP development mode on loopback only"),
-        )
-        .arg(
-            Arg::new("data-dir")
-                .global(true)
-                .long("data-dir")
-                .value_parser(value_parser!(PathBuf))
-                .help("Specify the required private directory for persistent SQLite state")
-                .value_name("dir"),
-        )
-        .arg(
-            Arg::new("tag-scan-interval-seconds")
-                .global(true)
-                .long("tag-scan-interval-seconds")
-                .value_parser(value_parser!(u64))
-                .value_name("seconds")
-                .help("Periodic tag index scan interval [default: 3600]"),
-        )
-        .arg(
-            Arg::new("max-tag-scan-entries")
-                .global(true)
-                .long("max-tag-scan-entries")
-                .value_parser(value_parser!(usize))
-                .value_name("count")
-                .help("Maximum filesystem entries in one tag index scan [default: 1000000]"),
-        )
-        .arg(
-            Arg::new("bind")
-                .global(true)
-                .short('b')
-                .long("bind")
-                .value_parser(value_parser!(SocketAddr))
-                .help("Listen socket address [default: 127.0.0.1:5000]")
-                .value_name("address:port"),
-        )
-        .arg(Arg::new("trusted-proxies").global(true).long("trusted-proxies")
-            .action(ArgAction::Append).value_delimiter(',').value_name("IP_OR_CIDR"))
-        .arg(
-            Arg::new("log-format")
-                .global(true)
-                .long("log-format")
-                .value_name("format")
-                .help("Customize HTTP log format"),
-        )
-        .arg(
-            Arg::new("log-level")
-                .global(true)
-                .long("log-level")
-                .value_name("level"),
-        )
-        .arg(
-            Arg::new("max-upload-size")
-                .global(true)
-                .long("max-upload-size")
-                .value_parser(value_parser!(u64))
-                .value_name("bytes")
-                .help("Maximum size of one upload in bytes [default: 107374182400]"),
-        )
-        .arg(
-            Arg::new("upload-idle-timeout")
-                .global(true)
-                .long("upload-idle-timeout")
-                .value_parser(value_parser!(u64))
-                .value_name("seconds")
-                .help(
-                    "Maximum idle time while receiving an upload, up to 31536000 seconds \
-                     [default: 60]",
-                ),
-        )
-        .arg(
-            Arg::new("upload-total-timeout")
-                .global(true)
-                .long("upload-total-timeout")
-                .value_parser(value_parser!(u64))
-                .value_name("seconds")
-                .help("Maximum total time for one upload, up to 31536000 seconds [default: 86400]"),
-        )
-        .arg(
-            Arg::new("max-concurrent-uploads")
-                .global(true)
-                .long("max-concurrent-uploads")
-                .value_parser(value_parser!(usize))
-                .value_name("count")
-                .help("Maximum number of concurrent uploads [default: 4]"),
-        )
-        .arg(
-            Arg::new("min-free-space")
-                .global(true)
-                .long("min-free-space")
-                .value_parser(value_parser!(u64))
-                .value_name("bytes")
-                .help("Reserved free disk space required for uploads [default: 1073741824]"),
-        )
-        .arg(
-            Arg::new("max-connections")
-                .global(true)
-                .long("max-connections")
-                .value_parser(value_parser!(usize))
-                .value_name("count")
-                .help("Maximum number of active client connections [default: 256]"),
-        )
-        .arg(
-            Arg::new("max-search-entries")
-                .global(true)
-                .long("max-search-entries")
-                .value_parser(value_parser!(usize))
-                .value_name("count")
-                .help("Maximum entries examined by one search, up to 100000 [default: 10000]"),
-        )
-        .arg(
-            Arg::new("max-concurrent-searches")
-                .global(true)
-                .long("max-concurrent-searches")
-                .value_parser(value_parser!(usize))
-                .value_name("count")
-                .help("Maximum number of concurrent directory listings and searches [default: 2]"),
-        )
-        .arg(
-            Arg::new("request-timeout")
-                .global(true)
-                .long("request-timeout")
-                .value_parser(value_parser!(u64))
-                .value_name("seconds")
-                .help(
-                    "Maximum time to process an ordinary request and produce response headers \
-                     (up to 31536000 seconds) [default: 300]",
-                ),
+                .default_value("/opt/isarmg/xczs")
+                .help("Instance installation root"),
         )
 }
 
@@ -420,13 +243,14 @@ pub fn build_cli() -> Command {
 #[serde(deny_unknown_fields)]
 #[serde(rename_all = "snake_case")]
 pub struct Args {
+    #[serde(skip)]
+    pub root: PathBuf,
     pub development: bool,
     #[serde(default = "default_serve_path")]
     pub serve_path: PathBuf,
     #[serde(rename = "data_dir")]
     pub state_dir: Option<PathBuf>,
     pub bind: SocketAddr,
-    pub trusted_proxies: Vec<String>,
     #[serde(deserialize_with = "deserialize_log_http")]
     #[serde(rename = "log_format")]
     pub http_logger: HttpLogger,
@@ -490,10 +314,10 @@ impl ValidatedConfig {
 impl Default for Args {
     fn default() -> Self {
         Self {
+            root: "/opt/isarmg/xczs".into(),
             serve_path: default_serve_path(),
-            state_dir: Some(PathBuf::from("/var/lib/isarmg/xczs")),
+            state_dir: Some(PathBuf::from("/opt/isarmg/xczs/state")),
             bind: default_bind(),
-            trusted_proxies: Vec::new(),
             development: false,
             http_logger: HttpLogger::default(),
             log_level: "info".to_owned(),
@@ -514,126 +338,63 @@ impl Default for Args {
 }
 
 impl Args {
-    /// Merge command-line arguments with the optional configuration file and
-    /// validate the resulting runtime settings.
+    /// Select ROOT and validate its fixed current JSON configuration.
     pub fn parse(matches: ArgMatches) -> Result<Args> {
-        let config_path = selected_config_path(&matches)?;
-        let config = config_path.as_deref().map(read_config).transpose()?;
-        let config_identity = config_path
-            .as_deref()
-            .zip(config.as_ref())
-            .map(|(path, config)| {
-                PathIdentity::inspect_with_expected_object(
-                    path,
-                    "Configuration file",
-                    Some(config.object),
-                )
-            })
-            .transpose()?;
+        let root = matches
+            .get_one::<PathBuf>("root")
+            .context("root is required")?;
+        Self::load(root, &root.join("config/config.json"))?.validate()
+    }
+
+    /// Merge the selected instance JSON and environment without creating state.
+    pub fn load(root: &Path, config_path: &Path) -> Result<Args> {
+        ensure!(
+            root.is_absolute()
+                && root != Path::new("/")
+                && !root.components().any(|part| matches!(
+                    part,
+                    std::path::Component::ParentDir | std::path::Component::CurDir
+                )),
+            "root must be normalized and absolute"
+        );
+        let config = read_config(config_path)?;
+        let config_identity = PathIdentity::inspect_with_expected_object(
+            config_path,
+            "Configuration file",
+            Some(config.object),
+        )?;
         let environment = xcss::config::read_environment(&configuration_environment(), |name| {
             env::var(name).ok()
         })?;
-        let mut command_line = Vec::new();
-        for (argument, field) in [("serve-path", "serve_path"), ("data-dir", "data_dir")] {
-            if let Some(path) = matches.get_one::<PathBuf>(argument) {
-                command_line.push(Override::new(
-                    format!("/{field}"),
-                    path.to_string_lossy().into_owned(),
-                ));
-            }
-        }
-        if let Some(development) = matches.get_one::<bool>("development") {
-            command_line.push(Override::new("/development", *development));
-        }
-        if let Some(bind) = matches.get_one::<SocketAddr>("bind") {
-            command_line.push(Override::new("/bind", bind.to_string()));
-        }
-        if let Some(proxies) = matches.get_many::<String>("trusted-proxies") {
-            command_line.push(Override::new(
-                "/trusted_proxies",
-                serde_json::to_value(proxies.cloned().collect::<Vec<_>>())?,
-            ));
-        }
-        if let Some(level) = matches.get_one::<String>("log-level") {
-            command_line.push(Override::new("/log_level", level.clone()));
-        }
-        if let Some(format) = matches.get_one::<String>("log-format") {
-            command_line.push(Override::new("/log_format", format.clone()));
-        }
-        if let Some(value) = matches.get_one::<u64>("max-upload-size") {
-            command_line.push(Override::new("/max_upload_size", *value));
-        }
-        if let Some(value) = matches.get_one::<u64>("upload-idle-timeout") {
-            command_line.push(Override::new("/upload_idle_timeout", *value));
-        }
-        if let Some(value) = matches.get_one::<u64>("upload-total-timeout") {
-            command_line.push(Override::new("/upload_total_timeout", *value));
-        }
-        if let Some(value) = matches.get_one::<u64>("min-free-space") {
-            command_line.push(Override::new("/min_free_space", *value));
-        }
-        if let Some(value) = matches.get_one::<u64>("request-timeout") {
-            command_line.push(Override::new("/request_timeout", *value));
-        }
-        if let Some(value) = matches.get_one::<u64>("tag-scan-interval-seconds") {
-            command_line.push(Override::new("/tag_scan_interval_seconds", *value));
-        }
-        if let Some(value) = matches.get_one::<usize>("max-concurrent-uploads") {
-            command_line.push(Override::new("/max_concurrent_uploads", *value));
-        }
-        if let Some(value) = matches.get_one::<usize>("max-connections") {
-            command_line.push(Override::new("/max_connections", *value));
-        }
-        if let Some(value) = matches.get_one::<usize>("max-search-entries") {
-            command_line.push(Override::new("/max_search_entries", *value));
-        }
-        if let Some(value) = matches.get_one::<usize>("max-concurrent-searches") {
-            command_line.push(Override::new("/max_concurrent_searches", *value));
-        }
-        if let Some(value) = matches.get_one::<usize>("max-tag-scan-entries") {
-            command_line.push(Override::new("/max_tag_scan_entries", *value));
-        }
+        let defaults = Self {
+            state_dir: Some(root.join("state")),
+            ..Self::default()
+        };
         let loaded = xcss::config::resolve_validated(
-            &Self::default(),
-            config.as_ref().map(|config| config.contents.as_bytes()),
+            &defaults,
+            Some(config.contents.as_bytes()),
             &environment,
-            &command_line,
+            &[],
             validate_intrinsic,
         )?;
         let mut args = loaded.value;
+        args.root = root.to_path_buf();
         args.config_sources = loaded.sources;
-        validate_development_web_selection(&args)?;
-        if matches.subcommand_matches("init").is_some() {
-            ensure!(
-                args.serve_path.is_absolute(),
-                "serve_path must be an explicitly configured absolute path"
-            );
-            let directory = args
-                .state_dir
-                .as_deref()
-                .context("data_dir is required for init")?;
-            xcss::server_cli::create_empty_private_directory(directory)
-                .map_err(xcss::server_cli::CliError)?;
-        }
-        if matches.subcommand_matches("config").is_some() {
-            return args.validate_configuration();
-        }
-        let args = args.validate()?;
-        if let Some(config_identity) = config_identity.as_ref() {
-            ensure_outside_shared_root(config_identity, "Configuration file", &args.serve_path)?;
-            if let Some(state_db) = args.state_database_path() {
-                Self::ensure_no_state_db_identity_conflict(
-                    &state_db,
-                    config_identity,
-                    "Configuration file",
-                )?;
-            }
+        args = args.validate_configuration()?;
+        ensure_outside_shared_root(&config_identity, "Configuration file", &args.serve_path)?;
+        if let Some(state_db) = args.state_database_path()
+            && state_db.parent().is_some_and(Path::exists)
+        {
+            Self::ensure_no_state_db_identity_conflict(
+                &state_db,
+                &config_identity,
+                "Configuration file",
+            )?;
         }
         Ok(args)
     }
 
-    /// Validate and normalize settings supplied through either the CLI or the
-    /// reusable library API.
+    /// Validate and normalize settings supplied through JSON or the library API.
     ///
     /// Keeping this boundary on `Args` prevents embedders from bypassing the
     /// invariants that the runtime relies on when it constructs semaphores and
@@ -651,6 +412,29 @@ impl Args {
             !state.starts_with(&self.serve_path) && !self.serve_path.starts_with(state),
             "data_dir and serve_path must not overlap"
         );
+        if self.root.is_absolute() {
+            ensure!(
+                self.serve_path != self.root,
+                "shared directory cannot be the installation root"
+            );
+            for name in [
+                "bin",
+                "libexec",
+                "share",
+                "maintenance",
+                "config",
+                "logs",
+                "run",
+            ] {
+                let protected = self.root.join(name);
+                for selected in [&self.serve_path, state] {
+                    ensure!(
+                        !selected.starts_with(&protected) && !protected.starts_with(selected),
+                        "data or shared directory overlaps a private or immutable ROOT namespace"
+                    );
+                }
+            }
+        }
         ensure!(
             self.upload_total_timeout >= self.upload_idle_timeout,
             "upload-total-timeout must be greater than or equal to upload-idle-timeout"
@@ -674,6 +458,7 @@ impl Args {
             "serve_path must be an explicitly configured absolute path"
         );
         self.serve_path = Self::sanitize_path(&self.serve_path)?;
+        self.clone().validate_configuration()?;
         if !self
             .serve_path
             .metadata()
@@ -750,7 +535,7 @@ impl Args {
 
         if self.state_dir.is_none() {
             bail!(
-                "A persistent SQLite state directory is required; use `--data-dir <dir>` or set `data_dir` in the configuration file"
+                "A persistent SQLite state directory is required; set `data_dir` in ROOT/config/config.json"
             );
         }
 
@@ -1036,7 +821,7 @@ fn default_bind() -> SocketAddr {
 #[cfg(test)]
 mod tests;
 
-fn configuration_environment() -> [EnvMapping<'static>; 18] {
+fn configuration_environment() -> [EnvMapping<'static>; 17] {
     [
         EnvMapping {
             variable: "XCZS_SERVE_PATH",
@@ -1062,11 +847,6 @@ fn configuration_environment() -> [EnvMapping<'static>; 18] {
             variable: "XCZS_LOG_FORMAT",
             path: "/log_format",
             kind: EnvValueKind::String,
-        },
-        EnvMapping {
-            variable: "XCZS_TRUSTED_PROXIES",
-            path: "/trusted_proxies",
-            kind: EnvValueKind::Json,
         },
         EnvMapping {
             variable: "XCZS_LOG_LEVEL",
@@ -1160,8 +940,6 @@ fn validate_intrinsic(args: &Args, source: ConfigSource) -> Result<(), xcss::con
     ) {
         return Err(invalid("/log_level"));
     }
-    xcss::client_ip::TrustedProxies::parse(&args.trusted_proxies)
-        .map_err(|_| invalid("/trusted_proxies"))?;
     if args.state_dir.is_none() {
         return Err(invalid("/data_dir"));
     }
@@ -1196,30 +974,4 @@ fn validate_intrinsic(args: &Args, source: ConfigSource) -> Result<(), xcss::con
         return Err(invalid("/max_tag_scan_entries"));
     }
     Ok(())
-}
-
-/// Normalize the configured file before private reads and identity checks.
-pub fn normalize_config_path(path: &Path) -> Result<PathBuf> {
-    ensure!(
-        !path
-            .components()
-            .any(|part| part == std::path::Component::ParentDir),
-        "config path cannot contain parent traversal"
-    );
-    Ok(std::path::absolute(path)?)
-}
-
-/// A missing implicit default is allowed; explicit paths and unsafe files fail.
-pub fn selected_config_path(matches: &ArgMatches) -> Result<Option<PathBuf>> {
-    let path = normalize_config_path(
-        matches
-            .get_one::<PathBuf>("config")
-            .expect("default config path"),
-    )?;
-    if matches.value_source("config") == Some(clap::parser::ValueSource::DefaultValue)
-        && matches!(std::fs::symlink_metadata(&path), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
-    {
-        return Ok(None);
-    }
-    Ok(Some(path))
 }

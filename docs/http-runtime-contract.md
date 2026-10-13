@@ -1,7 +1,7 @@
 # Xczs HTTP 与运行时合同
 
 本文描述当前 Xczs 的 HTTP 行为、xcss 分工和验证入口。Rust 与 Web 依赖由
-`Cargo.toml`、`Cargo.lock`、`package.json` 和 `package-lock.json` 固定到 xcss 1.0.7。
+`Cargo.toml`、`Cargo.lock`、`package.json` 和 `package-lock.json` 固定到 xcss 1.0.13。
 当前为本地已验证、尚未发布的候选输入，来源及安装条件见[公共依赖](common-support.md)。
 
 ## 请求与认证
@@ -24,8 +24,8 @@ PUT/PATCH 使用流式读取与实际字节限制。写入是否进入提交阶�
 
 ## 代码边界
 
-xcss 负责通用认证、请求 ID、真实 socket peer、连接限制、信号和有界停机。
-Xczs 负责共享根路径安全、文件流、列表、上传、持久操作和删除回收。静态管理员会话位于内存，
+xcss 负责通用认证、请求 ID、连接限制、信号和有界停机。
+Xczs 负责共享根路径安全、文件流、列表、上传、持久操作和删除回收。管理员与会话保存在 state.sqlite3 公共表，
 业务操作状态由 Xczs 的 SQLite actor 管理。标签索引、关联及在线备份由私有状态目录中的独立 `tags.db` 管理。
 
 标签 API 包括 `GET status/files/folders/tags`、`POST scan/backup/tags/file-tags/files/{id}/confirm/files/{id}/relink`，以及 `PUT,DELETE tags/{id}`，路径均位于 `/api/v1/file-tags/` 下。文件下载继续使用 Xczs 原有的受保护文件路径。扫描只在完整成功后更新缺失状态；文件替换和改名不自动继承标签。
@@ -54,7 +54,7 @@ cargo test --locked --target x86_64-unknown-linux-gnu --all-targets --all-featur
 | 行为 | 测试入口 |
 | --- | --- |
 | 认证、重复安全头、CSRF、GET-only | `tests/auth.rs`、`tests/http_contract.rs`、`tests/browser_api/request_validation.rs` |
-| 真实 socket peer、启动路径冲突 | `tests/library_api.rs`、`tests/platform_namespace.rs` |
+| 请求无需来源地址、启动路径冲突 | `tests/library_api.rs`、`tests/platform_namespace.rs` |
 | 上传长度、offset、空间和恢复 | `tests/http/upload.rs`、`tests/http/resumable_upload.rs`、`src/server/upload/tests.rs` |
 | 操作归属、指纹和持久结果 | `src/server/operation_registry/tests.rs`、`src/server/state_store/tests.rs` |
 | 探针、多地址监听和停机 | `tests/health.rs`、`tests/bind.rs`、`tests/shutdown.rs` |

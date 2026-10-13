@@ -274,7 +274,7 @@ actor 循环必须在**每条命令内部**处理 `Result`，把错误只回复�
 
 ## 5.13 数据库中保存什么
 
-固定文件是 `<data_dir>/state.sqlite3`，当前 schema revision 1 主要包含：
+固定文件是 `<data_dir>/state.sqlite3`，当前 schema revision 2 主要包含：
 
 | 表/概念 | 保存什么 | 不保存什么 |
 | --- | --- | --- |
@@ -300,7 +300,7 @@ actor 循环必须在**每条命令内部**处理 `Result`，把错误只回复�
 - 五列 `product_metadata`、当前应用/版本/revision、统一 schema SHA-256、精确对象身份与 quick check；
 - 数据库绑定的共享根 device/inode。
 
-只有显式 `init` 在空白数据库建立当前 schema revision 1。初始化事务写入精确五列 `product_metadata`：单例键、`xczs` 应用名、当前持久化结构版本 `1.0.0`、revision 和 schema SHA-256。指纹使用所有非 `sqlite_*`、非 `product_metadata` 的 `sqlite_schema` 行，按 `type/name/tbl_name` 排序，并将每个原始字段编码为 u64 大端长度加字段字节后计算 SHA-256。现存数据库先在只读 raw snapshot 与原路径视图中验证相同契约、根绑定和完整性；任何非当前 identity、无标记、版本/指纹漂移、额外对象或约束变化都在任何 chmod、journal 配置或恢复写入前拒绝，文件字节保持不变。
+只有显式 `init` 在空白数据库建立当前 schema revision 2。初始化事务写入精确五列 `product_metadata`：单例键、`xczs` 应用名、当前持久化结构版本 `1.0.0`、revision 和 schema SHA-256。指纹使用所有非 `sqlite_*`、非 `product_metadata` 的 `sqlite_schema` 行，按 `type/name/tbl_name` 排序，并将每个原始字段编码为 u64 大端长度加字段字节后计算 SHA-256。现存数据库先在只读 raw snapshot 与原路径视图中验证相同契约、根绑定和完整性；任何非当前 identity、无标记、版本/指纹漂移、额外对象或约束变化都在任何 chmod、journal 配置或恢复写入前拒绝，文件字节保持不变。
 
 数据库不能随意复制给另一个共享根继续使用，因为里面的路径、对象身份和未完成动作都绑定旧根。
 

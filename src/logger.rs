@@ -259,10 +259,9 @@ impl log::Log for AsyncLogger {
     }
 }
 
-pub fn init(data_dir: &Path, level: LevelFilter) -> Result<()> {
-    xcss::server_cli::validate_runtime_log_directory(data_dir)
-        .map_err(xcss::server_cli::CliError)?;
-    let path = data_dir.join("logs/xczs.jsonl");
+pub fn init(root: &Path, level: LevelFilter) -> Result<()> {
+    xcss::fs_safety::PrivateDirectory::open_existing(root.join("logs"))?;
+    let path = root.join("logs/xczs.jsonl");
     let output = LogOutput::Rotating(xcss::log::RotatingLogFile::open_file(
         path,
         xcss::log::LogRetention::default(),

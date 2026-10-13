@@ -11,7 +11,7 @@ use super::{
 use crate::{app_error::AppError, http_logger::HttpLogger, request_context::RequestContext};
 
 use anyhow::Result;
-use axum::{Router, extract::ConnectInfo, response::IntoResponse};
+use axum::Router;
 use http::{Method, StatusCode, header::CONTENT_LENGTH};
 use std::{convert::Infallible, sync::Arc, time::Duration};
 use tower::ServiceExt;
@@ -29,8 +29,6 @@ impl Server {
         handle: xcss::server_runtime::RuntimeHandle,
     ) -> anyhow::Result<tower::util::BoxCloneSyncService<Request, Response, Infallible>> {
         let router = routes::assemble(self.clone(), handle)?;
-        let trusted_proxies =
-            xcss::client_ip::TrustedProxies::parse(&self.content.args.trusted_proxies)?;
         let service = tower::service_fn(move |request| {
             let server = self.clone();
             let router = router.clone();
@@ -38,10 +36,6 @@ impl Server {
         });
         let correlated = axum::Router::new()
             .fallback_service(service)
-            .layer(axum::middleware::from_fn_with_state(
-                trusted_proxies,
-                xcss::client_ip::middleware,
-            ))
             .layer(axum::middleware::from_fn_with_state(
                 "xczs".to_owned(),
                 xcss::server_cli::service_identity_middleware,
@@ -57,13 +51,6 @@ impl Server {
         mut req: Request,
         router: Router,
     ) -> Result<Response, Infallible> {
-        let Some(ConnectInfo(addr)) = req
-            .extensions()
-            .get::<ConnectInfo<std::net::SocketAddr>>()
-            .copied()
-        else {
-            return Ok((http::StatusCode::INTERNAL_SERVER_ERROR, axum::Json(serde_json::json!({"code":"platform.peer_missing","message":"Socket peer is missing","retryable":false,"details":{}}))).into_response());
-        };
         let relative_path = self.resolve_path(req.uri().path());
         let public_asset_request = matches!(req.method(), &Method::GET | &Method::HEAD)
             && relative_path
@@ -78,7 +65,7 @@ impl Server {
         if let Some(path) = &relative_path {
             req.extensions_mut().insert(path.clone());
         }
-        let mut context = RequestContext::new(&req, addr, &self.content.args.http_logger);
+        let mut context = RequestContext::new(&req, &self.content.args.http_logger);
         if let Some(operation_id) = profile.operation_id() {
             self.content.args.http_logger.set_runtime_value(
                 context.access_log_mut(),
@@ -589,7 +576,7 @@ mod tests {
 
     #[test]
     fn server_stopping_response_populates_access_log_fields() {
-        let logger = "$request $remote_addr $status $operation_id $operation_state"
+        let logger = "$request $status $operation_id $operation_state"
             .parse::<HttpLogger>()
             .unwrap();
         let request = http::Request::builder()
@@ -597,8 +584,7 @@ mod tests {
             .uri("/late-request")
             .body(())
             .unwrap();
-        let peer = "192.0.2.10:41234".parse().unwrap();
-        let mut context = RequestContext::new(&request, peer, &logger);
+        let mut context = RequestContext::new(&request, &logger);
         let operation_id = uuid::Uuid::new_v4();
         logger.set_runtime_value(context.access_log_mut(), "operation_id", || {
             operation_id.hyphenated().to_string()
@@ -619,10 +605,7 @@ mod tests {
             context.access_log().get("request").map(String::as_str),
             Some("DELETE /late-request HTTP/1.1")
         );
-        assert_eq!(
-            context.access_log().get("remote_addr").map(String::as_str),
-            Some("192.0.2.10")
-        );
+        assert!(!context.access_log().contains_key("remote_addr"));
         assert_eq!(
             context.access_log().get("status").map(String::as_str),
             Some("503")

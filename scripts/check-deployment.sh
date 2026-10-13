@@ -1,19 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
-project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$project_dir"
-[[ "$#" == 0 ]] || { printf 'Usage: %s\n' "${0##*/}" >&2; exit 2; }
-command -v python3 >/dev/null
-command -v systemd-analyze >/dev/null
-bash -n install.sh
-python3 scripts/check-install.py
-validation_dir="$(mktemp -d /tmp/xczs-unit-validation.XXXXXXXX)"
-trap 'rm -rf -- "$validation_dir"' EXIT
-mkdir -p "$validation_dir/etc/systemd/system" "$validation_dir/bin"
-install -m 0755 /bin/true "$validation_dir/bin/true"
-for unit in sysinit.target basic.target shutdown.target network-online.target multi-user.target; do
-  printf '[Unit]\nDescription=Offline verification fixture\n' > "$validation_dir/etc/systemd/system/$unit"
-done
-sed 's#/opt/isarmg/xczs/bin/xczs#/bin/true#' systemd/xczs.service > "$validation_dir/etc/systemd/system/xczs.service"
-systemd-analyze --root="$validation_dir" --generators=no verify /etc/systemd/system/xczs.service
-printf 'Installer contract, current JSON and systemd unit passed offline checks. No service was installed or started.\n'
+[[ $# == 0 ]] || { echo 'Usage: check-deployment.sh' >&2; exit 2; }
+project_root="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+python3 - "$project_root" <<'CHECK'
+import json, pathlib, sys
+root=pathlib.Path(sys.argv[1]); product='xczs'
+assert not (root/'install.sh').exists(), 'installation belongs to pinned xssi'
+units=list((root/('deploy' if product=='xcos' else 'systemd')).glob('*.service'))
+assert len(units)==(2 if product=='xcos' else 1)
+for unit in units:
+    text=unit.read_text()
+    assert 'ExecStartPre=' not in text and 'RuntimeDirectory=' not in text
+    assert '/etc/isarmg/' not in text and '/var/lib/isarmg/' not in text and '/run/isarmg/' not in text
+    assert f'/opt/isarmg/{product}/logs' in text and f'/opt/isarmg/{product}/run' in text
+    if unit.name==f'{product}.service':
+        assert f'ExecStart=/opt/isarmg/{product}/bin/{product} --root /opt/isarmg/{product}' in text
+    else:
+        assert '/config/mediamtx.yml' in text
+        assert '/config/mediamtx.env' in text
+config=json.loads((root/'config'/('xcos.json.example' if product=='xcos' else 'config.json.example')).read_text())
+assert 'trusted_proxies' not in config
+assert config['data_dir']==f'/opt/isarmg/{product}/state'
+CHECK
+printf 'Current root layout and runtime-only units passed offline checks.\n'

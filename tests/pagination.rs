@@ -140,7 +140,7 @@ fn cursor_is_bound_to_the_page_size(server: TestServer) -> Result<(), Error> {
 
 #[rstest]
 fn cursor_remains_bound_to_immutable_identity_after_account_rename(
-    #[with(&[] as &[&str], &[USER_ACCOUNT])] server: TestServer,
+    #[with(serde_json::json!({}), &[USER_ACCOUNT])] server: TestServer,
 ) -> Result<(), Error> {
     let user = server.login("user", TEST_PASSWORD)?;
 

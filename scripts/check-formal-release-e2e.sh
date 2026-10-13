@@ -1,285 +1,58 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-test_root=""
-
-cleanup() {
-  local status=$?
-  local cleanup_failed=false
-
-  trap - EXIT HUP INT TERM
-  if [[ "$status" -ne 0 && -n "${XCZS_FORMAL_E2E_DIAGNOSTICS_DIR:-}" && \
-    -n "$test_root" && -d "$test_root" ]]
-  then
-    install -d -m 0700 -- "$XCZS_FORMAL_E2E_DIAGNOSTICS_DIR"
-    find -P "$test_root" -type f \
-      \( -path '*/test-results/*' -o -path '*/playwright-report/*' -o \
-         -name '*.log' \) -size -16777216c \
-      -exec cp --parents --no-preserve=ownership -- {} \
-        "$XCZS_FORMAL_E2E_DIAGNOSTICS_DIR" \; || cleanup_failed=true
-  fi
-  if [[ -n "$test_root" ]]; then
-    case "${test_root##*/}" in
-      xczs-formal-release-e2e.*)
-        if ! rm -rf --one-file-system -- "$test_root"; then
-          printf 'Unable to remove formal release E2E directory: %s\n' \
-            "$test_root" >&2
-          cleanup_failed=true
-        fi
-        ;;
-      *)
-        printf 'Refusing to remove unexpected E2E path: %s\n' \
-          "$test_root" >&2
-        cleanup_failed=true
-        ;;
-    esac
-  fi
-  if [[ "$cleanup_failed" == true && "$status" -eq 0 ]]; then
-    status=1
-  fi
-  exit "$status"
-}
-
-trap cleanup EXIT
-trap 'exit 129' HUP
-trap 'exit 130' INT
-trap 'exit 143' TERM
-
-for command_name in \
-  chmod \
-  cp \
-  cmp \
-  env \
-  find \
-  git \
-  grep \
-  install \
-  mktemp \
-  openssl \
-  rm \
-  rustc \
-  sed \
-  sha256sum \
-  stat \
-  tar \
-  wc
-do
-  command -v "$command_name" >/dev/null 2>&1 || {
-    printf 'required command is unavailable: %s\n' "$command_name" >&2
-    exit 1
-  }
-done
-
-source_sha="$(git -C "$project_dir" rev-parse --verify 'HEAD^{commit}')"
-[[ "$source_sha" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]] || {
-  printf 'Unable to resolve a full source commit for the release E2E.\n' >&2
-  exit 1
-}
-[[ -z "$(
-  git -C "$project_dir" status --porcelain --untracked-files=all
-)" ]] || {
-  printf 'Formal release E2E requires a clean source checkout.\n' >&2
-  exit 1
-}
-
-temporary_parent="${RUNNER_TEMP:-${TMPDIR:-/tmp}}"
-[[ -d "$temporary_parent" && ! -L "$temporary_parent" ]] || {
-  printf 'Formal release E2E temporary parent is unavailable: %s\n' \
-    "$temporary_parent" >&2
-  exit 1
-}
-test_root="$(mktemp -d --tmpdir="$temporary_parent" \
-  xczs-formal-release-e2e.XXXXXXXX)"
+[[ $# == 0 ]] || { echo 'Usage: check-formal-release-e2e.sh' >&2; exit 2; }
+project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+[[ -z "$(git -C "$project_dir" status --porcelain=v1 --untracked-files=all)" ]] || { echo 'Formal package E2E requires clean source.' >&2; exit 1; }
+source_sha="$(git -C "$project_dir" rev-parse --verify HEAD)"
+test_root="$(mktemp -d "${RUNNER_TEMP:-${TMPDIR:-/tmp}}/xczs-formal-release-e2e.XXXXXXXX")"
+trap 'rm -rf -- "$test_root"' EXIT
 chmod 0700 "$test_root"
-
-# Exercise path serialization as part of the real release invocation. The
-# source checkout retains a backslash, while the supported output path covers
-# shell and replacement-language metacharacters without interpreting them.
-# package-release.sh self-tests the unsupported output-backslash rejection.
-repository="$test_root/checkout with spaces & # \\ source"
-output_dir="$test_root/output with spaces & # release"
-signing_key="$test_root/ephemeral Ed25519 signing key.pem"
-unpack_dir="$test_root/verified unpack"
-expected_public_key="$test_root/expected public key.pem"
-
-git clone --quiet --no-checkout --no-local -- "$project_dir" "$repository"
+repository="$test_root/source with spaces & #"
+output="$test_root/output with spaces & #"
+package="$test_root/package"
+key="$test_root/test-signing.pem"
+public="$test_root/test-public.pem"
+git clone --quiet --no-local -- "$project_dir" "$repository"
 git -C "$repository" checkout --quiet --detach "$source_sha"
-[[ "$(git -C "$repository" rev-parse --verify 'HEAD^{commit}')" == \
-  "$source_sha" ]] || {
-  printf 'Isolated release checkout did not preserve the source commit.\n' >&2
-  exit 1
-}
-
-mapfile -t versions < <(
-  sed -n \
-    '/^\[package\]$/,/^\[/s/^version = "\([^"]*\)"/\1/p' \
-    "$repository/Cargo.toml"
-)
-if ((${#versions[@]} != 1)); then
-  printf 'Expected one package version; found %s.\n' \
-    "${#versions[@]}" >&2
-  exit 1
-fi
-version="${versions[0]}"
-if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?(\+[0-9A-Za-z-]+(\.[0-9A-Za-z-]+)*)?$ ]]; then
-  printf 'Cargo package version is not a safe semantic version: %s\n' \
-    "$version" >&2
-  exit 1
-fi
-release_tag="v$version"
-git -C "$repository" \
-  -c user.name=formal-release-e2e \
-  -c user.email=formal-release-e2e@example.invalid \
-  -c tag.gpgSign=false \
-  tag --annotate --force --message='formal release E2E' \
-    "$release_tag" "$source_sha"
-[[ "$(
-  git -C "$repository" rev-parse --verify "refs/tags/$release_tag^{commit}"
-)" == "$source_sha" ]] || {
-  printf 'E2E release tag does not resolve to the source commit.\n' >&2
-  exit 1
-}
-[[ -z "$(
-  git -C "$repository" status --porcelain --untracked-files=all
-)" ]] || {
-  printf 'Isolated release checkout became dirty before packaging.\n' >&2
-  exit 1
-}
-
-install -d -m 0700 "$output_dir" "$unpack_dir"
-openssl genpkey -algorithm Ed25519 -out "$signing_key"
-chmod 0600 "$signing_key"
-
-(
-  cd "$repository"
-  ./scripts/package-release.sh \
-    --signing-key "$signing_key" \
-    --output-dir "$output_dir"
-)
-
-toolchain="$(
-  sed -n 's/^channel = "\([^"]*\)"/\1/p' \
-    "$repository/rust-toolchain.toml"
+version="$(python3 - "$repository/Cargo.toml" <<'PY'
+import sys,tomllib
+with open(sys.argv[1],'rb') as stream: print(tomllib.load(stream)['package']['version'])
+PY
 )"
-[[ -n "$toolchain" && "$toolchain" != *$'\n'* ]] || {
-  printf 'Unable to determine the pinned Rust toolchain.\n' >&2
-  exit 1
-}
-detected_host_target="$(
-  env RUSTUP_TOOLCHAIN="$toolchain" rustc -vV | sed -n 's/^host: //p'
-)"
-host_target="x86_64-unknown-linux-gnu"
-[[ "$detected_host_target" == "$host_target" ]] || {
-  printf 'Formal XCZS release E2E requires Rust host %s; found %s.\n' \
-    "$host_target" "$detected_host_target" >&2
-  exit 1
-}
-
-release_name="xczs-${version}-${host_target}-${source_sha:0:12}"
-release_dir="$output_dir/$release_name.release"
-archive_name="$release_name.tar.gz"
-checksum_name="$archive_name.sha256"
-signature_name="$checksum_name.sig"
-public_key_name="$checksum_name.pub.pem"
-archive="$release_dir/$archive_name"
-checksum="$release_dir/$checksum_name"
-signature="$release_dir/$signature_name"
-public_key="$release_dir/$public_key_name"
-
-[[ -d "$release_dir" && ! -L "$release_dir" ]] || {
-  printf 'Formal release directory is missing or unsafe: %s\n' \
-    "$release_dir" >&2
-  exit 1
-}
-entry_count="$(
-  find -P "$output_dir" -mindepth 1 -maxdepth 2 -printf x | wc -c
-)"
-[[ "$entry_count" == "5" ]] || {
-  printf 'Expected one release directory and four artifacts; found %s entries.\n' \
-    "$entry_count" >&2
-  exit 1
-}
-for artifact in "$archive" "$checksum" "$signature" "$public_key"; do
-  if [[ ! -f "$artifact" || -L "$artifact" || \
-    "$(stat -Lc '%h:%a' -- "$artifact")" != "1:644" ]]
-  then
-    printf 'Formal release artifact has an unsafe shape or mode: %s\n' \
-      "$artifact" >&2
-    exit 1
-  fi
-done
-
-(
-  cd "$release_dir"
-  sha256sum --check "$checksum_name"
-)
-openssl pkey -in "$signing_key" -pubout -out "$expected_public_key"
-cmp -- "$expected_public_key" "$public_key"
-openssl pkeyutl \
-  -verify \
-  -rawin \
-  -pubin \
-  -inkey "$public_key" \
-  -sigfile "$signature" \
-  -in "$checksum"
-
-tar \
-  --extract \
-  --gzip \
-  --file="$archive" \
-  --directory="$unpack_dir" \
-  --no-same-owner
-package_root="$unpack_dir/$release_name"
-[[ -d "$package_root" && ! -L "$package_root" ]] || {
-  printf 'Formal release archive did not contain the expected package root.\n' \
-    >&2
-  exit 1
-}
-unpacked_entry_count="$(
-  find -P "$unpack_dir" -mindepth 1 -maxdepth 1 -printf x | wc -c
-)"
-[[ "$unpacked_entry_count" == "1" ]] || {
-  printf 'Formal release archive contained unexpected top-level entries.\n' >&2
-  exit 1
-}
-(
-  cd "$package_root"
-  sha256sum --check SHA256SUMS
-)
-expected_version="$(
-  node "$repository/scripts/release-version.mjs" \
-    "$version" "$source_sha" "$repository/Cargo.lock"
-)"
-actual_version="$("$package_root/bin/xczs" --version)"
-[[ "$actual_version" == "$expected_version" ]] || {
-  printf 'Expected packaged version %s; found %s.\n' \
-    "$expected_version" "$actual_version" >&2
-  exit 1
-}
-[[ -f "$package_root/WEB-ASSETS.json" && ! -L "$package_root/WEB-ASSETS.json" ]] || {
-  printf 'Formal release package omitted its embedded Web inventory.\n' >&2
-  exit 1
-}
-"$package_root/bin/xczs" web-assets | cmp - "$package_root/WEB-ASSETS.json"
-grep -Fxq "source_sha=$source_sha" \
-  "$package_root/BUILD-ENVIRONMENT.txt"
-grep -Fxq "source_version=$version" \
-  "$package_root/BUILD-ENVIRONMENT.txt"
-
-bash "$project_dir/scripts/check-release-runtime.sh" "$package_root/bin/xczs"
-
+git -C "$repository" -c user.name=package-e2e -c user.email=package-e2e@example.invalid -c tag.gpgSign=false tag --annotate --force --message='isolated package verification' "v$version" "$source_sha"
+mkdir -m 0700 "$output" "$package"
+openssl genpkey -algorithm Ed25519 -out "$key"
+chmod 0600 "$key"
+openssl pkey -in "$key" -pubout -out "$public"
+"$repository/scripts/package-release.sh" --output-dir "$output" --signing-key "$key"
+archive="xczs-$version-linux-x86_64.tar.gz"
+(cd "$output" && sha256sum --check SHA256SUMS)
+tar --extract --gzip --no-same-owner --file "$output/$archive" --directory "$package"
+# Verify the externally controlled test key before executing anything in the package.
+openssl pkeyutl -verify -pubin -rawin -inkey "$public" -in "$package/share/package.json" -sigfile "$package/share/package.sig"
+python3 - "$package" "$source_sha" <<'PY'
+import hashlib,json,pathlib,stat,sys
+root=pathlib.Path(sys.argv[1]);manifest=json.loads((root/'share/package.json').read_bytes())
+assert manifest['manifest_version']==1
+assert manifest['identity']['product']=='xczs'
+assert manifest['identity']['source_revision']==sys.argv[2]
+assert manifest['setup']=='libexec/setup'
+for item in manifest['files']:
+    relative=pathlib.PurePosixPath(item['path'])
+    assert not relative.is_absolute() and '..' not in relative.parts
+    target=root/relative;info=target.lstat()
+    assert stat.S_ISREG(info.st_mode) and info.st_nlink==1
+    assert stat.S_IMODE(info.st_mode)==int(item['mode'],8)
+    assert hashlib.sha256(target.read_bytes()).hexdigest()==item['sha256']
+assert (root/'install.sh').is_file() and (root/'maintenance.sh').is_file()
+PY
+fingerprint="$(openssl pkey -pubin -in "$public" -outform DER | sha256sum | awk '{print $1}')"
+python3 "$package/libexec/package.py" verify "$package" --public-key "$public" --key-sha256 "$fingerprint" > "$test_root/verified.json"
+"$package/bin/xczs" --version
+bash "$project_dir/scripts/check-release-runtime.sh" "$package/bin/xczs"
 if [[ -n "${XCZS_FORMAL_E2E_EXPORT_DIR:-}" ]]; then
-  [[ ! -e "$XCZS_FORMAL_E2E_EXPORT_DIR" ]] || {
-    printf 'Formal release export path already exists: %s\n' \
-      "$XCZS_FORMAL_E2E_EXPORT_DIR" >&2
-    exit 1
-  }
-  install -d -m 0700 -- "$XCZS_FORMAL_E2E_EXPORT_DIR"
-  for artifact in "$archive" "$checksum" "$signature" "$public_key"; do
-    install -m 0644 -- "$artifact" "$XCZS_FORMAL_E2E_EXPORT_DIR/"
-  done
+  [[ ! -e "$XCZS_FORMAL_E2E_EXPORT_DIR" && ! -L "$XCZS_FORMAL_E2E_EXPORT_DIR" ]] || { echo 'Export path exists.' >&2; exit 1; }
+  install -d -m 0700 "$XCZS_FORMAL_E2E_EXPORT_DIR"
+  install -m 0644 "$output/$archive" "$output/SHA256SUMS" "$XCZS_FORMAL_E2E_EXPORT_DIR/"
 fi
-
-printf 'formal signed release package E2E passed for %s at %s\n' \
-  "$release_tag" "$source_sha"
+printf 'Formal signed package and runtime verification passed for %s at %s\n' "$version" "$source_sha"

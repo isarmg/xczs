@@ -20,7 +20,7 @@ Web 与 API 使用一致的结构化错误和操作 ID；遇到写入结果未�
 ## 开发验证
 
 `npm run build:server -- --no-install` 生成未绑定源码的开发 binary，并验收其内嵌资源。需要前端热更新时，
-运行时显式使用 `--development` 与绝对路径 `XCZS_DEV_WEB_DIR` 指向 `web/runtime-dist`；重新执行
+运行时显式使用 JSON `development: true` 与绝对路径 `XCZS_DEV_WEB_DIR` 指向 `web/runtime-dist`；重新执行
 `npm run build:platform` 即可更新资源，无需重新编译 Rust。源码绑定的正式 binary 拒绝目录覆盖。
 目录模式使用共同 ETag 和重新验证缓存；正式资源路径绑定完整清单摘要，使用 immutable 缓存。
 

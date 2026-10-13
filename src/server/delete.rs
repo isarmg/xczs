@@ -273,8 +273,9 @@ mod tests {
         std::fs::set_permissions(state_dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
         let server = Server::initialize_with_lifecycle_for_test(
             Args {
+                root: state_dir.path().to_path_buf(),
                 serve_path: root.to_path_buf(),
-                state_dir: Some(state_dir.path().to_path_buf()),
+                state_dir: Some(state_dir.path().join("state")),
                 ..Args::default()
             },
             ServerLifecycle::new(),
@@ -314,7 +315,7 @@ mod tests {
 
         let mut connection = sqlx::SqliteConnection::connect_with(
             &sqlx::sqlite::SqliteConnectOptions::new()
-                .filename(state_dir.path().join("state.sqlite3"))
+                .filename(state_dir.path().join("state/state.sqlite3"))
                 .create_if_missing(false),
         )
         .await

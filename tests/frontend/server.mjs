@@ -52,8 +52,9 @@ const binary = process.env.XCZS_FRONTEND_BINARY || join(
   "debug",
   "xczs",
 );
-const authConfig = join(authRoot, "xczs.json");
-const authJson = JSON.stringify({});
+mkdirSync(join(authRoot, "config"), { mode: 0o700 });
+const authConfig = join(authRoot, "config/config.json");
+const authJson = JSON.stringify({ serve_path: shareRoot, data_dir: stateRoot, bind: "127.0.0.1:0", min_free_space: 0 });
 writeFileSync(authConfig, authJson, { flag: "wx", mode: 0o600 });
 chmodSync(authConfig, 0o600);
 
@@ -70,27 +71,12 @@ writeFileSync(join(shareRoot, "overwrite-source.txt"), "replacement content");
 writeFileSync(join(shareRoot, "overwrite-target.txt"), "original content");
 writeFileSync(join(shareRoot, "delete-me.txt"), "delete target");
 
-const runtimeArguments = [
-  "--serve-path", shareRoot,
-  "--bind", "127.0.0.1:0",
-  "--trusted-proxies", "127.0.0.1/32",
-  "--min-free-space", "0",
-  "--data-dir", stateRoot,
-  "--config", authConfig,
-];
-const initialization = spawnSync(
-  binary,
-  ["init", "--username", "frontend-test-0", ...runtimeArguments],
-  {
-    cwd: projectRoot,
-    input: "test-password\n",
-    stdio: ["pipe", "inherit", "inherit"],
-  },
-);
-if (initialization.status !== 0) {
-  throw new Error("explicit frontend fixture initialization failed");
-}
-const child = spawn(binary, ["run", ...runtimeArguments], {
+const initialization = spawnSync("cargo", [
+  "run", "--locked", "--target", "x86_64-unknown-linux-gnu", "--example", "offline_fixture", "--",
+  "--root", authRoot, "--username", "frontend-test-0",
+], { cwd: projectRoot, input: "test-password\n", stdio: ["pipe", "inherit", "inherit"] });
+if (initialization.status !== 0) throw new Error("explicit frontend library fixture initialization failed");
+const child = spawn(binary, ["--root", authRoot], {
   cwd: projectRoot,
   stdio: ["ignore", "pipe", "inherit"],
 });

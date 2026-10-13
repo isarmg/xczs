@@ -120,7 +120,7 @@ xczs/
 ├── config/                       唯一当前源码配置样例
 ├── systemd/                      普通账号服务单元
 ├── libexec/                      安装器内部实现
-├── install.sh                    setup/upgrade 统一入口
+├── config/xssi.lock             固定独立安装维护仓库提交
 ├── docs/                   设计、取舍、运维和本教学手册
 ├── scripts/                质量门、文档检查、发布打包脚本
 ├── src/                          Rust 库和可执行程序
@@ -133,7 +133,7 @@ xczs/
 └── rust-toolchain.toml           固定 Rust 1.99 工具链
 ```
 
-源码配置一律位于 `config/`，部署资产一律位于 `systemd/`，客户端一律位于 `web/`。生产安装故意使用 `/etc/isarmg/xczs/config.json` ：这是 Linux FHS/证书权限边界，不是仓库目录命名不一致，也不是历史兼容路径。
+源码配置一律位于 `config/`，部署资产一律位于 `systemd/`，客户端一律位于 `web/`。生产安装故意使用 `ROOT/config/config.json` ：这是 Linux FHS/证书权限边界，不是仓库目录命名不一致，也不是历史兼容路径。
 
 ### `src/` 的重点
 

@@ -9,9 +9,8 @@ Type=simple
 User=isarmg-xczs
 Group=isarmg-xczs
 UMask=0077
-RuntimeDirectory=isarmg/xczs
-RuntimeDirectoryMode=0700
-ExecStart=/opt/isarmg/xczs/bin/xczs run --config /etc/isarmg/xczs/config.json
+WorkingDirectory=/opt/isarmg/xczs
+ExecStart=/opt/isarmg/xczs/bin/xczs --root /opt/isarmg/xczs
 Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=120s
@@ -30,7 +29,7 @@ ProtectKernelTunables=yes
 ProtectSystem=strict
 # Keep this path in sync with config.json serve_path.
 # The installer renders both roots from the selected JSON.
-ReadWritePaths=/var/lib/isarmg/xczs /srv/xczs
+ReadWritePaths=/opt/isarmg/xczs/state /opt/isarmg/xczs/logs /opt/isarmg/xczs/run /srv/xczs
 RestrictNamespaces=yes
 RestrictRealtime=yes
 RestrictSUIDSGID=yes

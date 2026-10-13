@@ -12,8 +12,9 @@ fn test_server(root: &Path) -> (Server, assert_fs::TempDir) {
     std::fs::set_permissions(state_dir.path(), std::fs::Permissions::from_mode(0o700)).unwrap();
     let server = Server::initialize_with_lifecycle_for_test(
         Args {
+            root: state_dir.path().to_path_buf(),
             serve_path: root.to_path_buf(),
-            state_dir: Some(state_dir.path().to_path_buf()),
+            state_dir: Some(state_dir.path().join("state")),
             ..Args::default()
         },
         ServerLifecycle::new(),

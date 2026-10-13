@@ -110,7 +110,7 @@ fn repeated_upload_protocol_headers_are_rejected_over_http(
 
 #[rstest]
 fn upload_rejects_configured_and_declared_length_overflow(
-    #[with(&["--max-upload-size", "3", "--min-free-space", "0"])] server: TestServer,
+    #[with(serde_json::json!({"max_upload_size": 3, "min_free_space": 0}))] server: TestServer,
 ) -> Result<(), Error> {
     let target = server.path().join("index.html");
     let original = std::fs::read(&target)?;
@@ -138,12 +138,7 @@ fn upload_rejects_configured_and_declared_length_overflow(
 
 #[rstest]
 fn upload_preserves_the_configured_free_space_floor(
-    #[with(&[
-        "--min-free-space",
-        "18446744073709551615",
-        "--max-upload-size",
-        "1024"
-    ])]
+    #[with(serde_json::json!({"min_free_space": 18446744073709551615u64, "max_upload_size": 1024}))]
     server: TestServer,
 ) -> Result<(), Error> {
     let target = server.path().join("index.html");
@@ -165,12 +160,7 @@ fn upload_preserves_the_configured_free_space_floor(
 
 #[rstest]
 fn fresh_upload_rolls_back_new_ancestors_when_space_reservation_fails(
-    #[with(&[
-        "--min-free-space",
-        "18446744073709551615",
-        "--max-upload-size",
-        "1024"
-    ])]
+    #[with(serde_json::json!({"min_free_space": 18446744073709551615u64, "max_upload_size": 1024}))]
     server: TestServer,
 ) -> Result<(), Error> {
     let response = with_new_upload_headers(
@@ -193,16 +183,7 @@ fn fresh_upload_rolls_back_new_ancestors_when_space_reservation_fails(
 
 #[rstest]
 fn upload_concurrency_and_idle_time_are_bounded(
-    #[with(&[
-        "--max-concurrent-uploads",
-        "1",
-        "--upload-idle-timeout",
-        "1",
-        "--upload-total-timeout",
-        "10",
-        "--min-free-space",
-        "0"
-    ])]
+    #[with(serde_json::json!({"max_concurrent_uploads": 1, "upload_idle_timeout": 1, "upload_total_timeout": 10, "min_free_space": 0}))]
     server: TestServer,
 ) -> Result<(), Error> {
     use fixtures::{TEST_PASSWORD, TEST_USER};
@@ -299,14 +280,7 @@ fn upload_concurrency_and_idle_time_are_bounded(
 
 #[rstest]
 fn late_upload_conflict_keeps_the_stage_and_confirmation_reuses_it(
-    #[with(&[
-        "--upload-idle-timeout",
-        "5",
-        "--upload-total-timeout",
-        "20",
-        "--min-free-space",
-        "0"
-    ])]
+    #[with(serde_json::json!({"upload_idle_timeout": 5, "upload_total_timeout": 20, "min_free_space": 0}))]
     mut server: TestServer,
 ) -> Result<(), Error> {
     use fixtures::{TEST_PASSWORD, TEST_USER};
@@ -401,16 +375,7 @@ fn late_upload_conflict_keeps_the_stage_and_confirmation_reuses_it(
     assert_eq!(std::fs::read(&target)?, b"competitor");
     assert_eq!(std::fs::read(stage.path())?, b"abc123");
 
-    server.restart_with_default_auth_args([
-        "--upload-idle-timeout",
-        "1",
-        "--upload-total-timeout",
-        "20",
-        "--max-upload-size",
-        "5",
-        "--min-free-space",
-        "18446744073709551615",
-    ]);
+    server.restart_with_default_auth_args(serde_json::json!({"upload_idle_timeout": 1, "upload_total_timeout": 20, "max_upload_size": 5, "min_free_space": 18446744073709551615u64}));
 
     let awaiting = server
         .request(
@@ -471,14 +436,7 @@ fn late_upload_conflict_keeps_the_stage_and_confirmation_reuses_it(
     assert_eq!(std::fs::read(&target)?, b"competitor");
     assert_eq!(std::fs::read(stage.path())?, b"abc123");
 
-    server.restart_with_default_auth_args([
-        "--upload-idle-timeout",
-        "1",
-        "--upload-total-timeout",
-        "20",
-        "--max-upload-size",
-        "5",
-    ]);
+    server.restart_with_default_auth_args(serde_json::json!({"upload_idle_timeout": 1, "upload_total_timeout": 20, "max_upload_size": 5}));
 
     let changed_length = with_upload_headers(
         server.request(
@@ -868,14 +826,7 @@ fn late_upload_conflict_keeps_the_stage_and_confirmation_reuses_it(
 
 #[rstest]
 fn staged_existing_target_metadata_cannot_be_reused_as_a_create(
-    #[with(&[
-        "--upload-idle-timeout",
-        "5",
-        "--upload-total-timeout",
-        "20",
-        "--min-free-space",
-        "0"
-    ])]
+    #[with(serde_json::json!({"upload_idle_timeout": 5, "upload_total_timeout": 20, "min_free_space": 0}))]
     server: TestServer,
 ) -> Result<(), Error> {
     use fixtures::{TEST_PASSWORD, TEST_USER};

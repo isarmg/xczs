@@ -468,7 +468,10 @@ async fn per_owner_capacity_preserves_registry_space_for_other_accounts() {
 
 #[tokio::test]
 async fn persistent_registry_replays_completed_outcome_after_restart() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = tempfile::Builder::new()
+        .permissions(<std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o700))
+        .tempdir()
+        .unwrap();
     let path = directory.path().join("state.sqlite3");
     let identity = super::super::state_store::RootIdentity::new(41, 42);
     let operation_id = Uuid::new_v4();
@@ -477,7 +480,7 @@ async fn persistent_registry_replays_completed_outcome_after_restart() {
         OperationOutcome::failure(StatusCode::CONFLICT, TrackedOperationError::PathExists);
 
     crate::server::state_store::initialize_current(&path, identity).unwrap();
-    let registry = OperationRegistry::open(&path, identity, RESULT_TTL).unwrap();
+    let registry = OperationRegistry::open(&path, identity, RESULT_TTL, directory.path()).unwrap();
     let BeginOperation::Started(guard) = registry
         .begin("alice", operation_id, operation_fingerprint)
         .await
@@ -489,7 +492,7 @@ async fn persistent_registry_replays_completed_outcome_after_restart() {
     registry.store.clone().shutdown_for_test();
     drop(registry);
 
-    let reopened = OperationRegistry::open(&path, identity, RESULT_TTL).unwrap();
+    let reopened = OperationRegistry::open(&path, identity, RESULT_TTL, directory.path()).unwrap();
     assert!(matches!(
         reopened
             .begin("alice", operation_id, operation_fingerprint)

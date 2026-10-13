@@ -3,7 +3,12 @@ mod business_cases {
     use super::*;
     #[test]
     fn scan_preserves_tags_and_does_not_apply_them_to_replacements() {
-        let t = tempfile::tempdir().unwrap();
+        let t = tempfile::Builder::new()
+            .permissions(
+                <std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o700),
+            )
+            .tempdir()
+            .unwrap();
         Database::initialize(&t.path().join("db"), t.path()).unwrap();
         let db = Database::open(&t.path().join("db"), t.path()).unwrap();
         let sample = |ino| Sample {
@@ -65,7 +70,12 @@ mod business_cases {
 
     #[test]
     fn directory_and_tag_filters_compose_without_rescanning_files() {
-        let t = tempfile::tempdir().unwrap();
+        let t = tempfile::Builder::new()
+            .permissions(
+                <std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o700),
+            )
+            .tempdir()
+            .unwrap();
         Database::initialize(&t.path().join("db"), t.path()).unwrap();
         let db = Database::open(&t.path().join("db"), t.path()).unwrap();
         let sample = |path: &str, ino| Sample {
@@ -153,7 +163,12 @@ mod business_cases {
 mod resource_tests {
     use super::*;
     fn fixture() -> (tempfile::TempDir, Database) {
-        let root = tempfile::tempdir().unwrap();
+        let root = tempfile::Builder::new()
+            .permissions(
+                <std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o700),
+            )
+            .tempdir()
+            .unwrap();
         let path = root.path().join("tags.db");
         Database::initialize(&path, root.path()).unwrap();
         let mut database = Database::open(&path, root.path()).unwrap();
@@ -482,6 +497,11 @@ mod resource_tests {
         db.mutate_tags(&[id], &[tag], true).unwrap();
         let backups = root.path().join("backups");
         std::fs::create_dir(&backups).unwrap();
+        std::fs::set_permissions(
+            &backups,
+            <std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o700),
+        )
+        .unwrap();
         for i in 0..4 {
             let target = backups.join(format!("copy-{i}.db"));
             db.backup(&target).unwrap();
@@ -519,7 +539,10 @@ mod resource_tests {
 
 #[test]
 fn recursive_paths_and_folders_keep_literal_case_sensitive_identity() {
-    let t = tempfile::tempdir().unwrap();
+    let t = tempfile::Builder::new()
+        .permissions(<std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o700))
+        .tempdir()
+        .unwrap();
     Database::initialize(&t.path().join("db"), t.path()).unwrap();
     let db = Database::open(&t.path().join("db"), t.path()).unwrap();
     let directories = ["Reports", "reports", "数据_%\\A", "数据_%\\a", "数据_XX\\A"];
@@ -574,7 +597,10 @@ fn recursive_paths_and_folders_keep_literal_case_sensitive_identity() {
 
 #[test]
 fn case_sensitive_folder_cursors_keep_forward_and_reverse_scope() {
-    let t = tempfile::tempdir().unwrap();
+    let t = tempfile::Builder::new()
+        .permissions(<std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o700))
+        .tempdir()
+        .unwrap();
     Database::initialize(&t.path().join("db"), t.path()).unwrap();
     let db = Database::open(&t.path().join("db"), t.path()).unwrap();
     let samples = (0..52)
@@ -613,7 +639,10 @@ fn case_sensitive_folder_cursors_keep_forward_and_reverse_scope() {
 
 #[test]
 fn tag_ids_survive_empty_table_and_reopen() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::Builder::new()
+        .permissions(<std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o700))
+        .tempdir()
+        .unwrap();
     let path = root.path().join("tags.db");
     Database::initialize(&path, root.path()).unwrap();
     let db = Database::open(&path, root.path()).unwrap();
@@ -631,7 +660,10 @@ fn tag_ids_survive_empty_table_and_reopen() {
 
 #[test]
 fn old_reusable_tag_schema_is_rejected_without_mutation() {
-    let root = tempfile::tempdir().unwrap();
+    let root = tempfile::Builder::new()
+        .permissions(<std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o700))
+        .tempdir()
+        .unwrap();
     let path = root.path().join("tags.db");
     std::fs::File::create(&path).unwrap();
     xcss::sqlite::block_on_sqlite_connection(async {
@@ -656,4 +688,27 @@ fn old_reusable_tag_schema_is_rejected_without_mutation() {
     assert!(error.to_string().contains("exact current structure"));
     assert!(Database::open(&path, root.path()).is_err());
     assert_eq!(std::fs::read(&path).unwrap(), before);
+}
+
+#[test]
+fn prepared_tag_open_rejects_replaced_source_generation() {
+    let root = tempfile::Builder::new()
+        .permissions(<std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o700))
+        .tempdir()
+        .unwrap();
+    let path = root.path().join("tags.db");
+    Database::initialize(&path, root.path()).unwrap();
+    let prepared = Database::prepare_in(&path, root.path(), root.path()).unwrap();
+    let original = std::fs::read(&path).unwrap();
+    let replacement = root.path().join("replacement.db");
+    std::fs::write(&replacement, &original).unwrap();
+    std::fs::rename(&replacement, &path).unwrap();
+    let error = prepared.open().err().expect("replaced source was opened");
+    assert!(
+        error
+            .downcast_ref::<xcss::sqlite::SnapshotError>()
+            .is_some()
+    );
+    assert_eq!(std::fs::read(&path).unwrap(), original);
+    assert!(!path.with_file_name("tags.db-wal").exists());
 }

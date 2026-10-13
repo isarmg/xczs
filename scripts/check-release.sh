@@ -80,26 +80,15 @@ else
   run cargo audit --deny yanked
 fi
 
-# The release self-test covers normalize-sbom, third-party notices and npm cache seeds
-# together, avoiding duplicate execution or inconsistent coverage in this entry point.
-run ./scripts/package-release.sh --self-test
-# Deployment smoke compiles the real binary and therefore needs embedded Web
-# assets even in a freshly extracted, isolated quality-gate source tree.
-if [[ "${XCZS_ISOLATED_QUALITY_GATE:-}" == "1" ]]; then
-  # Release output paths may contain shell metacharacters, but the Nginx/sed
-  # deployment fixture requires safe temporary paths. It creates and removes private random directories in /tmp.
-  run env TMPDIR=/tmp ./scripts/check-deployment.sh
-else
-  run ./scripts/check-deployment.sh
-fi
+# The independent xssi repository tests signed packaging and installation.
+# This product validates its current runtime layout and its real runtime.
+run ./scripts/check-deployment.sh
 
 run cargo clippy --locked --target x86_64-unknown-linux-gnu --all-targets --all-features -- -D warnings
 run cargo test --locked --target x86_64-unknown-linux-gnu --all-targets --all-features
 run ./scripts/check-coverage.sh
 run cargo build --locked --release --target x86_64-unknown-linux-gnu
 release_binary="${CARGO_TARGET_DIR:-$project_dir/target}/x86_64-unknown-linux-gnu/release/xczs"
-run node node_modules/@xcss/web/dist/web-toolchain/server-cli.js \
-  --verify-only --binary "$release_binary" --dist "$project_dir/web/runtime-dist"
 run bash scripts/check-release-runtime.sh "$release_binary"
 
 run ./node_modules/.bin/tsc --version

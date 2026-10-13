@@ -280,7 +280,6 @@ HTTP 方法只是协议意图，安全性仍取决于后端校验。例如 `HEAD
 
 ### Header
 
-Header 是请求或响应的元数据。Xczs 会对 Operation ID、上传协议头、Cookie、xcss CSRF/Origin/Host/Fetch Metadata 和受信代理头等安全相关字段拒绝重复、逗号拼接或非规范值，因为代理和服务端可能对歧义字段产生不同解释。普通展示型 header 是否允许重复仍需逐项确认；不能从某一路由的策略外推全部协议。
 
 ### Cookie
 

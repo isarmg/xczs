@@ -15,7 +15,7 @@ use http_body::{Body, Frame, SizeHint};
 
 use crate::{logger::BoundedLogLine, utils::decode_uri};
 
-pub const DEFAULT_LOG_FORMAT: &str = r#"$time_iso8601 $log_level - $remote_addr "$request" $status operation_id=$operation_id operation_state=$operation_state request_id=$http_x_request_id"#;
+pub const DEFAULT_LOG_FORMAT: &str = r#"$time_iso8601 $log_level - "$request" $status operation_id=$operation_id operation_state=$operation_state request_id=$http_x_request_id"#;
 const MAX_LOG_FORMAT_BYTES: usize = 4096;
 const MAX_LOG_FORMAT_ELEMENTS: usize = 128;
 
@@ -62,7 +62,6 @@ impl LogNeeds {
     const TIME_UTC: u16 = 1 << 4;
     const TIME_ISO8601: u16 = 1 << 5;
     const MSEC: u16 = 1 << 6;
-    const REMOTE_ADDR: u16 = 1 << 7;
     const STATUS: u16 = 1 << 8;
     const OPERATION_ID: u16 = 1 << 9;
     const OPERATION_STATE: u16 = 1 << 10;
@@ -84,7 +83,6 @@ impl LogNeeds {
             "time_utc" => Self::TIME_UTC,
             "time_iso8601" => Self::TIME_ISO8601,
             "msec" => Self::MSEC,
-            "remote_addr" => Self::REMOTE_ADDR,
             "status" => Self::STATUS,
             "operation_id" => Self::OPERATION_ID,
             "operation_state" => Self::OPERATION_STATE,
@@ -157,7 +155,6 @@ impl HttpLogger {
         F: FnOnce() -> String,
     {
         let required = match name {
-            "remote_addr" => LogNeeds::REMOTE_ADDR,
             "status" => LogNeeds::STATUS,
             "operation_id" => LogNeeds::OPERATION_ID,
             "operation_state" => LogNeeds::OPERATION_STATE,

@@ -2,6 +2,7 @@ use super::*;
 
 pub(super) struct ActorRuntime {
     pub(super) path: PathBuf,
+    pub(super) temporary_root: PathBuf,
     pub(super) root: RootIdentity,
     pub(super) limits: Limits,
     pub(super) command_receiver: Receiver<Command>,
@@ -9,6 +10,7 @@ pub(super) struct ActorRuntime {
     pub(super) channels: ActorChannels,
     pub(super) healthy: Arc<AtomicBool>,
     pub(super) ready: SyncSender<Result<()>>,
+    pub(super) require_administrator: bool,
 }
 
 struct HealthOnExit(Arc<AtomicBool>);
@@ -22,6 +24,7 @@ impl Drop for HealthOnExit {
 pub(super) fn run(runtime: ActorRuntime) {
     let ActorRuntime {
         path,
+        temporary_root,
         root,
         limits,
         command_receiver,
@@ -29,6 +32,7 @@ pub(super) fn run(runtime: ActorRuntime) {
         channels,
         healthy,
         ready,
+        require_administrator,
     } = runtime;
     let _health_on_exit = HealthOnExit(healthy.clone());
     let initialized = (|| {
@@ -40,6 +44,8 @@ pub(super) fn run(runtime: ActorRuntime) {
             limits.ttl_ms,
             limits.upload_ttl_ms,
             recovery_now,
+            &temporary_root,
+            require_administrator,
         )?;
         Ok::<_, anyhow::Error>((connection, clock))
     })()

@@ -60,7 +60,7 @@ jobs:
               .github/workflows/*|systemd/*|libexec/*|config/*|install.sh|\
               scripts/check-deployment.sh|scripts/check-formal-release-e2e.sh|\
               scripts/check-release.sh|scripts/check-release-runtime.sh|\
-              scripts/package-release.sh|scripts/lib/package-release-self-test.sh|\
+              scripts/package-release.sh|config/xssi.lock|\
               Cargo.toml|Cargo.lock|build.rs|package.json|package-lock.json)
                 release_sensitive=true
                 break
@@ -249,14 +249,6 @@ jobs:
         run: |
           set -euo pipefail
           ./scripts/check-deployment.sh
-      - name: Run release packaging self-tests
-        if: ${{ !cancelled() && steps.quality_source.outcome == 'success' && steps.quality_node.outcome == 'success' && steps.quality_rust.outcome == 'success' }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          mv --version | sed -n '1p'
-          umask 077
-          ./scripts/package-release.sh --self-test
       - name: Build and execute the release binary
         if: ${{ !cancelled() && steps.quality_source.outcome == 'success' && steps.quality_rust.outcome == 'success' }}
         shell: bash

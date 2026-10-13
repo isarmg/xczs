@@ -11,7 +11,6 @@ if [[ -e .git || -L .git ]]; then
   }
   mapfile -d '' shell_scripts < <(
     git ls-files --cached --others --exclude-standard -z -- \
-      install.sh \
       ':(glob)scripts/**/*.sh' \
       ':(glob)tests/**/*.sh' |
       sort -z
@@ -21,7 +20,7 @@ else
   # in that tree was tracked at the selected commit, so discover its sources
   # directly instead of silently skipping the isolated release gate.
   mapfile -d '' shell_scripts < <(
-    find scripts tests install.sh -type f -name '*.sh' -print0 |
+    find scripts tests -type f -name '*.sh' -print0 |
       sort -z
   )
 fi
@@ -32,8 +31,11 @@ fi
 
 for script in "${shell_scripts[@]}"; do
   printf 'bash -n %q\n' "$script"
+  [[ -f "$script" ]] || continue
   bash -n "$script"
 done
+
+mapfile -t shell_scripts < <(printf '%s\n' "${shell_scripts[@]}" | while IFS= read -r script; do [[ ! -f "$script" ]] || printf '%s\n' "$script"; done)
 
 if command -v shellcheck >/dev/null 2>&1; then
   shellcheck --version

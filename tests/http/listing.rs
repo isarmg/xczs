@@ -180,7 +180,7 @@ fn recursive_walk_errors_do_not_return_partial_search_success(
 
 #[rstest]
 fn recursive_walk_budget_bounds_one_large_directory_before_full_collection(
-    #[with(&["--max-search-entries", "4"])] server: TestServer,
+    #[with(serde_json::json!({"max_search_entries": 4}))] server: TestServer,
 ) -> Result<(), Error> {
     const CREATED: usize = 128;
 

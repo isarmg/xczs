@@ -34,7 +34,10 @@ use super::StatePathScanLease;
 mod actor;
 mod database;
 pub(super) use database::expected_schema_identity;
-pub(super) use database::{initialize_current, validate_current};
+pub(super) use database::{
+    initialize_administrator, initialize_current, open_administrator_pool,
+    validate_current_with_administrator_in,
+};
 mod model;
 mod operation;
 mod purge;
@@ -48,7 +51,7 @@ pub(super) use model::{
 };
 
 const APPLICATION: &str = "xczs";
-const CURRENT_SCHEMA_REVISION: i64 = 1;
+const CURRENT_SCHEMA_REVISION: i64 = 2;
 const COMMAND_QUEUE_CAPACITY: usize = 256;
 const UPLOAD_SESSION_CAPACITY: usize = 16_384;
 const UPLOAD_SESSION_PER_OWNER_CAPACITY: usize = 4_096;
@@ -222,6 +225,7 @@ struct Limits {
 
 struct StateStoreOptions {
     path: PathBuf,
+    temporary_root: PathBuf,
     root: RootIdentity,
     capacity: usize,
     per_owner: usize,
@@ -230,6 +234,7 @@ struct StateStoreOptions {
     command_queue_capacity: usize,
     repository_limits: RepositoryLimits,
     temporary_directory: Option<tempfile::TempDir>,
+    require_administrator: bool,
 }
 
 impl StateStoreOptions {
@@ -240,9 +245,11 @@ impl StateStoreOptions {
         per_owner: usize,
         ttl: Duration,
         upload_ttl: Duration,
+        temporary_root: PathBuf,
     ) -> Self {
         Self {
             path,
+            temporary_root,
             root,
             capacity,
             per_owner,
@@ -251,6 +258,7 @@ impl StateStoreOptions {
             command_queue_capacity: COMMAND_QUEUE_CAPACITY,
             repository_limits: REPOSITORY_LIMITS,
             temporary_directory: None,
+            require_administrator: false,
         }
     }
 }
@@ -475,9 +483,18 @@ impl StateStore {
         if !path.try_exists()? {
             database::initialize_current(path, *root)?;
         }
-        Self::open_with_upload_ttl(path, root, capacity, per_owner, ttl, ttl)
+        Self::open_with_upload_ttl(
+            path,
+            root,
+            capacity,
+            per_owner,
+            ttl,
+            ttl,
+            path.parent().context("test state parent")?,
+        )
     }
 
+    #[cfg(test)]
     pub(super) fn open_with_upload_ttl(
         path: &Path,
         root: &RootIdentity,
@@ -485,8 +502,8 @@ impl StateStore {
         per_owner: usize,
         ttl: Duration,
         upload_ttl: Duration,
+        temporary_root: &Path,
     ) -> Result<Self> {
-        database::validate_current(path, *root)?;
         Self::start(StateStoreOptions::production(
             path.to_path_buf(),
             *root,
@@ -494,7 +511,30 @@ impl StateStore {
             per_owner,
             ttl,
             upload_ttl,
+            temporary_root.to_path_buf(),
         ))
+    }
+
+    pub(super) fn open_server(
+        path: &Path,
+        root: &RootIdentity,
+        capacity: usize,
+        per_owner: usize,
+        ttl: Duration,
+        upload_ttl: Duration,
+        temporary_root: &Path,
+    ) -> Result<Self> {
+        let mut options = StateStoreOptions::production(
+            path.to_path_buf(),
+            *root,
+            capacity,
+            per_owner,
+            ttl,
+            upload_ttl,
+            temporary_root.to_path_buf(),
+        );
+        options.require_administrator = true;
+        Self::start(options)
     }
 
     #[cfg(test)]
@@ -515,6 +555,7 @@ impl StateStore {
     fn start(options: StateStoreOptions) -> Result<Self> {
         let StateStoreOptions {
             path,
+            temporary_root,
             root,
             capacity,
             per_owner,
@@ -523,6 +564,7 @@ impl StateStore {
             command_queue_capacity,
             repository_limits,
             temporary_directory,
+            require_administrator,
         } = options;
         ensure!(
             command_queue_capacity > 0,
@@ -545,6 +587,7 @@ impl StateStore {
             .spawn(move || {
                 actor::run(actor::ActorRuntime {
                     path,
+                    temporary_root,
                     root,
                     limits,
                     command_receiver,
@@ -552,6 +595,7 @@ impl StateStore {
                     channels: thread_channels,
                     healthy: thread_healthy,
                     ready: ready_sender,
+                    require_administrator,
                 });
             })
             .context("Failed to start the state store thread")?;
@@ -598,6 +642,7 @@ impl StateStore {
         };
         database::initialize_current(&path, root)?;
         Self::start(StateStoreOptions {
+            temporary_root: directory.path().to_path_buf(),
             path,
             root,
             capacity,
@@ -607,6 +652,7 @@ impl StateStore {
             command_queue_capacity,
             repository_limits,
             temporary_directory: Some(directory),
+            require_administrator: false,
         })
     }
 

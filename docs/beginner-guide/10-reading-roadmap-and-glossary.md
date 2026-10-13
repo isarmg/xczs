@@ -68,7 +68,7 @@
 - 登录为何使用 xcss JSON Fetch，而不使用表单提交或 PRG？
 - Cookie 认证与 CSRF 各解决什么？
 - 为什么修改 `login.js` 可能还要更新 CSP 哈希？
-- 应用和 HTTPS 网关 的登录限流如何叠加？
+- 应用认证资源容量与外部入口策略分别负责什么？
 
 ### 第 4 次：目录页面与列表
 
@@ -477,7 +477,7 @@ TypeScript/TSX 源码通过 Vite 编译为浏览器执行的 JavaScript，源码
 先持久记录待执行副作用，再由 worker 可靠消费的模式。删除 purge job 是文件系统与 SQLite 之间的 durable outbox。
 
 **owner digest**
-按具体用途从 xcss 管理员身份生成的假名化 `OwnerId`。operation/upload/purge 的持久记录使用当前 `OwnerId::persistent` 合同；列表快照和登录限流使用各自 domain-separated 摘要。它们避免在这些边界直接保存或比较管理员 username，但都只是未加密盐的 SHA-256；低熵 username 可被字典枚举，不能视为匿名化或保密边界，也不能混成一个全局通用摘要。源码里的 data-plane `user`/owner 命名描述文件操作归属，不表示另有普通用户角色。
+按具体用途从 xcss 管理员身份生成的假名化 `OwnerId`。operation/upload/purge 的持久记录使用当前 `OwnerId::persistent` 合同；列表快照使用独立 domain-separated 摘要。它们避免在这些边界直接保存或比较管理员 username，但都只是未加密盐的 SHA-256；低熵 username 可被字典枚举，不能视为匿名化或保密边界，也不能混成一个全局通用摘要。源码里的 data-plane `user`/owner 命名描述文件操作归属，不表示另有普通用户角色。
 
 ### P
 

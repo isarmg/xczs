@@ -100,6 +100,74 @@ pub struct Database {
     path: std::path::PathBuf,
     limits: Limits,
 }
+/// A complete read-only preflight bound to the original SQLite generation.
+/// Opening is deferred until all other product databases also pass validation.
+pub(in crate::server) struct PreparedDatabase {
+    path: std::path::PathBuf,
+    generation: SourceGeneration,
+}
+#[derive(Eq, PartialEq)]
+struct SourceGeneration {
+    directory: [u64; 2],
+    files: Vec<Option<[u64; 12]>>,
+}
+impl SourceGeneration {
+    fn inspect(path: &Path) -> Result<Self> {
+        use std::os::unix::fs::MetadataExt;
+        let directory = std::fs::symlink_metadata(path.parent().context("tag parent")?)?;
+        anyhow::ensure!(
+            directory.is_dir() && !directory.is_symlink(),
+            "tag parent must remain physical"
+        );
+        let mut files = Vec::with_capacity(4);
+        for suffix in ["", "-wal", "-shm", "-journal"] {
+            let mut name = path.as_os_str().to_os_string();
+            name.push(suffix);
+            let metadata = match std::fs::symlink_metadata(std::path::PathBuf::from(name)) {
+                Ok(value) => Some(value),
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::NotFound && !suffix.is_empty() =>
+                {
+                    None
+                }
+                Err(error) => return Err(error.into()),
+            };
+            files.push(metadata.map(|value| {
+                [
+                    value.dev(),
+                    value.ino(),
+                    u64::from(value.mode()),
+                    value.nlink(),
+                    u64::from(value.uid()),
+                    u64::from(value.gid()),
+                    value.len(),
+                    value.mtime() as u64,
+                    value.mtime_nsec() as u64,
+                    value.ctime() as u64,
+                    value.ctime_nsec() as u64,
+                    u64::from(value.file_type().is_symlink()),
+                ]
+            }));
+        }
+        Ok(Self {
+            directory: [directory.dev(), directory.ino()],
+            files,
+        })
+    }
+    fn revalidate(&self, path: &Path) -> Result<()> {
+        if self != &Self::inspect(path)? {
+            return Err(xcss::sqlite::SnapshotError::SourceChanged.into());
+        }
+        Ok(())
+    }
+}
+impl PreparedDatabase {
+    pub(super) fn open(self) -> Result<Database> {
+        self.generation.revalidate(&self.path)?;
+        Database::open_prevalidated(&self.path)
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("tag database is busy")]
 pub(in crate::server) struct Busy;
@@ -205,13 +273,27 @@ impl Database {
             Ok(())
         })
     }
+    #[cfg(test)]
     pub fn validate_current(path: &Path, root: &Path) -> Result<()> {
-        let snapshot = xcss::sqlite::ValidationSnapshot::capture_with_limits(
+        Self::validate_current_in(path, root, path.parent().context("test tag parent")?)
+    }
+    pub fn validate_current_in(path: &Path, root: &Path, temporary_root: &Path) -> Result<()> {
+        Self::prepare_in(path, root, temporary_root)?;
+        Ok(())
+    }
+    pub(in crate::server) fn prepare_in(
+        path: &Path,
+        root: &Path,
+        temporary_root: &Path,
+    ) -> Result<PreparedDatabase> {
+        let generation = SourceGeneration::inspect(path)?;
+        let snapshot = xcss::sqlite::ValidationSnapshot::capture_with_limits_in(
             path,
             xcss::sqlite::SnapshotLimits {
                 max_total_bytes: Limits::PRODUCTION.database_bytes,
                 ..Default::default()
             },
+            temporary_root,
         )?;
         xcss::sqlite::block_on_sqlite_connection(async {
             let mut connection = connect(snapshot.database_path()).await?;
@@ -252,11 +334,23 @@ impl Database {
             let closed = connection.close().await;
             result?;
             closed?;
-            Ok(())
+            Ok::<(), anyhow::Error>(())
+        })?;
+        generation.revalidate(path)?;
+        Ok(PreparedDatabase {
+            path: path.to_path_buf(),
+            generation,
         })
     }
+    #[cfg(test)]
     pub fn open(path: &Path, root: &Path) -> Result<Self> {
-        Self::validate_current(path, root)?;
+        Self::open_in(path, root, path.parent().context("test tag parent")?)
+    }
+    #[cfg(test)]
+    pub fn open_in(path: &Path, root: &Path, temporary_root: &Path) -> Result<Self> {
+        Self::prepare_in(path, root, temporary_root)?.open()
+    }
+    fn open_prevalidated(path: &Path) -> Result<Self> {
         let connection = xcss::sqlite::block_on_sqlite_connection(async {
             let mut connection = connect(path).await?;
             let result = async {

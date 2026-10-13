@@ -1,34 +1,35 @@
 # xczs
 
-## 项目简要介绍
+自托管文件管理服务，提供文件操作、可恢复上传、下载、标签及管理员工作区。仅支持 Linux AMD64 GNU。
 
-轻量 Web 文件管理器，一个 Rust 进程提供管理页面和文件服务。
+server 只负责运行，入口为 `bin/xczs --root ROOT`。配置默认 `ROOT/config/config.json`，数据库默认 `ROOT/state/state.sqlite3`，标签库 `ROOT/state/tags.db`，日志 `ROOT/logs`，临时文件 `ROOT/run`。共享文件与实例业务状态可明确外置，systemd 文件使用系统目录。服务不识别代理或访客 IP，不解析转发地址头。
 
-## 项目功能
+## 安装和维护
 
-- 文件浏览、搜索、上传续传、下载、移动、重命名和删除
-- 文件标签管理、组合筛选和索引扫描
-- 管理员认证、运行状态与结构化操作反馈
-
-## 适用平台
-
-Linux AMD64 GNU（`x86_64-unknown-linux-gnu`），内核需提供 `openat2`，并满足制品的 glibc 要求。公开访问应通过受控 HTTPS 入口，后端只能由可信入口访问；共享根由 xczs 独占写入。
-
-## 如何部署
-
-从[下载页](https://github.com/isarmg/xczs/releases)取得完整运行包，验证发布签名和摘要后解压。包内包含 `bin/xczs`、配置样例、systemd unit 和统一安装入口。
+安装与维护来自独立 [xssi](https://github.com/isarmg/xssi) 仓库，以 `config/xssi.lock` 的完整提交固定。签名清单覆盖 server、辅助工具、资源和 systemd 模板。验签公钥及 DER SHA-256 指纹从独立可信来源取得；不要直接覆盖已有 ROOT。
 
 ```sh
-sha256sum --check SHA256SUMS
-config="$(mktemp /tmp/xczs-config.XXXXXXXX)"
-cp config/config.json.example "$config"
-# 编辑 "$config"：明确共享根 serve_path，并核对 bind 和 data_dir。
-systemd-ask-password 'Initial administrator password:' | sudo ./install.sh setup "$config" admin
+systemd-ask-password 'Initial administrator password:' | sudo ./install.sh \
+  --package /absolute/verified-package --root /opt/isarmg/xczs \
+  --config /absolute/private-config.json --username admin \
+  --public-key /absolute/trusted-public.pem --key-sha256 TRUSTED_DER_SHA256
 sudo systemctl enable --now xczs.service
+curl --fail http://127.0.0.1:5000/readyz
 ```
 
-程序以普通 `isarmg-xczs` 账号运行。密码只从标准输入进入管理员状态，不写配置。安装器不递归修改共享文件的所有者。默认监听 `127.0.0.1:5000`，默认不信任转发头；有代理时明确配置其 IP/CIDR。
+首次安装由脚本检查目录、权限和账号，签名辅助程序创建当前数据库和管理员，生成 systemd 配置后保持停服。共享目录可包含已有文件，不递归修改权限或删除内容。
 
-后续安装新运行包使用 `sudo ./install.sh upgrade`，保留配置、管理员和数据，校验成功后仅恢复原本活动的服务。
+管理员凭据、会话及管理员审计与业务状态统一存入 `state.sqlite3` 的公共表；密码为 Argon2id 哈希，文件所有权仍绑定稳定 `administrator_id`。不读写管理员 JSON，不自动迁移旧结构。
 
-[详细文档](docs/README.md)
+升级执行 `ROOT/upgrade.sh --root ROOT --version VERSION --xssc /absolute/xssc`：自动下载、验签、停服、检查与备份、执行明确支持的数据步骤、替换、启动并核对真实就绪。未知旧结构和旧发行布局直接拒绝。卸载由用户自行处理。
+
+## 构建
+
+使用仓库固定 Rust、Node.js 版本和锁文件。正式打包要求干净源码、同版本 annotated tag、固定已发布 xssi 提交和独立 Ed25519 私钥。
+
+```sh
+output="$(mktemp -d /tmp/xczs-release.XXXXXXXX)"
+bash scripts/package-release.sh --output-dir "$output" --signing-key /absolute/private-signing.pem
+```
+
+输出 `xczs-VERSION-linux-x86_64.tar.gz` 和 `SHA256SUMS`；不再发布仅有裸二进制的安装资产。[完整文档](docs/README.md)。

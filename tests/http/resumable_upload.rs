@@ -108,14 +108,7 @@ fn chunked_excess_resume_body_preserves_the_durable_checkpoint(
 
 #[rstest]
 fn full_running_checkpoint_can_reenter_commit_with_empty_patch(
-    #[with(&[
-        "--upload-idle-timeout",
-        "1",
-        "--upload-total-timeout",
-        "10",
-        "--min-free-space",
-        "0"
-    ])]
+    #[with(serde_json::json!({"upload_idle_timeout": 1, "upload_total_timeout": 10, "min_free_space": 0}))]
     server: TestServer,
 ) -> Result<(), Error> {
     use fixtures::{TEST_PASSWORD, TEST_USER};
@@ -212,14 +205,7 @@ fn full_running_checkpoint_can_reenter_commit_with_empty_patch(
 
 #[rstest]
 fn resumed_small_checkpoint_survives_a_later_idle_timeout(
-    #[with(&[
-        "--upload-idle-timeout",
-        "1",
-        "--upload-total-timeout",
-        "10",
-        "--min-free-space",
-        "0"
-    ])]
+    #[with(serde_json::json!({"upload_idle_timeout": 1, "upload_total_timeout": 10, "min_free_space": 0}))]
     server: TestServer,
 ) -> Result<(), Error> {
     use fixtures::{TEST_PASSWORD, TEST_USER};
@@ -345,10 +331,7 @@ fn resuming_an_unknown_upload_returns_a_problem_with_protocol_headers(
 fn durable_resumable_upload_keeps_old_file_until_commit() -> Result<(), Error> {
     let state_dir = assert_fs::TempDir::new()?;
     std::fs::set_permissions(state_dir.path(), std::fs::Permissions::from_mode(0o700))?;
-    let state_args = [
-        OsString::from("--data-dir"),
-        state_dir.path().as_os_str().to_owned(),
-    ];
+    let state_args = serde_json::json!({"data_dir":state_dir.path()});
     let mut server = fixtures::server(state_args.clone(), &[fixtures::TEST_ACCOUNT]);
     let url = format!("{}index.html", server.url());
     let upload_id = Uuid::new_v4();

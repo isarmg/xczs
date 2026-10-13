@@ -11,13 +11,14 @@ fn private_state_dir() -> assert_fs::TempDir {
 
 fn authenticated_args(root: &Path, state_dir: &Path) -> Args {
     let args = Args {
+        root: state_dir.to_path_buf(),
         serve_path: root
             .canonicalize()
             .expect("canonicalize temporary shared root"),
-        state_dir: Some(state_dir.to_path_buf()),
+        state_dir: Some(state_dir.join("state")),
         ..Args::default()
     };
-    if !state_dir.join("state.sqlite3").exists()
+    if !state_dir.join("state/state.sqlite3").exists()
         && Server::check_reserved_path_conflicts(&args.serve_path).is_ok()
     {
         Server::initialize(args.clone(), "user", "test-password")
@@ -70,7 +71,7 @@ async fn runtime_shutdown_is_observable_and_idempotent() {
 async fn explicit_initialization_creates_private_state_database() {
     let root = assert_fs::TempDir::new().expect("create temporary shared root");
     let state_dir = private_state_dir();
-    let state_db = state_dir.path().join("state.sqlite3");
+    let state_db = state_dir.path().join("state/state.sqlite3");
     let args = authenticated_args(root.path(), state_dir.path());
 
     let runtime = Server::builder(args)
@@ -116,15 +117,14 @@ fn platform_handle() -> xcss::server_runtime::RuntimeHandle {
         id: "xczs".into(),
         version: env!("CARGO_PKG_VERSION").into(),
         common_revision: env!("XCSS_REVISION").into(),
-        profile: "server-filesystem".into(),
+        profile: "server-control-plane".into(),
         capabilities: vec!["server-runtime".into()],
     })
     .expect("valid platform descriptor")
 }
 
 #[tokio::test]
-async fn http_boundary_requires_a_real_socket_peer() {
-    use http_body_util::BodyExt;
+async fn http_boundary_routes_without_source_address_identification() {
     use tower::ServiceExt;
     let root = assert_fs::TempDir::new().unwrap();
     let state = private_state_dir();
@@ -142,17 +142,19 @@ async fn http_boundary_requires_a_real_socket_peer() {
         .oneshot(
             http::Request::builder()
                 .uri("/")
+                .header("accept", "text/html")
                 .body(axum::body::Body::empty())
                 .unwrap(),
         )
         .await
         .unwrap();
-    assert_eq!(response.status(), 500);
+    assert_eq!(response.status(), http::StatusCode::SEE_OTHER);
     assert!(response.headers().contains_key("x-request-id"));
-    let body = response.into_body().collect().await.unwrap().to_bytes();
-    assert_eq!(
-        serde_json::from_slice::<serde_json::Value>(&body).unwrap()["code"],
-        "platform.peer_missing"
+    assert!(
+        response.headers()["location"]
+            .to_str()
+            .unwrap()
+            .starts_with("/__xczs__/login")
     );
     runtime.shutdown().await.unwrap();
 }
@@ -174,15 +176,12 @@ async fn retained_service_cannot_register_work_after_state_close() {
     );
     runtime.shutdown().await.unwrap();
     let operation = uuid::Uuid::new_v4().to_string();
-    let mut request = http::Request::builder()
+    let request = http::Request::builder()
         .method("DELETE")
         .uri("/never-created")
         .header("x-xczs-operation-id", &operation)
         .body(axum::body::Body::empty())
         .unwrap();
-    request.extensions_mut().insert(axum::extract::ConnectInfo(
-        "127.0.0.1:32100".parse::<std::net::SocketAddr>().unwrap(),
-    ));
     let response = service.oneshot(request).await.unwrap();
     assert_eq!(response.status(), 503);
     assert_eq!(response.headers()["x-xczs-operation-id"], operation);

@@ -10,7 +10,7 @@ use uuid::Uuid;
 // this does not claim xcss catch_unwind can isolate release panic.
 #[test]
 fn abnormal_exit_preserves_current_upload_checkpoint_and_committed_result() -> Result<(), Error> {
-    let mut server = server(&[] as &[&str], &[TEST_ACCOUNT]);
+    let mut server = server(serde_json::json!({}), &[TEST_ACCOUNT]);
     let id = Uuid::new_v4();
     let target = "abort-recovery.bin";
     let partial = with_upload_headers(

@@ -44,7 +44,9 @@ fn removed_health_paths_do_not_alias_platform_health(server: TestServer) -> Resu
 }
 
 #[rstest]
-fn auth_health(#[with(&[] as &[&str], &[USER_ACCOUNT])] server: TestServer) -> Result<(), Error> {
+fn auth_health(
+    #[with(serde_json::json!({}), &[USER_ACCOUNT])] server: TestServer,
+) -> Result<(), Error> {
     let url = format!("{}{HEALTH_CHECK_PATH}", server.url());
     let resp = server.raw_request(reqwest::Method::GET, &url).send()?;
     assert_eq!(resp.status(), 204);
@@ -95,7 +97,7 @@ fn health_supports_head_and_rejects_other_methods_with_allow(
 
 #[rstest]
 fn readiness_reports_insufficient_protected_disk_space(
-    #[with(&["--min-free-space", "18446744073709551615"])] server: TestServer,
+    #[with(serde_json::json!({"min_free_space": 18446744073709551615u64}))] server: TestServer,
 ) -> Result<(), Error> {
     let health = server.get(format!("{}{HEALTH_CHECK_PATH}", server.url()))?;
     assert_eq!(health.status(), 204);

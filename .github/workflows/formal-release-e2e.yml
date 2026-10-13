@@ -156,6 +156,7 @@ jobs:
       - name: Run the real formal signed-package path
         shell: bash
         env:
+          XSSI_REPOSITORY_TOKEN: ${{ secrets.XSSI_REPOSITORY_TOKEN }}
           XCZS_FORMAL_E2E_EXPORT_DIR: ${{ runner.temp }}/formal-release-candidate
           XCZS_FORMAL_E2E_DIAGNOSTICS_DIR: ${{ runner.temp }}/formal-release-diagnostics
         run: |

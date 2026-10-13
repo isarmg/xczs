@@ -1,12 +1,12 @@
 # 第 4 章：后端请求生命周期
 
-本章对应 Axum 与 xcss 1.0.5 的唯一服务链路。HTTP 行为和验证入口见[HTTP 与运行时合同](../http-runtime-contract.md)。
+本章对应 Axum 与 xcss 1.0.13 的唯一服务链路。HTTP 行为和验证入口见[HTTP 与运行时合同](../http-runtime-contract.md)。
 
 ## 4.1 总体关系
 
 ```text
 xcss BoundListeners → 受限 HTTP/1 连接
-  → 真实 ConnectInfo、一次 request ID
+  → 一次 request ID，不读取或记录访客地址
   → Xczs 原始 URI PathPolicy、RequestProfile、请求许可
   → Axum Router → xcss Axum 认证（受保护路由）
   → 具体业务 Handler → RootedFs / 上传 / 操作登记表
@@ -25,19 +25,19 @@ Hyper 只在 xcss 内实现 HTTP/1 传输，不承担 Xczs 的路由分派。产
 
 [server.rs](../../src/server.rs) 的产品 `ServerRuntime` 只持有业务服务、普通任务和提交任务，作为平台 `LifecycleParticipant` 提供排空与状态关闭回调。xcss `ServerRuntime` 独占连接、信号、健康检查和停机硬期限。
 
-静态管理员配置交给 xcss Static Store；会话仍在内存中。不新增数据库管理员、不改密码模型、不引入上传平台状态机。
+管理员凭据、会话与审计使用 xcss SQLite Store，统一保存在 state.sqlite3 公共表；会话可跨正常重启恢复，受当前过期与撤销规则限制。业务上传状态仍由产品 SQLite actor 管理。
 
 ## 4.4 连接边界
 
 全部监听地址共享连接许可。先等某个 listener 真正可读，再取得许可，最后 accept；空闲地址不会预占许可。许可跟随实际 socket，包括升级后的连接，而不是随 Handler 返回而释放。
 
-请求头默认最多等待 10 秒，接收缓冲最多 64 KiB；socket 写入无进展时限 30 秒。接收错误分类记录并有界退避，停机可立即打断。Xczs 不提供 h2c 或 WebSocket 路由。代理来源头不能替代真实 socket 对端。
+请求头默认最多等待 10 秒，接收缓冲最多 64 KiB；socket 写入无进展时限 30 秒。接收错误分类记录并有界退避，停机可立即打断。Xczs 不提供 h2c 或 WebSocket 路由。产品不读取 socket 对端和转发地址头，连接许可与业务限制均不以 IP 为键。
 
 ## 4.5 路由前的请求边界
 
 [router.rs](../../src/server/router.rs) 的服务包装器在 Axum 匹配前读取原始 URI，调用一次 `PathPolicy`。不重写 URI，也不使用自动解码的 `Path<String>` 作为文件路径。
 
-缺少 `ConnectInfo<SocketAddr>` 是内部错误，不能伪造 localhost。无效原始路径返回 400，且不会进入文件操作。xcss 在外层只验证或生成一次请求 ID，并写入请求、响应与日志。
+无效原始路径返回 400，且不会进入文件操作。xcss 在外层只验证或生成一次请求 ID，并写入请求、响应与日志；库调用服务时也不需要地址注入。
 
 ## 4.6 RequestProfile
 
@@ -62,7 +62,7 @@ Hyper 只在 xcss 内实现 HTTP/1 传输，不承担 Xczs 的路由分派。产
 
 `/healthz` 正常返回 204 空响应；`/readyz` 只返回 `{"ready":true}` 或 503 的 `{"ready":false}`。两者都禁止缓存、无需登录、不泄露根路径、账号或错误细节。平台定期刷新真实根可写、空间和 SQLite 探针，不能把在线当成所有业务操作可成功。
 
-登录 HTML 与资源仍由产品嵌入。登录 POST 由 xcss 严格限制正文、来源、计算并发和失败预算。内容资源保持摘要寻址和 immutable 缓存，失败响应不缓存。
+登录 HTML 与资源仍由产品嵌入。登录 POST 由 xcss 严格限制正文、同源请求和计算并发。内容资源保持摘要寻址和 immutable 缓存，失败响应不缓存。
 
 ## 4.9 认证与页面跳转
 

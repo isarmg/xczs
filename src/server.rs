@@ -233,6 +233,13 @@ impl ServerRuntime {
         self.lifecycle.drain_requests().await;
         self.drain_tagging().await?;
         self.lifecycle.drain_commits().await;
+        self.server
+            .content
+            .administrator
+            .store()
+            .pool()
+            .close()
+            .await;
         self.server.state.state_store.close().await
     }
 
@@ -274,6 +281,13 @@ impl xcss::server_runtime::LifecycleParticipant for ServerRuntime {
     }
     async fn close_state(&self) -> std::result::Result<(), String> {
         self.server
+            .content
+            .administrator
+            .store()
+            .pool()
+            .close()
+            .await;
+        self.server
             .state
             .state_store
             .close()
@@ -296,7 +310,7 @@ pub struct Server {
 struct ContentServices {
     args: ValidatedConfig,
     administrator:
-        Arc<xcss::admin_core::AdministratorService<xcss::admin_static::StaticAdministratorStore>>,
+        Arc<xcss::admin_core::AdministratorService<xcss::admin_sqlite::SqliteAdministratorStore>>,
     administrator_origin: xcss::admin_auth::AdministratorOriginMode,
     assets_prefix: String,
     development_web: Option<xcss::web_assets::DirectoryAssets>,
@@ -384,8 +398,9 @@ impl Server {
         let state = xcss::state_file::PrivateStateDirectory::open(directory)?;
         let _maintenance = state.try_maintenance_lock()?;
         xcss::server_cli::runtime_allowed(directory).map_err(xcss::server_cli::CliError)?;
-        xcss::server_cli::create_runtime_log_directory(directory)
-            .map_err(xcss::server_cli::CliError)?;
+        for child in ["logs", "run"] {
+            xcss::state_file::PrivateStateDirectory::create(args.root.join(child))?;
+        }
         let rooted = RootedFs::initialize(&args.serve_path)?;
         let (device, inode) = rooted.root_identity();
         state_store::initialize_current(
@@ -393,33 +408,37 @@ impl Server {
             state_store::RootIdentity { device, inode },
         )?;
         tagging::db::Database::initialize(&directory.join("tags.db"), &args.serve_path)?;
-        let accounts = xcss::fs_safety::PrivateDirectory::open_existing(directory)?
-            .create_child(&xcss::fs_safety::EntryName::new("administrator")?)?;
-        crate::auth::initialize_administrator(accounts, username, password)?;
-        Ok(())
-    }
-
-    /// Offline administrator recovery; holds the same maintenance boundary as init.
-    pub fn reset_password(args: &Args, username: &str, password: &str) -> Result<()> {
-        xcss::admin_auth::require_canonical_administrator_username(username)?;
-        let hash = xcss::admin_auth::hash_password(password)?;
-        let directory = args.state_dir.as_deref().context("data_dir is required")?;
-        let state = xcss::state_file::PrivateStateDirectory::open(directory)?;
-        let _maintenance = state.try_maintenance_lock()?;
-        xcss::server_cli::runtime_allowed(directory).map_err(xcss::server_cli::CliError)?;
-        Self::validate_current(args)?;
-        let accounts =
-            xcss::fs_safety::PrivateDirectory::open_existing(directory.join("administrator"))?;
-        xcss::admin_static::StaticAdministratorStore::reset_persistent_password(
-            accounts, username, &hash,
+        state_store::initialize_administrator(
+            &directory.join("state.sqlite3"),
+            username,
+            password,
         )?;
         Ok(())
     }
 
     /// Inspect current structures without creating locks, databases or accounts.
     pub fn validate_current(args: &Args) -> Result<xcss::schema_identity::SchemaIdentity> {
-        Self::check_reserved_path_conflicts(&args.serve_path)?;
+        Self::validate_runtime_layout(args)?;
         let rooted = RootedFs::inspect_existing(&args.serve_path)?;
+        let directory = args.state_dir.as_ref().context("data_dir is required")?;
+        let identity = rooted.identity();
+        let (device, inode) = (identity.device, identity.inode);
+        state_store::validate_current_with_administrator_in(
+            &directory.join("state.sqlite3"),
+            state_store::RootIdentity { device, inode },
+            &args.root.join("run"),
+        )?;
+        tagging::db::Database::validate_current_in(
+            &directory.join("tags.db"),
+            &args.serve_path,
+            &args.root.join("run"),
+        )?;
+        state_store::expected_schema_identity()
+    }
+
+    fn validate_runtime_layout(args: &Args) -> Result<()> {
+        Self::check_reserved_path_conflicts(&args.serve_path)?;
+        RootedFs::inspect_existing(&args.serve_path)?;
         let directory = args.state_dir.as_ref().context("data_dir is required")?;
         xcss::state_file::PrivateStateDirectory::open(directory)?;
         for name in ["state.sqlite3", "tags.db"] {
@@ -434,26 +453,8 @@ impl Server {
                 "current persistent database must be an owned single-link private file with mode 0600"
             );
         }
-        xcss::server_cli::validate_runtime_log_directory(directory)
-            .map_err(xcss::server_cli::CliError)?;
-        let identity = rooted.identity();
-        let (device, inode) = (identity.device, identity.inode);
-        state_store::validate_current(
-            &directory.join("state.sqlite3"),
-            state_store::RootIdentity { device, inode },
-        )?;
-        tagging::db::Database::validate_current(&directory.join("tags.db"), &args.serve_path)?;
-        let account_directory =
-            xcss::fs_safety::PrivateDirectory::open_existing(directory.join("administrator"))?;
-        let accounts = xcss::admin_static::StaticAdministratorStore::load_persistent_accounts(
-            &account_directory,
-            None,
-        )?;
-        anyhow::ensure!(
-            accounts.len() == 1,
-            "Exactly one initialized administrator is required"
-        );
-        state_store::expected_schema_identity()
+        xcss::fs_safety::PrivateDirectory::open_existing(args.root.join("logs"))?;
+        Ok(())
     }
 
     /// Read-only preflight before root locks, SQLite creation or recovery.
@@ -498,6 +499,16 @@ impl Server {
         state_store::expected_schema_identity()
     }
 
+    pub fn expected_schema_identity() -> Result<xcss::schema_identity::SchemaIdentity> {
+        state_store::expected_schema_identity()
+    }
+
+    pub async fn administrator_pool(args: &Args) -> Result<sqlx::SqlitePool> {
+        state_store::open_administrator_pool(
+            &args.state_database_path().context("data_dir is required")?,
+        )
+    }
+
     pub fn builder(args: Args) -> ServerBuilder {
         ServerBuilder::new(args)
     }
@@ -511,7 +522,7 @@ impl Server {
         lifecycle: ServerLifecycle,
         list_snapshot_cache: ListSnapshotCache,
     ) -> Result<Self> {
-        Self::validate_current(&args)?;
+        Self::validate_runtime_layout(&args)?;
         let args = ValidatedConfig::try_from(args)?;
         Self::check_reserved_path_conflicts(&args.serve_path)?;
         // Reject unsafe or forbidden development resource selection before
@@ -528,17 +539,6 @@ impl Server {
             }
             None => None,
         };
-        let account_root = xcss::fs_safety::PrivateDirectory::open_existing(
-            args.state_database_path()
-                .parent()
-                .context("State database has no parent directory")?
-                .join("administrator"),
-        )?;
-        account_root.read_bounded(
-            &xcss::fs_safety::EntryName::new("administrator-accounts.json")?,
-            1024 * 1024,
-        )?;
-        let administrator = crate::auth::administrator_service_with_directory(account_root)?;
         let administrator_origin = if args.development {
             xcss::admin_auth::AdministratorOriginMode::LoopbackDevelopmentHttp
         } else {
@@ -554,6 +554,20 @@ impl Server {
         let storage = DurableStorage::new(rooted_fs.clone());
         let state_database_path = args.state_database_path();
         let (device, inode) = rooted_fs.root_identity();
+        let prepared_tags = tagging::db::Database::prepare_in(
+            &state_database_path
+                .parent()
+                .context("State database has no parent directory")?
+                .join("tags.db"),
+            &args.serve_path,
+            &args.root.join("run"),
+        )?;
+        let operation_registry = OperationRegistry::open_server(
+            &state_database_path,
+            state_store::RootIdentity { device, inode },
+            UPLOAD_SESSION_TTL,
+            &args.root.join("run"),
+        )?;
         let tagging = Arc::new(Tagging::new(
             state_database_path
                 .parent()
@@ -562,16 +576,16 @@ impl Server {
             args.serve_path.clone(),
             (device, inode),
             args.max_tag_scan_entries,
+            prepared_tags,
         )?);
-        let operation_registry = OperationRegistry::open(
-            &state_database_path,
-            state_store::RootIdentity { device, inode },
-            UPLOAD_SESSION_TTL,
-        )?;
         let state_store = operation_registry.state_store();
         let upload_records =
             UploadRecordStore::new(rooted_fs.clone(), state_store.clone(), UPLOAD_SESSION_TTL)?;
         upload_records.validate_stage_layouts()?;
+        // Complete all byte-level preflight/recovery before opening the second
+        // SQLite connection family; no raw DB open/close occurs after this.
+        let administrator_pool = state_store::open_administrator_pool(&state_database_path)?;
+        let administrator = crate::auth::administrator_service(administrator_pool);
         Ok(Self {
             content: ContentServices {
                 args,
@@ -925,20 +939,27 @@ impl Server {
         let disk_space = self.admission.disk_space.clone();
         let state_store = self.state.state_store.clone();
         let min_free_space = self.content.args.min_free_space;
+        let administrator_pool = self.content.administrator.store().pool().clone();
         let probes = self.lifecycle.work_tasks.spawn(async move {
             let results = tokio::join!(
                 rooted_fs.probe_writable(),
                 disk_space.reserve_async(disk_rooted_fs.root_handle(), 0, min_free_space),
                 state_store.probe_readiness(),
+                async {
+                    xcss::admin_sqlite::SqliteAdministratorStore::new(administrator_pool)
+                        .validate_all_administrators()
+                        .await
+                },
             );
             drop(permit);
             results
         });
         let probes_ready = match probes.await {
-            Ok((root_probe, disk_probe, state_probe)) => {
+            Ok((root_probe, disk_probe, state_probe, administrator_probe)) => {
                 root_probe.is_ok()
                     && disk_probe.is_ok_and(|reservation| reservation.is_some())
                     && state_probe.is_ok()
+                    && administrator_probe.is_ok()
             }
             Err(error) => {
                 warn!("Readiness probe task failed error={error}");

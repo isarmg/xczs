@@ -25,8 +25,9 @@ impl Tagging {
         root_path: PathBuf,
         root_identity: (u64, u64),
         max_entries: usize,
+        prepared: db::PreparedDatabase,
     ) -> Result<Self> {
-        let db = Arc::new(Database::open(&state_dir.join("tags.db"), &root_path)?);
+        let db = Arc::new(prepared.open()?);
         Ok(Self {
             db,
             state_dir,

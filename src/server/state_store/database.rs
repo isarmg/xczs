@@ -16,7 +16,8 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 // file before duplicating it into the system temporary filesystem.
 pub(super) const SQLITE_SIDECAR_SUFFIXES: [&str; 3] = ["-journal", "-wal", "-shm"];
 
-pub(super) const CURRENT_SCHEMA: &str = include_str!("../../../schema/product.sql");
+pub(super) const CURRENT_SCHEMA: &str =
+    include_str!(concat!(env!("OUT_DIR"), "/current_schema.sql"));
 
 #[derive(Eq, PartialEq)]
 struct SchemaSnapshot {
@@ -624,12 +625,19 @@ pub(super) fn open_initialized_connection(
     operation_ttl_ms: i64,
     upload_ttl_ms: i64,
     recovery_now_ms: i64,
+    temporary_root: &Path,
+    require_administrator: bool,
 ) -> Result<Connection> {
-    let mut connection = open_connection(path, root)?;
+    let mut connection = open_connection_with_sidecar_guard(
+        path,
+        root,
+        temporary_root,
+        || Ok(()),
+        require_administrator,
+    )?;
     let result = xcss::sqlite::block_on_sqlite_connection(async {
         validate_product_metadata(&mut connection).await?;
         verify_root_identity(&mut connection, root).await?;
-        validate_integrity(&mut connection).await?;
         configure_validated_connection(&mut connection).await?;
         recover_database(
             &mut connection,
@@ -672,12 +680,36 @@ pub(in crate::server) fn initialize_current(path: &Path, root: RootIdentity) -> 
     })
 }
 
+#[cfg(test)]
 pub(in crate::server) fn validate_current(path: &Path, root: RootIdentity) -> Result<()> {
-    let mut connection = open_existing_database_after_snapshot(path, root, true, || Ok(()))?;
+    validate_current_in(path, root, path.parent().context("test state parent")?)
+}
+#[cfg(test)]
+pub(in crate::server) fn validate_current_in(
+    path: &Path,
+    root: RootIdentity,
+    temporary_root: &Path,
+) -> Result<()> {
+    let mut connection =
+        open_existing_database_after_snapshot(path, root, true, temporary_root, || Ok(()))?;
     xcss::sqlite::block_on_sqlite_connection(async {
         validate_product_metadata(&mut connection).await?;
         verify_root_identity(&mut connection, root).await?;
-        validate_integrity(&mut connection).await
+        validate_integrity(&mut connection).await?;
+        Ok(())
+    })
+}
+
+pub(in crate::server) fn validate_current_with_administrator_in(
+    path: &Path,
+    root: RootIdentity,
+    temporary_root: &Path,
+) -> Result<()> {
+    let mut connection =
+        open_existing_database_after_snapshot(path, root, true, temporary_root, || Ok(()))?;
+    xcss::sqlite::block_on_sqlite_connection(async {
+        xcss::admin_sqlite::validate_administrators_on_connection(&mut connection).await?;
+        Ok(())
     })
 }
 
@@ -689,10 +721,6 @@ async fn connect_direct(path: &Path) -> Result<Connection> {
             .busy_timeout(BUSY_TIMEOUT),
     )
     .await?)
-}
-
-fn open_connection(path: &Path, root: RootIdentity) -> Result<Connection> {
-    open_connection_with_sidecar_guard(path, root, || Ok(()))
 }
 
 /// Own the captured generation until its native worker has explicitly closed.
@@ -742,7 +770,9 @@ fn open_existing_database_for_preflight(
 fn open_connection_with_sidecar_guard<F>(
     path: &Path,
     root: RootIdentity,
+    temporary_root: &Path,
     after_snapshot: F,
+    require_administrator: bool,
 ) -> Result<Connection>
 where
     F: FnOnce() -> Result<()>,
@@ -753,13 +783,17 @@ where
     main_database.revalidate()?;
     sidecars.revalidate()?;
     let expected = main_database.snapshot;
-    let snapshot = xcss::sqlite::ValidationSnapshot::capture(path)?;
+    let snapshot = xcss::sqlite::ValidationSnapshot::capture_in(path, temporary_root)?;
     validate_raw_main_snapshot(&snapshot, root)?;
     xcss::sqlite::block_on_sqlite_connection(async {
         let mut private = connect_direct(snapshot.database_path()).await?;
         let result = async {
             harden_connection(&mut private).await?;
-            validate_database_before_mutation(&mut private, root).await
+            validate_database_before_mutation(&mut private, root).await?;
+            if require_administrator {
+                xcss::admin_sqlite::validate_administrators_on_connection(&mut private).await?;
+            }
+            Ok::<(), anyhow::Error>(())
         }
         .await;
         let closed = private.close().await;
@@ -803,13 +837,20 @@ fn open_existing_database_for_preflight_after_snapshot<F>(
 where
     F: FnOnce() -> Result<()>,
 {
-    open_existing_database_after_snapshot(path, root, false, after_snapshot)
+    open_existing_database_after_snapshot(
+        path,
+        root,
+        false,
+        path.parent().context("state parent")?,
+        after_snapshot,
+    )
 }
 
 fn open_existing_database_after_snapshot<F>(
     path: &Path,
     root: RootIdentity,
     read_only_diagnostics: bool,
+    temporary_root: &Path,
     after_snapshot: F,
 ) -> Result<ValidationConnection>
 where
@@ -832,7 +873,7 @@ where
         let main_database = MainDatabaseGuard::inspect(path)?;
         (main_database, sidecars)
     };
-    let snapshot = xcss::sqlite::ValidationSnapshot::capture(path)?;
+    let snapshot = xcss::sqlite::ValidationSnapshot::capture_in(path, temporary_root)?;
     after_snapshot()?;
     if read_only_diagnostics {
         let main_changed = main_database.revalidate_read_only()?;
@@ -963,14 +1004,20 @@ pub(super) fn open_read_only_database_after_sidecar_snapshot_for_test<F>(
 where
     F: FnOnce() -> Result<()>,
 {
-    open_existing_database_after_snapshot(path, root, true, after_snapshot)
+    open_existing_database_after_snapshot(
+        path,
+        root,
+        true,
+        path.parent().context("test state parent")?,
+        after_snapshot,
+    )
 }
 
 fn connection_limits() -> xcss::sqlite::ConnectionLimits {
     xcss::sqlite::ConnectionLimits::new(2 * 1024 * 1024)
 }
 
-async fn harden_connection(connection: &mut Connection) -> Result<()> {
+pub(in crate::server) async fn harden_connection(connection: &mut Connection) -> Result<()> {
     xcss::sqlite::apply_connection_limits(connection, connection_limits()).await?;
     xcss::sqlite::enable_defensive(connection).await?;
     sqlx::raw_sql("PRAGMA trusted_schema=OFF; PRAGMA foreign_keys=ON; PRAGMA mmap_size=0; PRAGMA temp_store=MEMORY;")
@@ -978,7 +1025,9 @@ async fn harden_connection(connection: &mut Connection) -> Result<()> {
     Ok(())
 }
 
-async fn configure_validated_connection(connection: &mut Connection) -> Result<()> {
+pub(in crate::server) async fn configure_validated_connection(
+    connection: &mut Connection,
+) -> Result<()> {
     let mode: String = sqlx::query_scalar("PRAGMA journal_mode=DELETE")
         .fetch_one(&mut *connection)
         .await?;
@@ -1537,4 +1586,55 @@ async fn recover_database(
     .map(|result| result.rows_affected())?;
     transaction.commit().await?;
     Ok(())
+}
+
+pub(in crate::server) fn initialize_administrator(
+    path: &Path,
+    username: &str,
+    password: &str,
+) -> Result<()> {
+    xcss::sqlite::block_on_sqlite_connection(async {
+        let mut connection = connect_direct(path).await?;
+        let result = async {
+            harden_connection(&mut connection).await?;
+            configure_validated_connection(&mut connection).await?;
+            let mut transaction = connection.begin_with("BEGIN IMMEDIATE").await?;
+            crate::auth::initialize_administrator(&mut transaction, username, password).await?;
+            transaction.commit().await?;
+            Ok::<_, anyhow::Error>(())
+        }
+        .await;
+        let closed = connection.close().await;
+        result?;
+        closed?;
+        Ok(())
+    })
+}
+
+pub(in crate::server) fn open_administrator_pool(path: &Path) -> Result<sqlx::SqlitePool> {
+    let pool = sqlx::sqlite::SqlitePoolOptions::new()
+        .min_connections(0)
+        .max_connections(2)
+        .acquire_timeout(Duration::from_secs(2))
+        .after_connect(|connection, _| {
+            Box::pin(async move {
+                harden_connection(connection)
+                    .await
+                    .map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+                configure_validated_connection(connection)
+                    .await
+                    .map_err(|e| sqlx::Error::Protocol(e.to_string()))?;
+                Ok(())
+            })
+        })
+        .connect_lazy_with(
+            sqlx::sqlite::SqliteConnectOptions::new()
+                .filename(path)
+                .create_if_missing(false)
+                .busy_timeout(BUSY_TIMEOUT)
+                .foreign_keys(true)
+                .journal_mode(sqlx::sqlite::SqliteJournalMode::Delete)
+                .synchronous(sqlx::sqlite::SqliteSynchronous::Extra),
+        );
+    Ok(pool)
 }

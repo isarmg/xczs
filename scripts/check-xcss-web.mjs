@@ -21,12 +21,12 @@ for (const [name, version] of Object.entries({ "@types/react": "19.3.0", "@types
   assert.equal(lock.packages[`node_modules/${name}`].version, version);
 }
 for (const packageName of ["@xcss/web"]) {
-  const url = "https://github.com/isarmg/xcss/releases/download/v1.0.11/xcss-web-1.0.11.tgz";
+  const url = "https://github.com/isarmg/xcss/releases/download/v1.0.13/xcss-web-1.0.13.tgz";
   assert.equal(manifest.dependencies[packageName], url);
   const installed = JSON.parse(read(`node_modules/${packageName}/package.json`));
-  assert.equal(installed.version, "1.0.11");
+  assert.equal(installed.version, "1.0.13");
   assert.equal(lock.packages[`node_modules/${packageName}`].resolved, url);
-  assert.match(lock.packages[`node_modules/${packageName}`].integrity, /^sha512-/u);
+  assert.equal(lock.packages[`node_modules/${packageName}`].integrity, "sha512-nqoi5uOqmrjH/2j3PXoi1bGVPucr+Rm1HzWiXjr2bhzJ6AgnlD1Y6AywKvIAZnOGIVg5RFi36aLc2vc5Srri9g==");
 }
 const fonts = "node_modules/@xcss/web/dist/web-fonts";
 const provenance = JSON.parse(read(`${fonts}/provenance.json`));
@@ -41,7 +41,7 @@ for (const page of ["index.html", "login.html"]) {
   assert.match(read(`web/${page}`).toString(), /data-xcss-appearance="content-blocks"/u);
 }
 assert.match(read("xcss-product.toml").toString(), /web_profile = "web-react-admin"/u);
-console.log("xcss 1.0.11 immutable React Web and complete font startup verified");
+console.log("xcss 1.0.13 immutable React Web and complete font startup verified");
 
 assert.equal(typeof prepareApplicationFonts, "function");
 assert.equal(typeof startAfterFonts, "function");

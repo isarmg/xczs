@@ -5,10 +5,7 @@ fn sqlite_state_dir_resumes_upload_after_restart() -> Result<(), Error> {
     let state_dir = assert_fs::TempDir::new()?;
     std::fs::set_permissions(state_dir.path(), std::fs::Permissions::from_mode(0o700))?;
     let state_db = state_dir.path().join("state.sqlite3");
-    let state_args = [
-        OsString::from("--data-dir"),
-        state_dir.path().as_os_str().to_owned(),
-    ];
+    let state_args = serde_json::json!({"data_dir":state_dir.path()});
     let mut server = server(state_args.clone(), &[TEST_ACCOUNT]);
     let upload_id = Uuid::new_v4();
     let target_name = "sqlite-resumable.bin";
@@ -110,10 +107,7 @@ fn sqlite_delete_outbox_purges_trash_and_replays_after_restart() -> Result<(), E
     let state_dir = assert_fs::TempDir::new()?;
     std::fs::set_permissions(state_dir.path(), std::fs::Permissions::from_mode(0o700))?;
     let state_db = state_dir.path().join("state.sqlite3");
-    let state_args = [
-        OsString::from("--data-dir"),
-        state_dir.path().as_os_str().to_owned(),
-    ];
+    let state_args = serde_json::json!({"data_dir":state_dir.path()});
     let mut server = server(state_args.clone(), &[TEST_ACCOUNT]);
     let target = server.path().join("durable-delete");
     std::fs::create_dir(&target)?;
@@ -222,10 +216,7 @@ fn sqlite_claimed_delete_job_is_recovered_and_purged_after_forced_restart() -> R
     let state_dir = assert_fs::TempDir::new()?;
     std::fs::set_permissions(state_dir.path(), std::fs::Permissions::from_mode(0o700))?;
     let state_db = state_dir.path().join("state.sqlite3");
-    let state_args = [
-        OsString::from("--data-dir"),
-        state_dir.path().as_os_str().to_owned(),
-    ];
+    let state_args = serde_json::json!({"data_dir":state_dir.path()});
     let mut server = server(state_args.clone(), &[TEST_ACCOUNT]);
     let job_id = Uuid::new_v4();
     let trash_name = format!(".xczs-upload-delete-{job_id}.trash");

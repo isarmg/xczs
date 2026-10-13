@@ -147,10 +147,12 @@ impl OperationRegistry {
         })
     }
 
+    #[cfg(test)]
     pub(super) fn open(
         path: &Path,
         root_identity: super::state_store::RootIdentity,
         upload_ttl: Duration,
+        temporary_root: &Path,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             store: StateStore::open_with_upload_ttl(
@@ -160,6 +162,26 @@ impl OperationRegistry {
                 PER_OWNER_CAPACITY,
                 RESULT_TTL,
                 upload_ttl,
+                temporary_root,
+            )?,
+        })
+    }
+
+    pub(super) fn open_server(
+        path: &Path,
+        root_identity: super::state_store::RootIdentity,
+        upload_ttl: Duration,
+        temporary_root: &Path,
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
+            store: StateStore::open_server(
+                path,
+                &root_identity,
+                REGISTRY_CAPACITY,
+                PER_OWNER_CAPACITY,
+                RESULT_TTL,
+                upload_ttl,
+                temporary_root,
             )?,
         })
     }

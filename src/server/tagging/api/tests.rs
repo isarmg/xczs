@@ -12,7 +12,8 @@ async fn relink_preserves_admission_retry_contract() {
         Server::initialize_with_lifecycle_for_test(
             Args {
                 serve_path: root.path().to_owned(),
-                state_dir: Some(state.path().to_owned()),
+                root: state.path().to_path_buf(),
+                state_dir: Some(state.path().join("state")),
                 ..Args::default()
             },
             ServerLifecycle::new(),
@@ -39,7 +40,7 @@ async fn relink_preserves_admission_retry_contract() {
     // A SQLite writer lock is an ordinary temporary storage failure.
     use sqlx::Connection as _;
     let mut blocker = sqlx::SqliteConnection::connect_with(
-        &sqlx::sqlite::SqliteConnectOptions::new().filename(state.path().join("tags.db")),
+        &sqlx::sqlite::SqliteConnectOptions::new().filename(state.path().join("state/tags.db")),
     )
     .await
     .unwrap();
@@ -197,7 +198,8 @@ async fn deleted_tag_identity_is_not_reused() {
         Server::initialize_with_lifecycle_for_test(
             Args {
                 serve_path: root.path().to_owned(),
-                state_dir: Some(state.path().to_owned()),
+                root: state.path().to_path_buf(),
+                state_dir: Some(state.path().join("state")),
                 ..Args::default()
             },
             ServerLifecycle::new(),

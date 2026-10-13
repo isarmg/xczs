@@ -82,16 +82,12 @@ fn signal_drains_an_active_download_and_stops_accepting(
         .set_len(FILE_SIZE as u64)
         .context("size the large download fixture")?;
     let (mut command, _auth_config) = xczs_command(&[TEST_ACCOUNT]);
-    command
-        .arg("--development")
-        .arg("--serve-path")
-        .arg(temp.path())
-        .args(["--bind", "127.0.0.1:0"])
-        .arg("--data-dir")
-        .arg(state_dir.path());
-    initialize_test_instance(&command);
+    fixtures::configure_test_instance(
+        &command,
+        serde_json::json!({"development": true, "serve_path": temp.path(), "bind": "127.0.0.1:0", "data_dir": state_dir.path()}),
+    );
+    initialize_test_instance(&mut command);
     let mut child = command
-        .arg("run")
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
@@ -165,19 +161,12 @@ fn shutdown_deadline_checkpoints_a_stalled_upload_before_exit() -> Result<(), Bo
     std::fs::set_permissions(state_dir.path(), std::fs::Permissions::from_mode(0o700))?;
     let state_db = state_dir.path().join("state.sqlite3");
     let (mut command, _auth_config) = xczs_command(&[TEST_ACCOUNT]);
-    command
-        .arg("--development")
-        .arg("--serve-path")
-        .arg(temp.path())
-        .args(["--bind", "127.0.0.1:0"])
-        .args(["--min-free-space", "0"])
-        .args(["--upload-idle-timeout", "120"])
-        .args(["--upload-total-timeout", "3600"])
-        .arg("--data-dir")
-        .arg(state_dir.path());
-    initialize_test_instance(&command);
+    fixtures::configure_test_instance(
+        &command,
+        serde_json::json!({"development": true, "serve_path": temp.path(), "bind": "127.0.0.1:0", "min_free_space": 0, "upload_idle_timeout": 120, "upload_total_timeout": 3600, "data_dir": state_dir.path()}),
+    );
+    initialize_test_instance(&mut command);
     let mut child = command
-        .arg("run")
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()?;

@@ -17,14 +17,15 @@ fn private_state_dir() -> assert_fs::TempDir {
 
 fn authenticated_args(serve_path: PathBuf, state_dir: &Path) -> Args {
     let args = Args {
+        root: state_dir.to_path_buf(),
         serve_path,
-        state_dir: Some(state_dir.to_path_buf()),
+        state_dir: Some(state_dir.join("state")),
         // General server tests do not exercise the production free-space
         // threshold; keeping it would make readiness depend on host /tmp use.
         min_free_space: 0,
         ..Args::default()
     };
-    if !state_dir.join("state.sqlite3").exists()
+    if !state_dir.join("state/state.sqlite3").exists()
         && Server::check_reserved_path_conflicts(&args.serve_path).is_ok()
     {
         Server::initialize(args.clone(), "user", "test-password")
@@ -692,8 +693,9 @@ async fn independently_initialized_servers_have_isolated_sessions() {
     let make_server = |serve_path, state_dir: &Path| {
         Server::initialize_with_lifecycle_for_test(
             Args {
+                root: state_dir.to_path_buf(),
                 serve_path,
-                state_dir: Some(state_dir.to_path_buf()),
+                state_dir: Some(state_dir.join("state")),
                 ..Args::default()
             },
             ServerLifecycle::new(),
@@ -703,6 +705,13 @@ async fn independently_initialized_servers_have_isolated_sessions() {
     let first = make_server(first_root, first_state_dir.path());
     let second = make_server(second_root, second_state_dir.path());
 
+    let now = u64::try_from(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_micros(),
+    )
+    .unwrap();
     let created = first
         .content
         .administrator
@@ -710,9 +719,8 @@ async fn independently_initialized_servers_have_isolated_sessions() {
             "user",
             "test-password",
             &xcss::admin_core::LoginContext {
-                source: "127.0.0.1".into(),
                 request_id: None,
-                now_micros: 1,
+                now_micros: now,
             },
         )
         .await
@@ -721,7 +729,7 @@ async fn independently_initialized_servers_have_isolated_sessions() {
         first
             .content
             .administrator
-            .authenticate_session(&created.session_token, 2)
+            .authenticate_session(&created.session_token, now + 1)
             .await
             .is_ok()
     );
@@ -729,7 +737,7 @@ async fn independently_initialized_servers_have_isolated_sessions() {
         second
             .content
             .administrator
-            .authenticate_session(&created.session_token, 2)
+            .authenticate_session(&created.session_token, now + 1)
             .await
             .is_err()
     );
@@ -1265,7 +1273,7 @@ async fn cancelled_state_scan_retains_admission_until_blocking_lookup_finishes()
 
 #[tokio::test]
 async fn current_directory_page_and_unknown_internal_routes_are_distinct() {
-    use axum::{body::Body, extract::ConnectInfo};
+    use axum::body::Body;
     use http::{Method, StatusCode, header};
     use http_body_util::BodyExt as _;
     use tower::ServiceExt as _;
@@ -1296,9 +1304,6 @@ async fn current_directory_page_and_unknown_internal_routes_are_distinct() {
             .header(header::ORIGIN, "https://files.test")
             .header("sec-fetch-site", "same-origin")
             .header(header::CONTENT_TYPE, "application/json")
-            .extension(ConnectInfo(
-                "127.0.0.1:41234".parse::<std::net::SocketAddr>().unwrap(),
-            ))
             .body(Body::from(body))
             .unwrap()
     };
@@ -1354,13 +1359,60 @@ fn explicit_library_init_creates_a_missing_state_directory_without_resetting_acc
     let args = Args {
         serve_path: root.path().to_path_buf(),
         state_dir: Some(state.clone()),
+        root: parent.path().to_path_buf(),
         ..Args::default()
     };
     assert!(!state.exists());
     Server::initialize(args.clone(), "user", "test-password").unwrap();
     Server::validate_current(&args).unwrap();
-    let accounts = state.join("administrator/administrator-accounts.json");
-    let saved = std::fs::read(&accounts).unwrap();
+    let database = state.join("state.sqlite3");
+    let saved = std::fs::read(&database).unwrap();
+    assert!(
+        !state
+            .join("administrator/administrator-accounts.json")
+            .exists()
+    );
     assert!(Server::initialize(args, "user", "test-password").is_err());
-    assert_eq!(saved, std::fs::read(accounts).unwrap());
+    assert_eq!(saved, std::fs::read(database).unwrap());
+}
+
+#[tokio::test]
+async fn unavailable_administrator_rejects_runtime_before_mutating_either_database() {
+    let served = assert_fs::TempDir::new().unwrap();
+    let state = private_state_dir();
+    let args = authenticated_args(served.path().to_path_buf(), state.path());
+    let database = state.path().join("state/state.sqlite3");
+    let tags = state.path().join("state/tags.db");
+    use sqlx::Connection as _;
+    let mut connection = sqlx::SqliteConnection::connect_with(
+        &sqlx::sqlite::SqliteConnectOptions::new()
+            .filename(&database)
+            .create_if_missing(false),
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE _common_administrators SET active=0")
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    connection.close().await.unwrap();
+    let original_state = std::fs::read(&database).unwrap();
+    let original_tags = std::fs::read(&tags).unwrap();
+    for _ in 0..3 {
+        let error = Server::builder(args.clone())
+            .build()
+            .err()
+            .expect("disabled administrator was accepted");
+        assert!(format!("{error:#}").contains("administrator"));
+        assert_eq!(std::fs::read(&database).unwrap(), original_state);
+        assert_eq!(std::fs::read(&tags).unwrap(), original_tags);
+        assert!(!state.path().join("state/tags.db-wal").exists());
+        assert!(
+            std::fs::read_dir(state.path().join("run"))
+                .unwrap()
+                .next()
+                .is_none(),
+            "failed validation left a SQLite snapshot behind"
+        );
+    }
 }

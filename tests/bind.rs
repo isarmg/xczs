@@ -24,18 +24,16 @@ fn private_state_dir() -> Result<TempDir, Error> {
     Ok(state_dir)
 }
 #[rstest]
-#[case(&["-b", "20.205.243.166:0"])]
-fn bind_fails(tmpdir: TempDir, #[case] args: &[&str]) -> Result<(), Error> {
+#[case(serde_json::json!({"bind": "20.205.243.166:0"}))]
+fn bind_fails(tmpdir: TempDir, #[case] args: serde_json::Value) -> Result<(), Error> {
     let state_dir = private_state_dir()?;
     let (mut command, _auth_config) = xczs_command(&[TEST_ACCOUNT]);
-    command.arg("run");
-    command
-        .arg("--serve-path")
-        .arg(tmpdir.path())
-        .arg("--data-dir")
-        .arg(state_dir.path())
-        .args(args);
-    fixtures::initialize_test_instance(&command);
+    fixtures::configure_test_instance(
+        &command,
+        serde_json::json!({"serve_path": tmpdir.path(), "data_dir": state_dir.path()}),
+    );
+    fixtures::configure_test_instance(&command, args);
+    fixtures::initialize_test_instance(&mut command);
     command
         .assert()
         .stderr(predicates::str::contains("Failed to bind"))
@@ -50,7 +48,6 @@ fn invalid_multiple_bind_input_does_not_initialize_persistent_state(
 ) -> Result<(), Error> {
     let state_dir = private_state_dir()?;
     let (mut command, _auth_config) = xczs_command(&[TEST_ACCOUNT]);
-    command.arg("run");
     command
         .arg("--serve-path")
         .arg(tmpdir.path())
@@ -73,7 +70,6 @@ fn invalid_multiple_bind_input_does_not_initialize_persistent_state(
 #[case("localhost")]
 fn non_ip_bind_is_rejected(tmpdir: TempDir, #[case] bind: &str) -> Result<(), Error> {
     let (mut command, _auth_config) = xczs_command(&[TEST_ACCOUNT]);
-    command.arg("run");
     command
         .arg("--serve-path")
         .arg(tmpdir.path())
@@ -86,9 +82,9 @@ fn non_ip_bind_is_rejected(tmpdir: TempDir, #[case] bind: &str) -> Result<(), Er
 }
 
 #[rstest]
-#[case(server(&[] as &[&str], &[TEST_ACCOUNT]), true, false)]
-#[case(production_server(&["-b", "0.0.0.0:0"], &[ADMIN_ACCOUNT]), true, false)]
-#[case(server(&["-b", "[::1]:0"], &[ADMIN_ACCOUNT]), false, true)]
+#[case(server(serde_json::json!({}), &[TEST_ACCOUNT]), true, false)]
+#[case(production_server(serde_json::json!({"bind": "0.0.0.0:0"}), &[ADMIN_ACCOUNT]), true, false)]
+#[case(server(serde_json::json!({"bind": "[::1]:0"}), &[ADMIN_ACCOUNT]), false, true)]
 fn bind_ipv4_ipv6(
     #[case] server: TestServer,
     #[case] bind_ipv4: bool,
@@ -110,12 +106,7 @@ fn bind_ipv4_ipv6(
 // does not spend the sole connection permit on its automatic setup login.
 #[rstest]
 fn sequential_requests_release_the_single_connection_permit(
-    #[with(&[
-        "--bind",
-        "127.0.0.1:0",
-        "--max-connections",
-        "1",
-    ], &[ADMIN_ACCOUNT])]
+    #[with(serde_json::json!({"bind": "127.0.0.1:0", "max_connections": 1}), &[ADMIN_ACCOUNT])]
     server: TestServer,
 ) -> Result<(), Error> {
     let client = Client::builder()
@@ -134,12 +125,7 @@ fn sequential_requests_release_the_single_connection_permit(
 
 #[rstest]
 fn connection_limit_bounds_userspace_sockets(
-    #[with(&[
-        "--bind",
-        "127.0.0.1:0",
-        "--max-connections",
-        "1",
-    ], &[ADMIN_ACCOUNT])]
+    #[with(serde_json::json!({"bind": "127.0.0.1:0", "max_connections": 1}), &[ADMIN_ACCOUNT])]
     server: TestServer,
 ) -> Result<(), Error> {
     let pid = server.process_id();
@@ -215,16 +201,12 @@ fn wait_for_socket_fd_count(pid: u32, expected: usize) -> Result<(), Error> {
 fn validate_printed_url(tmpdir: TempDir) -> Result<(), Error> {
     let state_dir = private_state_dir()?;
     let (mut command, _auth_config) = xczs_command(&[TEST_ACCOUNT]);
-    command.arg("run");
-    command
-        .arg("--development")
-        .arg("--serve-path")
-        .arg(tmpdir.path())
-        .args(["--bind", "127.0.0.1:0"])
-        .arg("--data-dir")
-        .arg(state_dir.path())
-        .stdout(Stdio::piped());
-    fixtures::initialize_test_instance(&command);
+    fixtures::configure_test_instance(
+        &command,
+        serde_json::json!({"development": true, "serve_path": tmpdir.path(), "bind": "127.0.0.1:0", "data_dir": state_dir.path()}),
+    );
+    command.stdout(Stdio::piped());
+    fixtures::initialize_test_instance(&mut command);
     let mut child = command.spawn()?;
 
     let printed_url = read_bound_url(&mut child)?;
@@ -247,17 +229,12 @@ fn closed_stdout_does_not_abort_the_server(tmpdir: TempDir) -> Result<(), Error>
 
     let state_dir = private_state_dir()?;
     let (mut command, _auth_config) = xczs_command(&[TEST_ACCOUNT]);
-    command.arg("run");
-    command
-        .arg("--serve-path")
-        .arg(tmpdir.path())
-        .arg("--bind")
-        .arg(format!("127.0.0.1:{port}"))
-        .arg("--data-dir")
-        .arg(state_dir.path())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    fixtures::initialize_test_instance(&command);
+    fixtures::configure_test_instance(
+        &command,
+        serde_json::json!({"serve_path": tmpdir.path(), "bind": format!("127.0.0.1:{port}"), "data_dir": state_dir.path()}),
+    );
+    command.stdout(Stdio::piped()).stderr(Stdio::null());
+    fixtures::initialize_test_instance(&mut command);
     let mut child = command.spawn()?;
     drop(child.stdout.take().ok_or("Missing child stdout")?);
 

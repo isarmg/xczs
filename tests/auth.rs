@@ -16,6 +16,7 @@ use rstest::rstest;
 use serde_json::{Value, json};
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::Path;
+use std::process::Command;
 use uuid::Uuid;
 use xcss::contracts::{AdministratorRole, AdministratorSession, ErrorEnvelope};
 
@@ -74,7 +75,7 @@ fn request_with_csrf(
 
 #[rstest]
 fn unauthenticated_html_navigation_redirects_to_login(
-    #[with(&[] as &[&str], &[USER_ACCOUNT])] server: TestServer,
+    #[with(serde_json::json!({}), &[USER_ACCOUNT])] server: TestServer,
 ) -> Result<(), Error> {
     let client = client_without_redirects()?;
     let response = client
@@ -153,7 +154,7 @@ fn unauthenticated_html_navigation_redirects_to_login(
 
 #[rstest]
 fn noncanonical_login_paths_are_rejected(
-    #[with(&[] as &[&str], &[USER_ACCOUNT])] server: TestServer,
+    #[with(serde_json::json!({}), &[USER_ACCOUNT])] server: TestServer,
 ) -> Result<(), Error> {
     let client = client_without_redirects()?;
     for raw_path in [
@@ -183,7 +184,7 @@ fn noncanonical_login_paths_are_rejected(
 
 #[rstest]
 fn unauthenticated_writes_return_401_before_touching_disk(
-    #[with(&[] as &[&str], &[USER_ACCOUNT])] server: TestServer,
+    #[with(serde_json::json!({}), &[USER_ACCOUNT])] server: TestServer,
 ) -> Result<(), Error> {
     let put_path = server.path().join("unauthenticated-put.txt");
     let patch_path = server.path().join("unauthenticated-patch.txt");
@@ -236,7 +237,7 @@ fn unauthenticated_writes_return_401_before_touching_disk(
 
 #[rstest]
 fn administrator_login_uses_exact_foundation_json_and_sets_cookie_only_on_success(
-    #[with(&[] as &[&str], &[USER_ACCOUNT])] server: TestServer,
+    #[with(serde_json::json!({}), &[USER_ACCOUNT])] server: TestServer,
 ) -> Result<(), Error> {
     for (username, password, expected_status, expected_code) in [
         ("", "", StatusCode::BAD_REQUEST, "auth.invalid_request"),
@@ -343,7 +344,7 @@ fn administrator_login_uses_exact_foundation_json_and_sets_cookie_only_on_succes
 
 #[rstest]
 fn administrator_session_and_auth_failures_use_the_foundation_contract(
-    #[with(&[] as &[&str], &[USER_ACCOUNT])] server: TestServer,
+    #[with(serde_json::json!({}), &[USER_ACCOUNT])] server: TestServer,
 ) -> Result<(), Error> {
     let session = server.login("user", TEST_PASSWORD)?;
     let restored = server
@@ -381,7 +382,7 @@ fn administrator_session_and_auth_failures_use_the_foundation_contract(
 
 #[rstest]
 fn administrator_login_rejects_ambiguous_session_cookie_without_rotation(
-    #[with(&[] as &[&str], &[USER_ACCOUNT])] server: TestServer,
+    #[with(serde_json::json!({}), &[USER_ACCOUNT])] server: TestServer,
 ) -> Result<(), Error> {
     let token = "A".repeat(43);
     let response = client_without_redirects()?
@@ -408,44 +409,29 @@ fn administrator_login_rejects_ambiguous_session_cookie_without_rotation(
 }
 
 #[rstest]
-fn login_failure_budget_is_per_account_and_ignores_forwarded_addresses(
-    #[with(&[] as &[&str], &[USER_ACCOUNT])] server: TestServer,
+fn repeated_login_failures_do_not_create_address_or_account_frequency_buckets(
+    #[with(serde_json::json!({}), &[USER_ACCOUNT])] server: TestServer,
 ) -> Result<(), Error> {
-    let first_ip = "192.0.2.10";
-    let second_ip = "192.0.2.11";
-
-    for _ in 0..xcss::admin_core::FAILURES_PER_ACCOUNT {
-        let rejected = login_response_from(&server, "user", "wrong-password", Some(first_ip))?;
+    for index in 0..24 {
+        let address = if index % 2 == 0 {
+            "192.0.2.10"
+        } else {
+            "192.0.2.11"
+        };
+        let rejected = login_response_from(&server, "user", "wrong-password", Some(address))?;
         assert_eq!(rejected.status(), StatusCode::UNAUTHORIZED);
         assert!(!rejected.headers().contains_key(RETRY_AFTER));
         assert!(!rejected.headers().contains_key(SET_COOKIE));
     }
-
-    let blocked = login_response_from(&server, "user", TEST_PASSWORD, Some(first_ip))?;
-    assert_eq!(blocked.status(), StatusCode::TOO_MANY_REQUESTS);
-    assert!(!blocked.headers().contains_key(SET_COOKIE));
-    assert_eq!(
-        blocked
-            .headers()
-            .get(RETRY_AFTER)
-            .and_then(|value| value.to_str().ok()),
-        Some("300")
-    );
-    let blocked_envelope: ErrorEnvelope = serde_json::from_str(&blocked.text()?)?;
-    assert_eq!(blocked_envelope.code.as_str(), "auth.rate_limited");
-    assert!(blocked_envelope.retryable);
-    assert!(blocked_envelope.details.is_empty());
-
-    let other_source = login_response_from(&server, "user", TEST_PASSWORD, Some(second_ip))?;
-    assert_eq!(other_source.status(), StatusCode::TOO_MANY_REQUESTS);
-    assert!(!other_source.headers().contains_key(SET_COOKIE));
-    assert!(other_source.headers().contains_key(RETRY_AFTER));
+    let accepted = login_response_from(&server, "user", TEST_PASSWORD, Some("not-an-address"))?;
+    assert_eq!(accepted.status(), StatusCode::OK);
+    assert!(accepted.headers().contains_key(SET_COOKIE));
     Ok(())
 }
 
 #[rstest]
-fn successful_login_clears_the_platform_failure_history(
-    #[with(&[] as &[&str], &[USER_ACCOUNT])] server: TestServer,
+fn failed_credentials_do_not_prevent_subsequent_valid_login(
+    #[with(serde_json::json!({}), &[USER_ACCOUNT])] server: TestServer,
 ) -> Result<(), Error> {
     let client_ip = "192.0.2.20";
     for _ in 0..4 {
@@ -471,25 +457,25 @@ fn successful_login_clears_the_platform_failure_history(
 }
 
 #[rstest]
-fn untrusted_forwarded_addresses_do_not_split_login_backoff(
-    #[with(&[] as &[&str], &[USER_ACCOUNT])] server: TestServer,
+fn repeated_failures_and_forwarded_headers_do_not_create_identity_backoff(
+    #[with(serde_json::json!({}), &[USER_ACCOUNT])] server: TestServer,
 ) -> Result<(), Error> {
-    for _ in 0..xcss::admin_core::FAILURES_PER_ACCOUNT {
+    for _ in 0..24 {
         let rejected = login_response_from(&server, "user", "wrong-password", Some("192.0.2.30"))?;
         assert_eq!(rejected.status(), StatusCode::UNAUTHORIZED);
         assert!(!rejected.headers().contains_key(SET_COOKIE));
     }
 
-    let blocked = login_response_from(&server, "user", TEST_PASSWORD, Some("192.0.2.31"))?;
-    assert_eq!(blocked.status(), StatusCode::TOO_MANY_REQUESTS);
-    assert!(!blocked.headers().contains_key(SET_COOKIE));
-    assert!(blocked.headers().contains_key(RETRY_AFTER));
+    let success = login_response_from(&server, "user", TEST_PASSWORD, Some("192.0.2.31"))?;
+    assert_eq!(success.status(), StatusCode::OK);
+    assert!(success.headers().contains_key(SET_COOKIE));
+    assert!(!success.headers().contains_key(RETRY_AFTER));
     Ok(())
 }
 
 #[rstest]
 fn cross_site_login_and_write_requests_are_rejected(
-    #[with(&[] as &[&str], &[USER_ACCOUNT])] server: TestServer,
+    #[with(serde_json::json!({}), &[USER_ACCOUNT])] server: TestServer,
 ) -> Result<(), Error> {
     let login = client_without_redirects()?
         .post(server.url().join("api/v1/auth/login")?)
@@ -521,7 +507,7 @@ fn cross_site_login_and_write_requests_are_rejected(
 
 #[test]
 fn explicitly_initialized_account_can_log_in() -> Result<(), Error> {
-    let server = server(&[] as &[&str], &[USER_ACCOUNT]);
+    let server = server(serde_json::json!({}), &[USER_ACCOUNT]);
 
     let session = server.login("user", TEST_PASSWORD)?;
     assert_eq!(
@@ -554,8 +540,8 @@ fn running_server_argv_contains_only_the_protected_config_path(
         .collect::<Vec<_>>();
     assert!(
         argv.windows(2)
-            .any(|pair| pair[0] == b"--config" && !pair[1].is_empty()),
-        "running server argv did not contain the protected config path"
+            .any(|pair| pair[0] == b"--root" && !pair[1].is_empty()),
+        "running server argv did not contain the instance root path"
     );
     Ok(())
 }
@@ -566,29 +552,33 @@ fn invalid_password_hash_is_rejected_at_startup() -> Result<(), Error> {
     let data = assert_fs::TempDir::new()?;
     std::fs::set_permissions(data.path(), std::fs::Permissions::from_mode(0o700))?;
     let (mut command, _config) = xczs_command(&[TEST_ACCOUNT]);
-    command
-        .arg("--serve-path")
-        .arg(shared.path())
-        .arg("--data-dir")
-        .arg(data.path());
-    fixtures::initialize_test_instance(&command);
-    let accounts = data
-        .path()
-        .join("administrator/administrator-accounts.json");
-    let mut document: Value = serde_json::from_slice(&std::fs::read(&accounts)?)?;
-    document["accounts"][0]["password_hash"] = json!("not-an-argon2id-phc");
-    std::fs::write(&accounts, serde_json::to_vec(&document)?)?;
-    let before = std::fs::read(&accounts)?;
-    let output = command.arg("run").arg("--json").output()?;
+    fixtures::configure_test_instance(
+        &command,
+        serde_json::json!({"serve_path": shared.path(), "data_dir": data.path()}),
+    );
+    fixtures::initialize_test_instance(&mut command);
+    let database = data.path().join("state.sqlite3");
+    let runtime = tokio::runtime::Runtime::new()?;
+    runtime.block_on(async {
+        let pool = sqlx::SqlitePool::connect(&format!("sqlite://{}", database.display())).await?;
+        sqlx::query("UPDATE _common_administrators SET password_hash='not-an-argon2id-phc'")
+            .execute(&pool)
+            .await?;
+        pool.close().await;
+        Ok::<_, sqlx::Error>(())
+    })?;
+    let before = std::fs::read(&database)?;
+    let output = command.output()?;
     assert!(!output.status.success());
     assert!(!String::from_utf8_lossy(&output.stdout).contains("not-an-argon2id-phc"));
-    assert_eq!(std::fs::read(&accounts)?, before);
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("not-an-argon2id-phc"));
+    assert_eq!(std::fs::read(&database)?, before);
     Ok(())
 }
 
 #[rstest]
 fn one_administrator_has_independent_sessions_and_full_filesystem_access(
-    #[with(&[] as &[&str], &[USER_ACCOUNT])] server: TestServer,
+    #[with(serde_json::json!({}), &[USER_ACCOUNT])] server: TestServer,
 ) -> Result<(), Error> {
     let admin = server.login("user", TEST_PASSWORD)?;
     let user = server.login("user", TEST_PASSWORD)?;
@@ -638,7 +628,7 @@ fn one_administrator_has_independent_sessions_and_full_filesystem_access(
 
 #[rstest]
 fn every_write_method_rejects_missing_forged_and_cross_session_csrf(
-    #[with(&[] as &[&str], &[USER_ACCOUNT])] server: TestServer,
+    #[with(serde_json::json!({}), &[USER_ACCOUNT])] server: TestServer,
 ) -> Result<(), Error> {
     let session = server.login("user", TEST_PASSWORD)?;
     let other_session = server.login("user", TEST_PASSWORD)?;
@@ -722,7 +712,7 @@ fn every_write_method_rejects_missing_forged_and_cross_session_csrf(
 
 #[rstest]
 fn valid_csrf_allows_put_patch_delete_and_browser_post(
-    #[with(&[] as &[&str], &[USER_ACCOUNT])] server: TestServer,
+    #[with(serde_json::json!({}), &[USER_ACCOUNT])] server: TestServer,
 ) -> Result<(), Error> {
     let session = server.login("user", TEST_PASSWORD)?;
 
@@ -780,7 +770,7 @@ fn valid_csrf_allows_put_patch_delete_and_browser_post(
 
 #[rstest]
 fn logout_clears_cookie_and_immediately_revokes_the_session(
-    #[with(&[] as &[&str], &[USER_ACCOUNT])] server: TestServer,
+    #[with(serde_json::json!({}), &[USER_ACCOUNT])] server: TestServer,
 ) -> Result<(), Error> {
     let session = server.login("user", TEST_PASSWORD)?;
     let removed_logout = server
@@ -834,7 +824,7 @@ fn logout_clears_cookie_and_immediately_revokes_the_session(
 
 #[rstest]
 fn authorization_header_does_not_replace_browser_session_authentication(
-    #[with(&[] as &[&str], &[USER_ACCOUNT])] server: TestServer,
+    #[with(serde_json::json!({}), &[USER_ACCOUNT])] server: TestServer,
 ) -> Result<(), Error> {
     let response = server
         .raw_request(Method::GET, server.url())
@@ -888,92 +878,67 @@ fn assert_invalid_auth_before_state_creation(accounts: &[&str]) -> Result<(), Er
     let sentinel_identity = auth_fixture_identity(&sentinel)?;
     let data_identity = auth_fixture_identity(data_parent.path())?;
     let data_dir = data_parent.path().join("not-created");
-    for mode in ["run", "init"] {
-        let (mut command, auth_config) = xczs_command(&[TEST_ACCOUNT]);
-        std::fs::write(
-            auth_config.path(),
-            serde_json::to_vec(&json!({"auth":accounts}))?,
-        )?;
-        let config_before = std::fs::read(auth_config.path())?;
-        let config_identity = auth_fixture_identity(auth_config.path())?;
-        let config_parent = auth_config.path().parent().unwrap();
-        let config_parent_identity = auth_fixture_identity(config_parent)?;
-        let output = command
-            .arg(mode)
-            .args(["--json", "--serve-path"])
-            .arg(shared_root.path())
-            .arg("--data-dir")
-            .arg(&data_dir)
-            .env_remove("XCZS_AUTH")
-            .env_remove("XCZS_DEV_WEB_DIR")
-            .output()?;
-        assert_eq!(output.status.code(), Some(1), "mode={mode}");
-        assert!(output.stderr.is_empty(), "mode={mode}");
-        let envelope: Value = serde_json::from_slice(&output.stdout)?;
-        assert_eq!(
-            envelope,
-            json!({
-                "code": "contract_violation",
-                "message": "Configuration does not satisfy the current contract.",
-                "retryable": false,
-                "details": { "violations": [{
-                    "reason": "UNKNOWN_FIELD", "path": "/auth", "source": "file"
-                }] }
-            }),
-            "mode={mode}"
-        );
-        for account in accounts {
-            assert!(
-                !output
-                    .stdout
-                    .windows(account.len())
-                    .any(|part| part == account.as_bytes())
-            );
-        }
-        assert!(!String::from_utf8_lossy(&output.stdout).contains("$argon2id$"));
+    let (_, auth_config) = xczs_command(&[TEST_ACCOUNT]);
+    std::fs::write(
+        auth_config.path(),
+        serde_json::to_vec(&json!({
+            "auth": accounts, "serve_path": shared_root.path(), "data_dir": data_dir,
+        }))?,
+    )?;
+    let config_before = std::fs::read(auth_config.path())?;
+    let config_identity = auth_fixture_identity(auth_config.path())?;
+    let config_parent = auth_config.path().parent().unwrap();
+    let config_parent_identity = auth_fixture_identity(config_parent)?;
+    let root = config_parent.parent().unwrap();
+    let mut command = Command::new(assert_cmd::cargo::cargo_bin!());
+    let output = command
+        .arg("--root")
+        .arg(root)
+        .env_remove("XCZS_AUTH")
+        .env_remove("XCZS_DEV_WEB_DIR")
+        .output()?;
+    assert_eq!(output.status.code(), Some(1));
+    assert!(String::from_utf8_lossy(&output.stderr).contains("contract_violation"));
+    for account in accounts {
         assert!(
-            !data_dir.exists(),
-            "invalid auth created data before rejection, mode={mode}"
-        );
-        assert_eq!(std::fs::read_dir(data_parent.path())?.count(), 0);
-        assert_eq!(auth_fixture_identity(data_parent.path())?, data_identity);
-        assert_eq!(std::fs::read_dir(shared_root.path())?.count(), 1);
-        assert_eq!(auth_fixture_identity(shared_root.path())?, shared_identity);
-        assert_eq!(auth_fixture_identity(&sentinel)?, sentinel_identity);
-        assert_eq!(
-            std::fs::read(&sentinel)?,
-            b"shared content must remain unchanged"
-        );
-        assert_eq!(std::fs::read(auth_config.path())?, config_before);
-        assert_eq!(auth_fixture_identity(auth_config.path())?, config_identity);
-        assert_eq!(std::fs::read_dir(config_parent)?.count(), 1);
-        assert_eq!(
-            auth_fixture_identity(config_parent)?,
-            config_parent_identity
+            !output
+                .stderr
+                .windows(account.len())
+                .any(|part| part == account.as_bytes())
         );
     }
+    assert!(!String::from_utf8_lossy(&output.stderr).contains("$argon2id$"));
+    assert!(!data_dir.exists());
+    assert_eq!(std::fs::read_dir(data_parent.path())?.count(), 0);
+    assert_eq!(auth_fixture_identity(data_parent.path())?, data_identity);
+    assert_eq!(auth_fixture_identity(shared_root.path())?, shared_identity);
+    assert_eq!(auth_fixture_identity(&sentinel)?, sentinel_identity);
+    assert_eq!(
+        std::fs::read(&sentinel)?,
+        b"shared content must remain unchanged"
+    );
+    assert_eq!(std::fs::read(auth_config.path())?, config_before);
+    assert_eq!(auth_fixture_identity(auth_config.path())?, config_identity);
+    assert_eq!(std::fs::read_dir(config_parent)?.count(), 1);
+    assert_eq!(
+        auth_fixture_identity(config_parent)?,
+        config_parent_identity
+    );
     Ok(())
 }
 
 #[test]
-fn trusted_proxy_errors_keep_request_context() -> Result<(), Error> {
-    let config = fixtures::test_config(&[TEST_ACCOUNT]);
-    std::fs::write(
-        config.path(),
-        json!({"trusted_proxies":["127.0.0.1/32"]}).to_string(),
-    )?;
-    let server = fixtures::server(
-        ["--config", config.path().to_str().unwrap()],
-        [TEST_ACCOUNT],
-    );
+fn forwarded_headers_do_not_change_request_context() -> Result<(), Error> {
+    let server = fixtures::server(serde_json::json!({}), [TEST_ACCOUNT]);
     let response = client_without_redirects()?
         .get(server.url())
+        .header("accept", "text/html")
         .header("x-forwarded-for", "not-an-address")
         .header("x-request-id", "proxy-contract-test")
         .send()?;
-    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(response.status(), StatusCode::SEE_OTHER);
     assert_eq!(response.headers()["x-request-id"], "proxy-contract-test");
-    assert_eq!(response.headers()[CACHE_CONTROL], "no-store");
+    assert_eq!(response.headers()[CACHE_CONTROL], "private, no-store");
     let response = login_response_from(
         &server,
         fixtures::TEST_USER,

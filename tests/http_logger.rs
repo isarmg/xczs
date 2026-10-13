@@ -33,7 +33,7 @@ fn verified_session_user_is_written_to_access_log(tmpdir: TempDir) -> Result<(),
     let _test_guard = serialize_http_logger_test();
     let (mut child, port, _state_dir) = spawn_logged_server_with_accounts(
         &tmpdir,
-        &["--log-format", "ACCESS $status $remote_user"],
+        serde_json::json!({"log_format": "ACCESS $status $remote_user"}),
         &[USER_ACCOUNT],
     )?;
     let session = login(port, "user", TEST_PASSWORD)?;
@@ -52,7 +52,8 @@ fn verified_session_user_is_written_to_access_log(tmpdir: TempDir) -> Result<(),
 #[rstest]
 fn empty_log_format_disables_access_log(tmpdir: TempDir) -> Result<(), Error> {
     let _test_guard = serialize_http_logger_test();
-    let (mut child, port, _state_dir) = spawn_logged_server(&tmpdir, &["--log-format", ""])?;
+    let (mut child, port, _state_dir) =
+        spawn_logged_server(&tmpdir, serde_json::json!({"log_format": ""}))?;
     let session = login(port, TEST_USER, TEST_PASSWORD)?;
     let response = Client::new()
         .get(format!("http://localhost:{port}"))
@@ -69,8 +70,10 @@ fn empty_log_format_disables_access_log(tmpdir: TempDir) -> Result<(), Error> {
 #[rstest]
 fn invalid_session_is_not_written_to_access_log(tmpdir: TempDir) -> Result<(), Error> {
     let _test_guard = serialize_http_logger_test();
-    let (mut child, port, _state_dir) =
-        spawn_logged_server(&tmpdir, &["--log-format", "ACCESS $status $remote_user"])?;
+    let (mut child, port, _state_dir) = spawn_logged_server(
+        &tmpdir,
+        serde_json::json!({"log_format": "ACCESS $status $remote_user"}),
+    )?;
     let response = Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .build()?
@@ -88,8 +91,10 @@ fn invalid_session_is_not_written_to_access_log(tmpdir: TempDir) -> Result<(), E
 #[rstest]
 fn authenticated_logout_keeps_verified_user_in_access_log(tmpdir: TempDir) -> Result<(), Error> {
     let _test_guard = serialize_http_logger_test();
-    let (mut child, port, _state_dir) =
-        spawn_logged_server(&tmpdir, &["--log-format", "ACCESS $status $remote_user"])?;
+    let (mut child, port, _state_dir) = spawn_logged_server(
+        &tmpdir,
+        serde_json::json!({"log_format": "ACCESS $status $remote_user"}),
+    )?;
     let session = login(port, TEST_USER, TEST_PASSWORD)?;
     let response = Client::new()
         .post(format!("http://localhost:{port}/api/v1/auth/logout"))
@@ -110,11 +115,8 @@ fn sensitive_request_headers_are_redacted(tmpdir: TempDir) -> Result<(), Error> 
     let _test_guard = serialize_http_logger_test();
     let (mut child, port, _state_dir) = spawn_logged_server_with_accounts(
         &tmpdir,
-        &[
-            "--log-format",
-            "SECRETS $http_cookie $http_x_csrf_token $http_authorization \
-             $http_proxy_authorization",
-        ],
+        serde_json::json!({"log_format":"SECRETS $http_cookie $http_x_csrf_token $http_authorization \
+             $http_proxy_authorization"}),
         &[USER_ACCOUNT],
     )?;
     let session = login(port, "user", TEST_PASSWORD)?;
@@ -147,13 +149,10 @@ fn sensitive_request_header_variable_suffixes_are_case_insensitive(
     let _test_guard = serialize_http_logger_test();
     let (mut child, port, _state_dir) = spawn_logged_server_with_accounts(
         &tmpdir,
-        &[
-            "--log-format",
-            "CASE_SECRETS $http_AUTHORIZATION $http_AuThOrIzAtIoN \
+        serde_json::json!({"log_format":"CASE_SECRETS $http_AUTHORIZATION $http_AuThOrIzAtIoN \
              $http_PROXY_AUTHORIZATION $http_PrOxY_AuThOrIzAtIoN \
              $http_COOKIE $http_CoOkIe \
-             $http_X_CSRF_TOKEN $http_X_CsRf_ToKeN",
-        ],
+             $http_X_CSRF_TOKEN $http_X_CsRf_ToKeN"}),
         &[USER_ACCOUNT],
     )?;
     let session = login(port, "user", TEST_PASSWORD)?;
@@ -195,7 +194,7 @@ fn mixed_case_non_sensitive_request_header_variable_is_logged(
     let _test_guard = serialize_http_logger_test();
     let (mut child, port, _state_dir) = spawn_logged_server_with_accounts(
         &tmpdir,
-        &["--log-format", "REQUEST_ID $http_X_ReQuEsT_Id"],
+        serde_json::json!({"log_format": "REQUEST_ID $http_X_ReQuEsT_Id"}),
         &[USER_ACCOUNT],
     )?;
     let session = login(port, "user", TEST_PASSWORD)?;
@@ -220,8 +219,10 @@ fn request_line_preserves_raw_path_and_http_version_and_redacts_query(
     tmpdir: TempDir,
 ) -> Result<(), Error> {
     let _test_guard = serialize_http_logger_test();
-    let (mut child, port, _state_dir) =
-        spawn_logged_server(&tmpdir, &["--log-format", "REQUEST $request"])?;
+    let (mut child, port, _state_dir) = spawn_logged_server(
+        &tmpdir,
+        serde_json::json!({"log_format": "REQUEST $request"}),
+    )?;
     let session = login(port, TEST_USER, TEST_PASSWORD)?;
 
     let mut stream = TcpStream::connect(("127.0.0.1", port))?;
@@ -258,7 +259,7 @@ fn truncated_download_is_logged_as_a_stream_failure(tmpdir: TempDir) -> Result<(
 
     let (mut child, port, _state_dir) = spawn_logged_server(
         &tmpdir,
-        &["--log-format", "STREAM $request $log_level $status"],
+        serde_json::json!({"log_format": "STREAM $request $log_level $status"}),
     )?;
     let session = login(port, TEST_USER, TEST_PASSWORD)?;
     let mut stream = TcpStream::connect(("127.0.0.1", port))?;
@@ -311,10 +312,7 @@ fn authenticated_operation_id_is_available_to_access_logs(tmpdir: TempDir) -> Re
     let _test_guard = serialize_http_logger_test();
     let (mut child, port, _state_dir) = spawn_logged_server(
         &tmpdir,
-        &[
-            "--log-format",
-            "OPERATION $operation_id $operation_state $status",
-        ],
+        serde_json::json!({"log_format": "OPERATION $operation_id $operation_state $status"}),
     )?;
     let session = login(port, TEST_USER, TEST_PASSWORD)?;
     let operation_id = Uuid::new_v4().to_string();
@@ -351,8 +349,8 @@ fn only_successful_embedded_asset_gets_are_omitted_from_access_log(
     tmpdir: TempDir,
 ) -> Result<(), Error> {
     let _test_guard = serialize_http_logger_test();
-    let args = ["--log-format", "P006 $request_method $request_uri $status"];
-    let (mut child, port, _state_dir) = spawn_logged_server(&tmpdir, &args)?;
+    let args = serde_json::json!({"log_format": "P006 $request_method $request_uri $status"});
+    let (mut child, port, _state_dir) = spawn_logged_server(&tmpdir, args)?;
     let session = login(port, TEST_USER, TEST_PASSWORD)?;
     let client = Client::new();
     let page_path = "/";
@@ -491,18 +489,20 @@ fn malformed_http_connection_produces_a_safe_structured_warning(
 ) -> Result<(), Error> {
     let _test_guard = serialize_http_logger_test();
     let state_dir = private_state_dir()?;
-    let log_file = state_dir.path().join("logs/xczs.jsonl");
     let (mut command, _auth_config) = xczs_command(&[TEST_ACCOUNT]);
-    command.arg("run");
-    command
-        .arg("--serve-path")
-        .arg(tmpdir.path())
-        .args(["--bind", "127.0.0.1:0"])
-        .arg("--data-dir")
-        .arg(state_dir.path())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null());
-    fixtures::initialize_test_instance(&command);
+    let log_file = _auth_config
+        .path()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("logs/xczs.jsonl");
+    fixtures::configure_test_instance(
+        &command,
+        serde_json::json!({"serve_path": tmpdir.path(), "bind": "127.0.0.1:0", "data_dir": state_dir.path()}),
+    );
+    command.stdout(Stdio::piped()).stderr(Stdio::null());
+    fixtures::initialize_test_instance(&mut command);
     let mut child = command.spawn()?;
 
     let port = read_bound_url(&mut child)?
@@ -554,16 +554,19 @@ fn startup_failure_is_written_and_flushed_to_the_configured_log(
     let state_dir = private_state_dir()?;
     let log_dir = TempDir::new()?;
     std::fs::set_permissions(log_dir.path(), std::fs::Permissions::from_mode(0o700))?;
-    let log_file = state_dir.path().join("logs/xczs.jsonl");
     let (mut command, _auth_config) = xczs_command(&[TEST_ACCOUNT]);
-    command.arg("run");
-    command
-        .arg("--serve-path")
-        .arg(tmpdir.path())
-        .arg("--data-dir")
-        .arg(state_dir.path())
-        .args(["--bind", "20.205.243.166:0"]);
-    fixtures::initialize_test_instance(&command);
+    let log_file = _auth_config
+        .path()
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("logs/xczs.jsonl");
+    fixtures::configure_test_instance(
+        &command,
+        serde_json::json!({"serve_path": tmpdir.path(), "data_dir": state_dir.path(), "bind": "20.205.243.166:0"}),
+    );
+    fixtures::initialize_test_instance(&mut command);
     command
         .assert()
         .failure()
@@ -589,34 +592,32 @@ fn serialize_http_logger_test() -> MutexGuard<'static, ()> {
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-fn spawn_logged_server(tmpdir: &TempDir, args: &[&str]) -> Result<(Child, u16, TempDir), Error> {
+fn spawn_logged_server(
+    tmpdir: &TempDir,
+    args: serde_json::Value,
+) -> Result<(Child, u16, TempDir), Error> {
     spawn_logged_server_with_accounts(tmpdir, args, &[TEST_ACCOUNT])
 }
 
 fn spawn_logged_server_with_accounts(
     tmpdir: &TempDir,
-    args: &[&str],
+    args: serde_json::Value,
     accounts: &[&str],
 ) -> Result<(Child, u16, TempDir), Error> {
-    let state_dir = private_state_dir()?;
-    let (mut command, _auth_config) = xczs_command(accounts);
-    command.arg("run");
-    command
-        .arg("--development")
-        .arg("--serve-path")
-        .arg(tmpdir.path())
-        .args(["--bind", "127.0.0.1:0"])
-        .args(args)
-        .arg("--data-dir")
-        .arg(state_dir.path())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    fixtures::initialize_test_instance(&command);
+    let (mut command, auth_config) = xczs_command(accounts);
+    fixtures::configure_test_instance(
+        &command,
+        serde_json::json!({"development": true, "serve_path": tmpdir.path(), "bind": "127.0.0.1:0", "min_free_space": 0}),
+    );
+    fixtures::configure_test_instance(&command, args);
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    fixtures::initialize_test_instance(&mut command);
     let mut child = command.spawn()?;
     let port = read_bound_url(&mut child)?
         .port()
         .ok_or("Printed URL has no port")?;
-    Ok((child, port, state_dir))
+    // Keep config, logs and runtime directories alive until the child is stopped.
+    Ok((child, port, auth_config.into_directory()))
 }
 
 fn private_state_dir() -> Result<TempDir, Error> {
@@ -681,7 +682,7 @@ fn stop_and_read(child: &mut Child) -> Result<String, Error> {
         .collect::<Vec<_>>();
     let log_path = arguments
         .windows(2)
-        .find(|pair| pair[0] == "--data-dir")
+        .find(|pair| pair[0] == "--root")
         .map(|pair| std::path::PathBuf::from(&pair[1]).join("logs/xczs.jsonl"))
         .ok_or("logged fixture is missing its persistent log path")?;
     let status = Command::new("kill")

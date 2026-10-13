@@ -4,13 +4,13 @@
 
 ## 统一状态库
 
-服务只使用文件型 SQLite schema revision 1 的统一 state store，其中有 `operations`、`upload_sessions` 和 `purge_jobs` 三类状态。SQLite 是上传状态的唯一权威，服务不会在共享根内写入、读取或导入 JSON 上传状态文件。CLI `--data-dir` 或 JSON `data_dir` 必须提供一个目录，数据库固定使用 `<data_dir>/state.sqlite3`；没有进程内数据库或单独文件路径配置入口。
+服务只使用文件型 SQLite schema revision 2 的统一 state store，其中有 `operations`、`upload_sessions` 和 `purge_jobs` 三类状态。SQLite 是上传状态的唯一权威，服务不会在共享根内写入、读取或导入 JSON 上传状态文件。JSON `data_dir` 默认 ROOT/state，也可显式提供业务状态目录，数据库固定使用 `<data_dir>/state.sqlite3`；没有进程内数据库或单独文件路径配置入口。
 
 operation 容量为全局 4096、每账号 1024，终态 TTL 为 15 分钟。启动恢复会删除未进入提交边界的 `Reserved`，把可能已经触碰文件系统的 operation `CommitStarted` 转为 `Completed/unknown` 并从恢复时开始新的 15 分钟终态 TTL；未过期的原有 `Completed` 只继续使用剩余 TTL。upload session 容量为全局 16384、每账号 4096，每次实际更新后保留 7 天；持久状态包含 `Running/CommitStarted/AwaitingConfirmation/Committed/Rejected/Unknown`，重启会把 upload `CommitStarted` 恢复为 `Unknown`，而 `AwaitingConfirmation` 保留完整 stage 等待明确发布或丢弃。首次 discard 原位写入 `Rejected` 并设置终态 TTL；对已有 `Rejected` 的幂等重试不写库、不续 TTL，只继续 identity-safe stage 清理。purge job 容量为全局 4096、每账号 1024，不使用 TTL 或固定失败次数丢弃普通 I/O 故障中的回收任务。
 
 认证客户端应通过 `GET /__xczs__/api/jobs/<UUID>` 查询当前账号的 mutation job。响应使用 `job_id` 字段及 `running/succeeded/failed/unknown` 状态。
 
-状态库固定使用 SQLite rollback journal `DELETE` 模式和 `synchronous=EXTRA`，由单独状态线程串行访问。数据库文件以 `0600` 使用，必须位于共享根之外；已有数据库还必须是非符号链接、单硬链接普通文件，并绑定创建时共享根的设备号和 inode。任何 SQLite 连接打开前，固定 `-journal/-wal/-shm` 都要经 `lstat`、`O_NOFOLLOW|O_NONBLOCK` 打开、`fstat` 和打开前后身份复核，拒绝符号链接、特殊文件、多硬链接、出现/消失或替换；主库不存在时不接受任何孤立 sidecar。现存主库和 WAL/journal 经公共稳定快照机制只读复制到私有临时目录，先验证精确的五列 `product_metadata`、`xczs` 应用名、当前持久化结构版本 `1.0.0`、schema revision 1、xcss 规范 SHA-256 指纹、根绑定和完整性，再打开原路径的当前业务连接。指纹对排除 `sqlite_*` 与 `product_metadata` 后按 `type/name/tbl_name/sql` 排序的原始字段逐个编码 u64 大端长度和字段字节。只有显式 `init` 会在新文件中创建唯一当前 schema；任何非当前 identity、无标记库、版本/指纹/对象漂移、其他应用数据库、错误共享根或非 SQLite 文件都会在 chmod、journal mode 和恢复写入前拒绝，主库及全部 sidecar 保持原字节、mode 和身份。同一状态库不能复制给另一共享根复用。
+状态库固定使用 SQLite rollback journal `DELETE` 模式和 `synchronous=EXTRA`，由单独状态线程串行访问。数据库文件以 `0600` 使用，必须位于共享根之外；已有数据库还必须是非符号链接、单硬链接普通文件，并绑定创建时共享根的设备号和 inode。任何 SQLite 连接打开前，固定 `-journal/-wal/-shm` 都要经 `lstat`、`O_NOFOLLOW|O_NONBLOCK` 打开、`fstat` 和打开前后身份复核，拒绝符号链接、特殊文件、多硬链接、出现/消失或替换；主库不存在时不接受任何孤立 sidecar。现存主库和 WAL/journal 经公共稳定快照机制只读复制到私有临时目录，先验证精确的五列 `product_metadata`、`xczs` 应用名、当前持久化结构版本 `1.0.0`、schema revision 2、xcss 规范 SHA-256 指纹、根绑定和完整性，再打开原路径的当前业务连接。指纹对排除 `sqlite_*` 与 `product_metadata` 后按 `type/name/tbl_name/sql` 排序的原始字段逐个编码 u64 大端长度和字段字节。只有显式 `init` 会在新文件中创建唯一当前 schema；任何非当前 identity、无标记库、版本/指纹/对象漂移、其他应用数据库、错误共享根或非 SQLite 文件都会在 chmod、journal mode 和恢复写入前拒绝，主库及全部 sidecar 保持原字节、mode 和身份。同一状态库不能复制给另一共享根复用。
 
 SQLite 提交与共享根中的 mkdir、rename、文件同步和目录 `fsync` 不属于一个共同事务。operation/upload 崩溃恢复中的 `unknown` 是保守结果，不是回滚记录。DELETE 先持久化含根内相对目标/trash 路径和源 dev/inode/类型的 `Prepared` outbox，再做 checked rename 与父目录 `fsync`；成功后才把覆盖 dev/inode、类型、链接数、大小、uid/gid、完整 mode 和纳秒级 mtime/ctime 的 32 字节 trash revision 与 `Ready` 原子写入。worker 把到期 job 原子 claim 为 `Claimed`，并用 revision 与持续 fd 锚点共同复核；普通 I/O 失败持久化回 `Ready` 并从 100 ms 指数退避到最长 30 秒。若 state-store 的 defer/complete 命令瞬时失败，worker 会有界保留本地 claim，并在回读确认数据库仍为 `Claimed` 后重试；重启也会把遗留 `Claimed` 恢复为 `Ready`。`Prepared` 没有已提交 revision，reconciler 始终保留目标，把 trash 路径上的任何 occupant 移入 `.xczs-quarantine-<uuid>.hold` 后释放 intent，绝不再依据弱源 inode 推断 rename 结果。`Ready/Claimed` 缺失 revision、身份不匹配或最终删除出现 `InvalidData` 时同样 quarantine 整棵 trash 根并释放 job。每个最终 unlink/rmdir 候选先移入随机隔离名，再用既有 fd 复核；`ENOTEMPTY/EXIST` 等异常不从 cursor 0 重扫。DFS 最多保留 2048 层目录 frame，每次 push 都用 `try_reserve`；超深树返回 `InvalidData` 并把剩余 trash 根永久隔离，内存预留失败则保留游标供以后重试。未记账 orphan 在兜底通道满、取消或普通 I/O 失败时保持隐藏，等待以后 maintenance 重新发现；若 purge 判定为 `InvalidData`，整棵根立即进入永久 quarantine。quarantine 永不由 maintenance 自动清理；发现后应停止 Xczs，核对内容、owner、来源日志和状态库再手工移除。递归清理不会进入 trash 下的嵌套/bind mount，普通 mount 边界 I/O 故障保留 job 并退避，卸载后继续。能用 inotify 竞争随机隔离名的恶意同 UID writer 仍不在支持边界内。
 
@@ -40,9 +40,8 @@ SQLite 提交与共享根中的 mkdir、rename、文件同步和目录 `fsync` �
 
 自行管理的 HTTPS 网关应固定规范 Host，关闭写请求重放与缓存，并对登录入口独立设置速率、连接与正文预算。Xczs 不附带代理软件配置。内部路由只接受规范 URI，尾斜杠、重复斜杠和非规范百分号编码不会成为另一个登录入口。
 
-xcss 统一限制登录正文为 16 KiB、读取期限 10 秒、全局 32/每个统一解析来源 4 个读取许可；取消或失败释放许可。失败预算为五分钟内每来源 20 次、每规范账号 10 次，最多两个 Argon2id 计算槽，取得计算槽最多等待两秒。失败预算耗尽返回 `429 auth.rate_limited` 和保守的 `Retry-After: 300`。这些是共享平台政策，不由 Xczs 实现或配置；网关仍须独立按真实客户端 IP 限速。
+xcss 统一限制登录正文为 16 KiB、读取期限 10 秒、全局 32 个读取许可；取消或失败释放许可。最多两个 Argon2id 计算槽，取得计算槽最多等待两秒，许可持续到实际计算结束。没有 IP、账号或会话失败频率桶，容量已满或超时按当前认证资源错误返回。
 
-生产模式固定要求 HTTPS Origin，并与唯一规范 Host/URI authority 和 `Sec-Fetch-Site: same-origin` 一致；不从转发头推导认证协议；`trusted_proxies` 明确受信时，统一 ClientIp 从 X-Forwarded-For 解析客户端 IP，日志与限流共享该值，其他来源忽略该头。HTTPS 网关必须终止 TLS、覆盖 Host 为规范域名，并通过防火墙、网络命名空间或精确 ACL 阻止客户端及不可信本机进程直连后端。仅显式 `--development` 允许 HTTP，且所有监听地址必须为 loopback；不能用于公网部署。
 
 Xczs 的普通文件和 Range 正文没有总时长/最低速率限制，但每个源文件分块的门控等待及读取连续 30 秒未完成会使正文报错，已经取得的分块在套接字连续 30 秒没有写入进展也会关闭连接。两项 idle deadline 独立重置；公网网关仍应设置符合业务容量的响应总时长、最低速率和空闲策略，不能把它们当作完整的慢客户端或总时长防护。
 
@@ -52,7 +51,7 @@ Xczs 的普通文件和 Range 正文没有总时长/最低速率限制，但每�
 
 - `GET` 或 `HEAD /healthz` 是公开 liveness，只表明进程仍能处理 HTTP，不访问文件内容，也不泄露账号或路径。
 - `GET` 或 `HEAD /readyz` 无需认证，只有最小 `ready` 布尔值。xcss 在启动和每 5 秒刷新共享根私有隐藏探针的写入、同步与读回、SQLite 回滚写事务及最低空间探针；探针文件在开始监听前固定创建，周期检查不改变共享根目录时间戳。每次探针有平台时限，失败返回 503，停止准入立即变为未就绪。端点读取最近一次结果，不泄露路径、账号或错误详情，也不是对 rename 和所有业务配额的完整保证。
-- 告警至少覆盖进程重启、HTTP 5xx/429/507、登录限流、磁盘空间、inode、共享根挂载状态、备份年龄和备份恢复演练结果。
+- 告警至少覆盖进程重启、HTTP 5xx/429/507、认证资源容量、磁盘空间、inode、共享根挂载状态、备份年龄和备份恢复演练结果。
 
 普通写请求返回成功只表示其规定的原子发布和目录同步步骤已返回成功。硬件、固件、网络文件系统或宿主机错误兑现同步请求仍可能破坏数据，因此监控不能替代备份。
 

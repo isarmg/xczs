@@ -11,6 +11,7 @@ pub mod auth;
 pub mod http_logger;
 pub mod http_utils;
 pub mod logger;
+pub mod offline;
 pub mod request_context;
 pub mod server;
 pub mod utils;
