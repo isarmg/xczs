@@ -672,6 +672,7 @@ export function createUploadManager(options: UploadManagerOptions) {
         detail,
         (name) => request.getResponseHeader(name),
         this.file.size,
+        this.uploadRequestPhase === "resume" ? this.uploadOffset : null,
       );
       if (targetChange) this.invalidateTargetChange();
       if (targetChange?.kind === "missing") {
@@ -784,7 +785,7 @@ export function createUploadManager(options: UploadManagerOptions) {
         if (staged) {
           this.publishStaged();
         } else {
-          this.sendBody();
+          this.sendBody(this.uploadRequestPhase === "resume");
         }
         return;
       }
@@ -816,7 +817,7 @@ export function createUploadManager(options: UploadManagerOptions) {
       }
       this.missingTargetRetryUsed = true;
       this.targetRevision = null;
-      this.sendBody();
+      this.sendBody(this.uploadRequestPhase === "resume");
     }
 
     publishStaged() {
@@ -1912,15 +1913,22 @@ function trustedUploadTargetChange(
   detail: { code: string; status: number },
   headers: Headers | ((name: string) => string | null),
   expectedLength: number,
+  expectedResumeOffset: number | null,
 ):
   | { kind: "exists"; revision: string; replaceable: boolean }
   | { kind: "missing" }
   | { kind: "reset-stage" }
   | null {
+  // A bound target-conflict response to PATCH is a pre-transfer rejection,
+  // even though the generic running classification is conservative. Retain
+  // the checkpoint and explicitly confirm the new target before resuming.
+  const runningConflict = classification.kind === "running" &&
+    expectedResumeOffset !== null &&
+    classification.protocol?.offset === expectedResumeOffset;
   if (
-    classification.outcomeUnknown ||
+    (classification.outcomeUnknown && !runningConflict) ||
     detail.status !== 409 ||
-    !["not-started", "awaiting-confirmation"].includes(classification.kind) ||
+    (!["not-started", "awaiting-confirmation"].includes(classification.kind) && !runningConflict) ||
     classification.protocol?.state !== classification.kind ||
     classification.protocol.length !== expectedLength ||
     (classification.kind === "awaiting-confirmation" &&

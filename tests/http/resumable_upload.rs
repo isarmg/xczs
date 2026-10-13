@@ -701,3 +701,105 @@ fn only_the_current_private_upload_stage_namespace_is_hidden(
     }
     Ok(())
 }
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn resumable_overwrite_reconfirms_changed_target_without_losing_checkpoint(
+    server: TestServer,
+    #[case] removed: bool,
+) -> Result<(), Error> {
+    let url = format!("{}index.html", server.url());
+    let upload_id = Uuid::new_v4();
+    let revision = preflight_upload_target(&server, "/index.html")?
+        .revision
+        .ok_or("existing file has no revision")?;
+    let partial = with_upload_overwrite_headers(
+        server.request(reqwest::Method::PUT, &url),
+        upload_id,
+        6,
+        &revision,
+    )
+    .body(b"abc".to_vec())
+    .send()?;
+    assert_eq!(partial.status(), 409);
+    assert_eq!(partial.headers().get("x-xczs-upload-offset").unwrap(), "3");
+
+    if removed {
+        std::fs::remove_file(server.path().join("index.html"))?;
+    } else {
+        // A second browser can publish a separately confirmed overwrite while
+        // this session is idle. Its content must survive the stale PATCH.
+        let replacement = with_new_upload_overwrite_headers(
+            server.request(reqwest::Method::PUT, &url),
+            7,
+            &revision,
+        )
+        .body(b"changed".to_vec())
+        .send()?;
+        assert_eq!(replacement.status(), 201);
+    }
+    let conflict = with_upload_overwrite_headers(
+        server.request(reqwest::Method::PATCH, &url),
+        upload_id,
+        6,
+        &revision,
+    )
+    .header("X-Xczs-Upload-Offset", "3")
+    .body(b"123".to_vec())
+    .send()?;
+    assert_eq!(conflict.status(), 409);
+    assert_eq!(
+        conflict.headers().get("x-xczs-operation-state").unwrap(),
+        "running"
+    );
+    assert_eq!(conflict.headers().get("x-xczs-upload-offset").unwrap(), "3");
+    let current_revision = conflict
+        .headers()
+        .get("x-xczs-target-revision")
+        .map(|value| value.to_str().map(str::to_owned))
+        .transpose()?;
+    let problem: serde_json::Value = serde_json::from_str(&conflict.text()?)?;
+    assert_eq!(problem["recovery"], "refresh_target");
+    if removed {
+        assert_eq!(problem["code"], "upload_target_changed");
+        assert!(current_revision.is_none());
+        assert!(!server.path().join("index.html").exists());
+    } else {
+        assert_eq!(problem["code"], "destination_exists");
+        assert_ne!(current_revision.as_deref(), Some(revision.as_str()));
+        assert_eq!(server.get(&url)?.text()?, "changed");
+    }
+    let checkpoint = server
+        .request(reqwest::Method::HEAD, &url)
+        .header("X-Xczs-Upload-Id", upload_id.to_string())
+        .send()?;
+    assert_eq!(checkpoint.status(), 200);
+    assert_eq!(
+        checkpoint.headers().get("x-xczs-upload-offset").unwrap(),
+        "3"
+    );
+
+    let request = with_resume_upload_headers(
+        server.request(reqwest::Method::PATCH, &url),
+        upload_id,
+        6,
+        3,
+    );
+    let request = if let Some(revision) = current_revision {
+        request
+            .header("X-Xczs-Upload-Overwrite", "true")
+            .header("X-Xczs-Target-Revision", revision)
+    } else {
+        request.header("X-Xczs-Upload-Overwrite", "false")
+    };
+    let committed = request.body(b"123".to_vec()).send()?;
+    assert_eq!(committed.status(), 204);
+    assert_eq!(
+        committed.headers().get("x-xczs-operation-state").unwrap(),
+        "committed"
+    );
+    assert_eq!(server.get(&url)?.text()?, "abc123");
+    assert!(!server.path().join(UPLOAD_STAGE_DIRECTORY).exists());
+    Ok(())
+}
