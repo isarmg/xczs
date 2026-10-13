@@ -166,6 +166,7 @@ impl ServerBuilder {
         // a runtime panic in `start_maintenance`.
         let _runtime = tokio::runtime::Handle::try_current()
             .context("ServerBuilder::build requires an active Tokio runtime")?;
+        assets::web_assets_manifest()?;
         let lifecycle = ServerLifecycle::new();
         let server = if self.isolated_list_snapshot_cache {
             Server::init_with_list_snapshot_cache(
