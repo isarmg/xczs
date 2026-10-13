@@ -530,7 +530,7 @@ impl Server {
         let development_web = match std::env::var_os("XCZS_DEV_WEB_DIR") {
             Some(directory) => {
                 anyhow::ensure!(
-                    args.development && env!("XCZS_BUILD_GIT_SHA") == "unbound",
+                    args.development && env!("XCZS_SOURCE_REVISION") == "unbound",
                     "directory Web assets require an unbound development build"
                 );
                 Some(xcss::web_assets::DirectoryAssets::new(

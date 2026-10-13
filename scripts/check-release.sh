@@ -102,7 +102,7 @@ else
 fi
 
 if [[ "${XCZS_ISOLATED_QUALITY_GATE:-}" == "1" ]]; then
-  [[ "${XCZS_BUILD_GIT_SHA:-}" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]] || {
+  [[ "${XCZS_SOURCE_REVISION:-}" =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]] || {
     printf 'isolated quality gate requires the verified full source commit\n' >&2
     exit 1
   }
@@ -112,7 +112,7 @@ if [[ "${XCZS_ISOLATED_QUALITY_GATE:-}" == "1" ]]; then
   }
   printf \
     '\n==> isolated checks passed; the release packager will re-verify source tree %s\n' \
-    "$XCZS_BUILD_GIT_SHA"
+    "$XCZS_SOURCE_REVISION"
 else
   run git diff --check
   run git diff --cached --check

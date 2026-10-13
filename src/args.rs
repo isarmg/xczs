@@ -32,7 +32,7 @@ const STATE_DATABASE_FILE_NAME: &str = "state.sqlite3";
 const LONG_VERSION: &str = concat!(
     env!("CARGO_PKG_VERSION"),
     " (git ",
-    env!("XCZS_BUILD_GIT_SHA"),
+    env!("XCZS_SOURCE_REVISION"),
     ") xcss=",
     env!("XCSS_REVISION")
 );
@@ -922,7 +922,7 @@ fn validate_development_web_selection(args: &Args) -> Result<()> {
             ConfigSource::Environment,
         )
     };
-    if !args.development || env!("XCZS_BUILD_GIT_SHA") != "unbound" {
+    if !args.development || env!("XCZS_SOURCE_REVISION") != "unbound" {
         return Err(invalid().into());
     }
     // Validate the entire selected development tree before initialization or

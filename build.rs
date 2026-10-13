@@ -35,10 +35,10 @@ fn main() {
         "xczs server supports only x86_64-unknown-linux-gnu (requested arch={target_arch}, os={target_os}, env={target_env}, pointer_width={pointer_width})"
     );
 
-    println!("cargo:rerun-if-env-changed=XCZS_BUILD_GIT_SHA");
+    println!("cargo:rerun-if-env-changed=XCZS_SOURCE_REVISION");
     println!("cargo:rerun-if-env-changed=XCSS_WEB_DIST");
     emit_git_rerun_paths();
-    println!("cargo:rustc-env=XCZS_BUILD_GIT_SHA={}", build_git_sha());
+    println!("cargo:rustc-env=XCZS_SOURCE_REVISION={}", build_git_sha());
     let lockfile = std::fs::read_to_string("Cargo.lock").expect("read Cargo.lock");
     let revisions: std::collections::BTreeSet<_> = lockfile
         .lines()
@@ -61,7 +61,7 @@ fn main() {
         .collect();
     let mut revisions = revisions;
     if revisions.is_empty()
-        && std::env::var("XCZS_BUILD_GIT_SHA").is_ok_and(|value| value == "unbound")
+        && std::env::var("XCZS_SOURCE_REVISION").is_ok_and(|value| value == "unbound")
         && std::env::var("PROFILE").is_ok_and(|profile| profile == "debug")
         && std::env::var_os("XSSI_BUILD_METADATA_DIR").is_none()
     {
@@ -110,7 +110,7 @@ fn emit_git_rerun_paths() {
 }
 
 fn build_git_sha() -> String {
-    if let Ok(value) = std::env::var("XCZS_BUILD_GIT_SHA") {
+    if let Ok(value) = std::env::var("XCZS_SOURCE_REVISION") {
         let value = value.trim();
         if value == "unbound" {
             assert!(
@@ -123,7 +123,7 @@ fn build_git_sha() -> String {
         if is_valid_git_sha(value) {
             return value.to_ascii_lowercase();
         }
-        panic!("XCZS_BUILD_GIT_SHA must contain 7 to 64 hexadecimal characters");
+        panic!("XCZS_SOURCE_REVISION must contain 7 to 64 hexadecimal characters");
     }
 
     git_output(&["rev-parse", "--short=12", "HEAD"])
@@ -159,7 +159,7 @@ fn emit_offline_metadata() {
         destination.is_absolute() && destination.is_dir(),
         "explicit metadata destination must exist and be absolute"
     );
-    let revision = std::env::var("XCZS_BUILD_GIT_SHA")
+    let revision = std::env::var("XCZS_SOURCE_REVISION")
         .expect("release metadata requires a source-bound build");
     let hash = &xcss::sqlite::fingerprint_trusted_ddl(&[&format!(
         "{}\n{}",

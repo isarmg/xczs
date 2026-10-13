@@ -102,7 +102,7 @@ git -C "$work/xssi" checkout --quiet --detach FETCH_HEAD
 [[ "$(git -C "$work/xssi" rev-parse HEAD)" = "$xssi_revision" ]]
 npm ci --prefix "$source_root" --ignore-scripts --no-audit --no-fund
 builder="$source_root/node_modules/.bin/xcss-build-server"
-export XCZS_BUILD_GIT_SHA="$source_revision"
+export XCZS_SOURCE_REVISION="$source_revision"
 export XCSS_WEB_DIST="$source_root/web/runtime-dist"
 export XSSI_BUILD_METADATA_DIR="$work/metadata"
 "$builder" --config "$source_root/xcss-web-build.json" --mode release --no-install --source-revision "$source_revision" > "$work/build.log"

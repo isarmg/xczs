@@ -9,6 +9,6 @@
     "manifest": "Cargo.toml",
     "package": "xczs",
     "binary": "xczs",
-    "source_revision_env": "XCZS_BUILD_GIT_SHA"
+    "source_revision_env": "XCZS_SOURCE_REVISION"
   }
 }
