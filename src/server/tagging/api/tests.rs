@@ -275,7 +275,7 @@ async fn deleted_tag_identity_is_not_reused() {
         replacement["id"], old["id"],
         "deleted tag identity must never be reused"
     );
-    assert_eq!(mutation_status, StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(mutation_status, StatusCode::NOT_FOUND);
     assert_eq!(tags["tags"], json!([]));
     let new_id = replacement["id"].as_i64().unwrap();
     let assign_current = format!(r#"{{"file_ids":[1],"tag_ids":[{new_id}],"action":"add"}}"#);
@@ -286,7 +286,7 @@ async fn deleted_tag_identity_is_not_reused() {
     let remove_stale = format!(r#"{{"file_ids":[1],"tag_ids":[{stale_id}],"action":"remove"}}"#);
     assert_eq!(
         request(&app, "POST", "/file-tags", &remove_stale).await.0,
-        StatusCode::INTERNAL_SERVER_ERROR
+        StatusCode::NOT_FOUND
     );
     assert_eq!(
         request(

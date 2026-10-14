@@ -162,8 +162,16 @@ fn collect_with_budget(
                         dev: stat.st_dev as i64,
                         ino: stat.st_ino as i64,
                         size: stat.st_size,
-                        mtime_ns: stat.st_mtime * 1_000_000_000 + stat.st_mtime_nsec as i64,
-                        ctime_ns: stat.st_ctime * 1_000_000_000 + stat.st_ctime_nsec as i64,
+                        mtime_ns: stat
+                            .st_mtime
+                            .checked_mul(1_000_000_000)
+                            .and_then(|seconds| seconds.checked_add(stat.st_mtime_nsec as i64))
+                            .context("file modification time exceeds the index range")?,
+                        ctime_ns: stat
+                            .st_ctime
+                            .checked_mul(1_000_000_000)
+                            .and_then(|seconds| seconds.checked_add(stat.st_ctime_nsec as i64))
+                            .context("file change time exceeds the index range")?,
                     };
                     let bytes =
                         sample.path.capacity() + sample.parent.capacity() + sample.name.capacity();
@@ -207,6 +215,76 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn scan_rejects_unrepresentable_file_time_without_panicking() {
+        use std::time::{Duration, UNIX_EPOCH};
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("future.txt");
+        let file = fs::File::create(&path).unwrap();
+        // A legal filesystem timestamp beyond the signed nanosecond range.
+        let modified = UNIX_EPOCH + Duration::from_secs(10_000_000_000);
+        file.set_times(fs::FileTimes::new().set_modified(modified))
+            .unwrap();
+        let root = OpenAt2Root::open(directory.path(), MountPolicy::SameMount).unwrap();
+        let result = collect(&root, 10);
+        assert!(
+            result.is_err(),
+            "an out-of-range identity must not be indexed"
+        );
+        assert!(path.exists());
+        file.set_times(fs::FileTimes::new().set_modified(UNIX_EPOCH))
+            .unwrap();
+        assert_eq!(collect(&root, 10).unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn failed_time_scan_retains_index_and_records_recoverable_failure() {
+        use crate::{
+            Args,
+            server::{Server, ServerLifecycle},
+        };
+        use std::{
+            os::unix::fs::PermissionsExt,
+            sync::Arc,
+            time::{Duration, UNIX_EPOCH},
+        };
+        let root = tempfile::tempdir().unwrap();
+        let state = tempfile::tempdir().unwrap();
+        fs::set_permissions(state.path(), fs::Permissions::from_mode(0o700)).unwrap();
+        let server = Server::initialize_with_lifecycle_for_test(
+            Args {
+                serve_path: root.path().into(),
+                root: state.path().into(),
+                state_dir: Some(state.path().join("state")),
+                ..Args::default()
+            },
+            ServerLifecycle::new(),
+        )
+        .unwrap();
+        fs::write(root.path().join("kept.txt"), b"kept").unwrap();
+        assert_eq!(server.tagging.scan_once().await.unwrap(), 1);
+        let tagging = Arc::clone(&server.tagging);
+        let before = tagging.db.status().unwrap();
+        assert!(before.available);
+        let file = fs::File::create(root.path().join("future.txt")).unwrap();
+        file.set_times(
+            fs::FileTimes::new().set_modified(UNIX_EPOCH + Duration::from_secs(10_000_000_000)),
+        )
+        .unwrap();
+        assert!(tagging.scan_once().await.is_err());
+        let failed = tagging.db.status().unwrap();
+        assert!(!failed.available);
+        assert_eq!(failed.last_error.as_deref(), Some("tag_scan_failed"));
+        assert_eq!(failed.indexed, before.indexed);
+        assert_eq!(failed.missing, before.missing);
+        file.set_times(fs::FileTimes::new().set_modified(UNIX_EPOCH))
+            .unwrap();
+        assert_eq!(tagging.scan_once().await.unwrap(), 2);
+        let recovered = tagging.db.status().unwrap();
+        assert!(recovered.available);
+        assert!(recovered.last_error.is_none());
     }
 
     #[test]

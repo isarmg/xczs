@@ -21,6 +21,14 @@ pub struct TagLimitExceeded;
 #[error("relink requires distinct records, a missing source, and a current target")]
 pub struct RelinkConflict;
 
+#[derive(Debug, thiserror::Error)]
+pub enum TagMutationError {
+    #[error("a requested file or tag record no longer exists")]
+    NotFound,
+    #[error("the requested tag operation conflicts with current records")]
+    Conflict,
+}
+
 #[derive(Clone, Debug)]
 pub struct Sample {
     pub path: String,

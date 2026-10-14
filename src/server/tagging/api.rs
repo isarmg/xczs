@@ -68,6 +68,12 @@ impl IntoResponse for ApiError {
     }
 }
 fn database_error(error: anyhow::Error) -> ApiError {
+    if let Some(error) = error.downcast_ref::<super::db::TagMutationError>() {
+        return match error {
+            super::db::TagMutationError::NotFound => ApiError::missing(),
+            super::db::TagMutationError::Conflict => ApiError::conflict(),
+        };
+    }
     if error.is::<super::db::RelinkConflict>() {
         return ApiError::conflict();
     }

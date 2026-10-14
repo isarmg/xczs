@@ -1,5 +1,18 @@
 use super::*;
 
+// Only user-supplied tag-name writes use this mapping. Other database failures
+// retain their original type and are not presented as ordinary conflicts.
+fn tag_name_write_error(error: sqlx::Error) -> anyhow::Error {
+    if error
+        .as_database_error()
+        .is_some_and(|error| error.is_unique_violation())
+    {
+        TagMutationError::Conflict.into()
+    } else {
+        error.into()
+    }
+}
+
 impl Database {
     pub fn scan_complete(&self, samples: Vec<Sample>) -> Result<()> {
         database_operation!(self, 30, connection, {
@@ -87,7 +100,8 @@ impl Database {
                 .bind(name)
                 .bind(color)
                 .execute(&mut *tx)
-                .await?
+                .await
+                .map_err(tag_name_write_error)?
                 .last_insert_rowid();
             tx.commit().await?;
             Ok(id)
@@ -100,7 +114,8 @@ impl Database {
                 .bind(color)
                 .bind(id)
                 .execute(connection)
-                .await?
+                .await
+                .map_err(tag_name_write_error)?
                 .rows_affected()
                 > 0)
         })
@@ -124,10 +139,11 @@ impl Database {
                         .bind(id)
                         .fetch_optional(&mut *tx)
                         .await?;
-                anyhow::ensure!(
-                    matches!(status.as_deref(), Some("present" | "suspect")),
-                    "file is missing or unavailable"
-                );
+                match status.as_deref() {
+                    Some("present" | "suspect") => {}
+                    None => return Err(TagMutationError::NotFound.into()),
+                    Some(_) => return Err(TagMutationError::Conflict.into()),
+                }
             }
             for id in tag_ids {
                 let exists: bool =
@@ -135,7 +151,7 @@ impl Database {
                         .bind(id)
                         .fetch_one(&mut *tx)
                         .await?;
-                anyhow::ensure!(exists, "unknown tag");
+                anyhow::ensure!(exists, TagMutationError::NotFound);
             }
             let mut retained: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM file_tags")
                 .fetch_one(&mut *tx)
