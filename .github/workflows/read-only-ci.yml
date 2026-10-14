@@ -240,6 +240,8 @@ jobs:
 
   release_smoke:
     name: Deployment and release smoke
+    env:
+      CARGO_INCREMENTAL: "0"
     needs: classify
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.classify.outputs.release_sensitive == 'true') }}
     runs-on: ubuntu-26.04
@@ -264,6 +266,45 @@ jobs:
           set -euo pipefail
           rustup toolchain install "$RUST_TOOLCHAIN" \
             --profile minimal
+      - name: Identify the exact release compilation environment
+        id: release_rust_environment
+        env:
+          RUSTUP_TOOLCHAIN: ${{ env.RUST_TOOLCHAIN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Missing image identity must not merge unrelated hosted environments.
+          test -n "${ImageOS:-}" && test -n "${ImageVersion:-}"
+          fingerprint="$({
+            printf '%s\n' "$ImageOS" "$ImageVersion"
+            rustc --version --verbose
+            cargo --version --verbose
+            env | LC_ALL=C sort | grep -E '^(CARGO_|RUST|CC=|CXX=|CFLAGS=|CXXFLAGS=|LDFLAGS=|AR=|HOST_|TARGET_|SOURCE_DATE_EPOCH=)' || true
+          } | sha256sum | cut -d ' ' -f 1)"
+          printf 'fingerprint=%s\n' "$fingerprint" >> "$GITHUB_OUTPUT"
+      - name: Restore exact release Rust dependencies
+        id: release_rust_cache
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/git/db
+            target
+          # No prefix fallback: profile, flags, installer pin and build contract
+          # changes invalidate this lane. GitHub scopes PR reads to their base;
+          # only a successful main push may populate this cache below.
+          key: xczs-release-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN }}-${{ env.SERVER_TARGET }}-debug-release-${{ steps.release_rust_environment.outputs.fingerprint }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '**/build.rs', '.cargo/**', 'config/xssi.lock', 'package.json', 'package-lock.json', 'xcss-web-build.json', '.github/workflows/read-only-ci.yml') }}
+      - name: Discard cached candidate products before real compilation
+        env:
+          RUSTUP_TOOLCHAIN: ${{ env.RUST_TOOLCHAIN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Keep third-party dependencies, never treat a cached xczs as the
+          # current candidate. Clean both the host test and explicit release target.
+          cargo clean --package xczs
+          cargo clean --package xczs --release --target "$SERVER_TARGET"
       - name: Cache exact source-built inventory tools
         id: inventory_tools
         uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
@@ -320,6 +361,7 @@ jobs:
           set -euo pipefail
           ./scripts/check-deployment.sh
       - name: Build and execute the release binary
+        id: release_binary
         if: ${{ !cancelled() && steps.quality_source.outcome == 'success' && steps.quality_rust.outcome == 'success' && steps.release_assets.outcome == 'success' }}
         shell: bash
         env:
@@ -330,6 +372,16 @@ jobs:
           "./target/$SERVER_TARGET/release/xczs" --version | grep -F "xczs "
           bash scripts/check-release-runtime.sh "$GITHUB_WORKSPACE/target/$SERVER_TARGET/release/xczs"
 
+      - name: Save compiled Rust dependencies before installation tests
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.release_rust_cache.outputs.cache-hit != 'true' && steps.release_binary.outcome == 'success' }}
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: |
+            ~/.cargo/registry/cache
+            ~/.cargo/registry/index
+            ~/.cargo/git/db
+            target
+          key: ${{ steps.release_rust_cache.outputs.cache-primary-key }}
       - name: Package and exercise the already-built installed candidate
         env:
           RUSTUP_TOOLCHAIN: ${{ env.RUST_TOOLCHAIN }}

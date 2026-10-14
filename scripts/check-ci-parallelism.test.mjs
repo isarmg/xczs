@@ -178,3 +178,48 @@ test("push release smoke reuses its candidate for real installation with exact c
   assert.equal(evidence.if, "${{ always() }}");
   assert.equal(evidence.with.path, "${{ runner.temp }}/install-diagnostics");
 });
+
+
+test("release Rust cache reuses only exact dependencies and always rebuilds the candidate", () => {
+  const steps = jobs.release_smoke.steps;
+  const cache = steps.find(step => step.id === "release_rust_cache");
+  const environment = steps.find(step => step.id === "release_rust_environment");
+  const clean = steps.find(step => step.name === "Discard cached candidate products before real compilation");
+  const runtime = steps.find(step => step.id === "release_binary");
+  const save = steps.find(step => step.name === "Save compiled Rust dependencies before installation tests");
+  const candidate = steps.find(step => step.run?.includes("bash scripts/package-installed-candidate.sh"));
+  assert.equal(jobs.release_smoke.env.CARGO_INCREMENTAL, "0");
+  assert.equal(cache.uses, "actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809");
+  assert.equal(save.uses, "actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809");
+  assert.deepEqual(cache.with.path.trim().split("\n"), [
+    "~/.cargo/registry/cache", "~/.cargo/registry/index", "~/.cargo/git/db", "target",
+  ]);
+  assert.equal(cache.with["restore-keys"], undefined);
+  for (const input of ["runner.os", "runner.arch", "env.RUST_TOOLCHAIN", "env.SERVER_TARGET",
+    "debug-release", "steps.release_rust_environment.outputs.fingerprint", "Cargo.lock",
+    "**/Cargo.toml", "**/build.rs", ".cargo/**", "config/xssi.lock", "package-lock.json",
+    "xcss-web-build.json", ".github/workflows/read-only-ci.yml"]) {
+    assert.ok(cache.with.key.includes(input), `missing cache identity: ${input}`);
+  }
+  for (const input of ["ImageOS", "ImageVersion", "rustc --version --verbose",
+    "cargo --version --verbose", "CARGO_", "RUST", "CFLAGS", "LDFLAGS"]) {
+    assert.ok(environment.run.includes(input), `missing environment identity: ${input}`);
+  }
+  assert.equal(environment.env.RUSTUP_TOOLCHAIN, "${{ env.RUST_TOOLCHAIN }}");
+  assert.equal(clean.env.RUSTUP_TOOLCHAIN, "${{ env.RUST_TOOLCHAIN }}");
+  assert.match(clean.run, /cargo clean --package xczs\n/u);
+  assert.match(clean.run, /cargo clean --package xczs --release --target "\$SERVER_TARGET"/u);
+  assert.equal(clean.if, undefined, "candidate cleanup cannot depend on cache hit");
+  assert.doesNotMatch(runtime.if, /cache/u, "a cache hit must never bypass the real build");
+  assert.match(runtime.run, /npm run build:server:release -- --no-install --rust-only/u);
+  assert.match(runtime.run, /bash scripts\/check-release-runtime\.sh/u);
+  assert.equal(save.if, "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.release_rust_cache.outputs.cache-hit != 'true' && steps.release_binary.outcome == 'success' }}");
+  assert.equal(save.with.key, "${{ steps.release_rust_cache.outputs.cache-primary-key }}");
+  assert.equal(save.with.path, cache.with.path);
+  assert.ok(steps.indexOf(environment) < steps.indexOf(cache));
+  assert.ok(steps.indexOf(cache) < steps.indexOf(clean));
+  assert.ok(steps.indexOf(clean) < steps.findIndex(step => step.name === "Run deployment checks"));
+  assert.ok(steps.indexOf(clean) < steps.indexOf(runtime));
+  assert.ok(steps.indexOf(runtime) < steps.indexOf(save));
+  assert.ok(steps.indexOf(save) < steps.indexOf(candidate));
+});
