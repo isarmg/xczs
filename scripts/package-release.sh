@@ -121,7 +121,23 @@ bash "$work/xssi/scripts/build-package.sh" "$product" "$source_root" "$work/stag
 [[ "$(git -C "$original_source" rev-parse HEAD)" = "$source_revision" && "$(git -C "$original_source" rev-parse "refs/tags/v$version^{commit}")" = "$source_revision" ]] || { echo 'Release identity changed during build.' >&2; exit 1; }
 [[ -z "$(git -C "$original_source" status --porcelain=v1 --untracked-files=all)" ]] || { echo 'Source changed during build.' >&2; exit 1; }
 epoch="$(git -C "$original_source" show -s --format=%ct "$source_revision")"
-tar --sort=name --mtime="@$epoch" --owner=0 --group=0 --numeric-owner -C "$work/stage" -czf "$work/$archive" .
+# Keep the current package envelope identical to the upgrade reader's contract.
+payload="$product-$version-linux-x86_64"
+mv -- "$work/stage" "$work/$payload"
+tar --sort=name --mtime="@$epoch" --owner=0 --group=0 --numeric-owner -C "$work" -czf "$work/$archive" "$payload"
+python3 -B - "$work/xssi/scripts" "$work/$archive" "$work/verified-archive" "$product" "$version" "$source_revision" <<'ARCHIVE'
+import pathlib,sys
+sys.path.insert(0,sys.argv[1])
+import package,upgrade
+archive,destination,product,version,revision=sys.argv[2:]
+destination=pathlib.Path(destination)
+destination.mkdir(mode=0o700)
+payload=upgrade.extract(pathlib.Path(archive),destination)
+manifest=package.verify(payload)
+identity=manifest['identity']
+if identity['product']!=product or identity['version']!=version or identity['source_revision']!=revision:
+    raise SystemExit('Extracted archive differs from the reviewed release identity')
+ARCHIVE
 (cd "$work" && sha256sum "$archive" > SHA256SUMS)
 # Publish without replacing any existing release asset, even if another build races.
 ln "$work/SHA256SUMS" "$output/SHA256SUMS"
