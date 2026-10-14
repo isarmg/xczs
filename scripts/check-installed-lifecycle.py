@@ -220,7 +220,9 @@ def verify_file_tags(request, file_id, tag_ids):
 def exercise_tag_limit(request, csrf_token):
     """Use only the installed application's authenticated public HTTP API."""
     prefix = '/api/v1/file-tags'
-    headers = {'Content-Type': 'application/json', 'X-CSRF-Token': csrf_token}
+    request_id = uuid.uuid4().hex
+    headers = {'Content-Type': 'application/json', 'X-CSRF-Token': csrf_token,
+               'X-Request-Id': request_id}
     require(request(prefix + '/scan', 'POST', headers=headers)[0] == 200,
             'Installed tag scan failed')
     status, body = request(prefix + '/file?path=lifecycle.txt')
@@ -250,9 +252,10 @@ def exercise_tag_limit(request, csrf_token):
         # Read and assert the real API error envelope, without logging bodies or credentials.
         with error:
             body = json.loads(error.read(1024 * 1024))
-        require(error.code == 409 and body == {
+        # The outer runtime correlates errors and omits empty details.
+        require(error.code == 409 and error.headers.get('X-Request-Id') == request_id and body == {
             'code': 'tag_limit_exceeded', 'message': 'Request could not be completed',
-            'retryable': False, 'details': {}},
+            'retryable': False, 'request_id': request_id},
             'Installed service returned the wrong tag-limit error')
     else:
         raise RuntimeError('Installed service accepted a seventeenth file tag')

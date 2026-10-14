@@ -195,7 +195,7 @@ class ArchiveBoundary(unittest.TestCase):
 class TagLimitAssertions(unittest.TestCase):
     """Test the gate's assertions; fake responses are not installed acceptance."""
     def request_stub(self, *, rejected_status=409, rejected_code='tag_limit_exceeded',
-                     accept_seventeenth=False, mutate_on_rejection=False):
+                     accept_seventeenth=False, mutate_on_rejection=False, wrong_request_id=False):
         created, attached = [], []
         calls = []
 
@@ -222,9 +222,11 @@ class TagLimitAssertions(unittest.TestCase):
                     if not accept_seventeenth:
                         error = json.dumps({'code': rejected_code,
                                             'message': 'Request could not be completed',
-                                            'retryable': False, 'details': {}}).encode()
+                                            'retryable': False,
+                                            'request_id': 'wrong' if wrong_request_id else headers['X-Request-Id']}).encode()
                         raise lifecycle.urllib.error.HTTPError(
-                            path, rejected_status, 'Conflict', {}, io.BytesIO(error))
+                            path, rejected_status, 'Conflict',
+                            {'X-Request-Id': headers['X-Request-Id']}, io.BytesIO(error))
                 else:
                     attached.extend(value['tag_ids'])
                 return 204, b''
@@ -242,7 +244,8 @@ class TagLimitAssertions(unittest.TestCase):
         self.assertEqual(calls.count(('/api/v1/file-tags/tags', 'POST')), 17)
 
     def test_rejects_wrong_error_status_or_code(self):
-        for change in ({'rejected_status': 400}, {'rejected_code': 'invalid_request'}):
+        for change in ({'rejected_status': 400}, {'rejected_code': 'invalid_request'},
+                       {'wrong_request_id': True}):
             request, _ = self.request_stub(**change)
             with self.subTest(change=change), self.assertRaisesRegex(RuntimeError, 'wrong tag-limit error'):
                 lifecycle.exercise_tag_limit(request, 'test-csrf')
