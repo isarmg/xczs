@@ -71,7 +71,12 @@ writeFileSync(join(shareRoot, "delete-me.txt"), "delete target");
 const initialization = spawnSync("cargo", [
   "run", "--locked", "--target", "x86_64-unknown-linux-gnu", "--example", "offline_fixture", "--",
   "--root", authRoot, "--username", "frontend-test-0",
-], { cwd: projectRoot, input: "test-password\n", stdio: ["pipe", "inherit", "inherit"] });
+], {
+  cwd: projectRoot,
+  env: { ...process.env, XCZS_SOURCE_REVISION: "unbound" },
+  input: "test-password\n",
+  stdio: ["pipe", "inherit", "inherit"],
+});
 if (initialization.status !== 0) throw new Error("explicit frontend library fixture initialization failed");
 const child = spawn(binary, ["--root", authRoot], {
   cwd: projectRoot,

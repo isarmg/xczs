@@ -27,12 +27,14 @@ Web 与 API 使用一致的结构化错误和操作 ID；遇到写入结果未�
 ```sh
 npm run build:server -- --no-install
 cargo fmt --all -- --check
-cargo clippy --locked --target x86_64-unknown-linux-gnu --all-targets -- -D warnings
-cargo test --locked --target x86_64-unknown-linux-gnu
+XCZS_SOURCE_REVISION=unbound cargo clippy --locked --target x86_64-unknown-linux-gnu --all-targets -- -D warnings
+XCZS_SOURCE_REVISION=unbound cargo test --locked --target x86_64-unknown-linux-gnu
 npm run check:docs
 npm run check:js
 npm run check:types
 npm run test:frontend:unit
 ```
+
+开发夹具使用未绑定源码的 debug 构建和当前账号控制的私有配置。正式构建仍要求管理员控制配置；发行运行验收先以构建账号编译夹具，再以管理员权限在一次性目录中测试实际发行程序，不放宽生产读取规则。
 
 代码采用 [Apache License 2.0](../LICENSE-APACHE)。

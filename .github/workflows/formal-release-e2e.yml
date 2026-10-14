@@ -25,7 +25,7 @@ env:
 
 jobs:
   formal_release:
-    name: Build, sign, and independently verify the formal package
+    name: Build and independently verify the formal SHA-256 package
     runs-on: ubuntu-26.04
     timeout-minutes: 180
     permissions:
