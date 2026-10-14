@@ -328,16 +328,23 @@ jobs:
           fi
           [[ "$COVERAGE_RESULT" == success && "$RELEASE_RESULT" == success ]]
 
-  browser:
-    name: Browser (${{ matrix.browser }})
+  browser_tests:
+    name: Browser tests (${{ matrix.browser }}, ${{ matrix.shard }}/${{ matrix.shards }})
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
-        browser:
-          - chromium
-          - firefox
+        include:
+          - browser: chromium
+            shard: 1
+            shards: 1
+          - browser: firefox
+            shard: 1
+            shards: 2
+          - browser: firefox
+            shard: 2
+            shards: 2
     steps:
       - name: Check out the source without credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -376,15 +383,38 @@ jobs:
       - name: Build the candidate and run the isolated browser project
         env:
           BROWSER: ${{ matrix.browser }}
+          SHARD: ${{ matrix.shard }}
+          SHARDS: ${{ matrix.shards }}
           RUSTUP_TOOLCHAIN: ${{ env.RUST_TOOLCHAIN }}
-        run: node scripts/build-frontend-candidate.mjs --project="$BROWSER"
+        run: node scripts/build-frontend-candidate.mjs --project="$BROWSER" --shard="$SHARD/$SHARDS"
       - name: Preserve browser diagnostics on failure
         if: ${{ failure() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: browser-diagnostics-${{ matrix.browser }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: browser-diagnostics-${{ matrix.browser }}-${{ matrix.shard }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             test-results
             playwright-report
           if-no-files-found: warn
           retention-days: 7
+
+  browser:
+    # Keep both existing required check names. Each aggregate deliberately
+    # requires the complete browser matrix so no failed shard can be hidden.
+    name: Browser (${{ matrix.browser }})
+    needs: browser_tests
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox]
+    steps:
+      - name: Require every browser shard
+        shell: bash
+        env:
+          BROWSER_RESULT: ${{ needs.browser_tests.result }}
+        run: |
+          set -euo pipefail
+          [[ "$BROWSER_RESULT" == success ]]
