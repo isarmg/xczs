@@ -34,6 +34,7 @@ SERVICE = 'xczs.service'
 ACCOUNT = 'isarmg-xczs'
 SECRETS = []
 STAGE = 'preflight'
+INSTALL_ROOT = None
 
 
 def diagnostic(event, **fields):
@@ -56,6 +57,22 @@ def phase(name):
     global STAGE
     STAGE = name
     diagnostic('phase')
+
+
+
+def installation_observation(root):
+    """Read only the fixed public journal fields, never credentials or state."""
+    journal = root / 'maintenance/install.json'
+    info = journal.lstat()
+    require(stat.S_ISREG(info.st_mode) and info.st_size <= 1024 * 1024,
+            'Installation journal is not one bounded regular file')
+    document = json.loads(journal.read_text())
+    allowed_phases = {'staging', 'configuration-validated', 'initialize-intent',
+                      'initialized', 'publish-intent', 'published', 'units-intent',
+                      'units-installed', 'permissions-verified', 'startup-restored', 'complete'}
+    require(document.get('product') == 'xczs' and document.get('phase') in allowed_phases,
+            'Installation journal has an unknown public identity or phase')
+    return {'product': 'xczs', 'installation_phase': document['phase']}
 
 
 def require(condition, message):
@@ -169,6 +186,7 @@ def tls_frontend(base, backend_port):
 
 
 def main():
+    global INSTALL_ROOT
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('archive', type=Path)
     parser.add_argument('revision')
@@ -198,6 +216,7 @@ def main():
     base = Path(tempfile.mkdtemp(prefix='xczs-install-smoke-', dir='/opt'))
     base.chmod(0o755)
     root, package, shared = base / 'installed', base / 'package', base / 'shared'
+    INSTALL_ROOT = root
     package.mkdir(mode=0o700)
     package = extract_package(archive, package)
     require(archive_digest(archive) == digest, 'Archive changed during extraction')
@@ -336,5 +355,10 @@ if __name__ == '__main__':
     except Exception as error:
         # Do not print response bodies, subprocess output, passwords or tokens.
         diagnostic('failed', error_type=type(error).__name__, message=str(error))
+        if INSTALL_ROOT is not None:
+            try:
+                diagnostic('installation_journal', **installation_observation(INSTALL_ROOT))
+            except (OSError, ValueError, RuntimeError):
+                diagnostic('installation_journal_unavailable')
         print(f'Installed lifecycle FAILED: {type(error).__name__}: {error}', file=sys.stderr)
         sys.exit(1)

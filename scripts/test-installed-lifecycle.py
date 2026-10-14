@@ -122,6 +122,18 @@ class ArchiveBoundary(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'directory mode must be 0755'):
             lifecycle.extract_package(self.archive, Path(self.work.name) / 'rejected')
 
+    def test_journal_diagnostics_only_return_public_whitelisted_fields(self):
+        root = Path(self.work.name)
+        (root / 'maintenance').mkdir()
+        journal = root / 'maintenance/install.json'
+        journal.write_text(json.dumps({'product': 'xczs', 'phase': 'staging',
+                                       'password': 'never-include', 'unexpected': 'private'}))
+        self.assertEqual(lifecycle.installation_observation(root),
+                         {'product': 'xczs', 'installation_phase': 'staging'})
+        journal.write_text(json.dumps({'product': 'xczs', 'phase': 'private-value'}))
+        with self.assertRaisesRegex(RuntimeError, 'unknown public'):
+            lifecycle.installation_observation(root)
+
     def test_failure_diagnostics_redact_exact_temporary_credentials(self):
         directory = Path(self.work.name) / 'diagnostics'
         password, token = 'temporary-password-123', 'temporary-token-456'
