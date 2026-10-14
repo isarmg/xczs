@@ -183,6 +183,7 @@ pub struct FolderPage {
     pub previous_cursor: Option<String>,
     pub next_cursor: Option<String>,
 }
+#[cfg(test)]
 const CURRENT_SCHEMA: &str = include_str!("../../../schema/tagging.sql");
 fn connection_limits() -> xcss::sqlite::ConnectionLimits {
     xcss::sqlite::ConnectionLimits::new(2 * 1024 * 1024)
@@ -245,6 +246,7 @@ impl Drop for Database {
     }
 }
 impl Database {
+    #[cfg(test)]
     pub fn initialize(path: &Path, root: &Path) -> Result<()> {
         use std::os::unix::fs::OpenOptionsExt;
         let file = std::fs::OpenOptions::new()
@@ -259,7 +261,7 @@ impl Database {
             let result = async {
                 let mut tx = connection.begin_with("BEGIN IMMEDIATE").await?;
                 sqlx::raw_sql(CURRENT_SCHEMA).execute(&mut *tx).await?;
-                sqlx::query("INSERT INTO roots(id,path) VALUES('main',?)")
+                sqlx::query(crate::persistent_definition::INITIALIZE_TAG_ROOT)
                     .bind(root.to_str().context("root path must be UTF-8")?)
                     .execute(&mut *tx)
                     .await?;
@@ -306,6 +308,15 @@ impl Database {
                     xcss::sqlite::schema_fingerprint(&mut connection).await?
                         == env!("XCZS_TAG_SCHEMA_SHA256"),
                     "tag database does not have the exact current structure"
+                );
+                let root_matches: i64 =
+                    sqlx::query_scalar(crate::persistent_definition::CHECK_TAG_ROOT)
+                        .bind(root.to_str().context("root path must be UTF-8")?)
+                        .fetch_one(&mut connection)
+                        .await?;
+                anyhow::ensure!(
+                    root_matches == 1,
+                    "tag database shared-root binding is invalid"
                 );
                 let roots: Vec<(String, String)> =
                     sqlx::query_as("SELECT id,path FROM roots ORDER BY id LIMIT 2")

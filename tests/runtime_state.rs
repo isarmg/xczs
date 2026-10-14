@@ -1,6 +1,8 @@
+#[path = "support/database.rs"]
+mod fixture_database;
 use std::{fs, os::unix::fs::PermissionsExt};
 use xcss::admin_core::LoginContext;
-use xczs::{Args, offline, server::Server};
+use xczs::{Args, server::Server};
 
 fn fixture() -> (tempfile::TempDir, tempfile::TempDir, std::path::PathBuf) {
     let root = tempfile::tempdir().unwrap();
@@ -18,11 +20,10 @@ fn fixture() -> (tempfile::TempDir, tempfile::TempDir, std::path::PathBuf) {
 }
 
 #[tokio::test]
-async fn persistent_sessions_survive_reopening_and_password_reset_revokes_them() {
+async fn persistent_sessions_survive_reopening_and_authenticated_rotation_revokes_them() {
     let (root, _files, config) = fixture();
-    offline::initialize(root.path(), &config, "admin", "initial-password")
-        .await
-        .unwrap();
+    let args = Args::load(root.path(), &config).unwrap();
+    fixture_database::initialize(&args, "admin", "initial-password").unwrap();
     assert!(!root.path().join("state/administrator").exists());
     let args = Args::load(root.path(), &config).unwrap();
     let pool = Server::administrator_pool(&args).await.unwrap();
@@ -58,10 +59,24 @@ async fn persistent_sessions_survive_reopening_and_password_reset_revokes_them()
         .unwrap();
     assert_eq!(mode, "delete");
     assert_eq!(sync, 3);
-    pool.close().await;
-    offline::reset_password(root.path(), &config, "admin", "updated-password")
+    let identity = service
+        .authenticate_session(&login.session_token, now())
         .await
         .unwrap();
+    service
+        .update_own_account(
+            &xcss::admin_core::AdministratorManagementContext {
+                identity,
+                request_id: None,
+                now_micros: now(),
+            },
+            "admin",
+            "initial-password",
+            Some("updated-password"),
+        )
+        .await
+        .unwrap();
+    pool.close().await;
     let pool = Server::administrator_pool(&args).await.unwrap();
     let service = xcss::admin_core::AdministratorService::new(
         xcss::admin_sqlite::SqliteAdministratorStore::new(pool.clone()),
@@ -76,44 +91,40 @@ async fn persistent_sessions_survive_reopening_and_password_reset_revokes_them()
 }
 
 #[tokio::test]
-async fn unsupported_schema_and_old_config_are_rejected_without_writing_business_data() {
+async fn unsupported_schema_and_retired_config_are_rejected_without_writing_business_data() {
     let (root, files, config) = fixture();
-    offline::initialize(root.path(), &config, "admin", "initial-password")
-        .await
-        .unwrap();
+    let args = Args::load(root.path(), &config).unwrap();
+    fixture_database::initialize(&args, "admin", "initial-password").unwrap();
     fs::write(files.path().join("keep.txt"), b"business data").unwrap();
     let state = root.path().join("state");
     let before = fs::read(state.join("state.sqlite3")).unwrap();
     let tags = fs::read(state.join("tags.db")).unwrap();
-    let target = Server::expected_schema_identity().unwrap();
-    let source = xcss::contracts::SchemaIdentity::new("xczs", "1.0.0", 1, "a".repeat(64)).unwrap();
-    assert!(
-        offline::migrate(root.path(), &config, &state, &source, &target)
-            .await
-            .is_err()
-    );
+    Server::validate_current(&Args::load(root.path(), &config).unwrap()).unwrap();
     assert_eq!(before, fs::read(state.join("state.sqlite3")).unwrap());
+    assert_eq!(tags, fs::read(state.join("tags.db")).unwrap());
+    let options = sqlx::sqlite::SqliteConnectOptions::new().filename(state.join("state.sqlite3"));
+    let pool = sqlx::SqlitePool::connect_with(options).await.unwrap();
+    sqlx::query("UPDATE product_metadata SET schema_revision=schema_revision+1 WHERE singleton=1")
+        .execute(&pool)
+        .await
+        .unwrap();
+    pool.close().await;
+    let unsupported = fs::read(state.join("state.sqlite3")).unwrap();
+    assert!(Server::validate_current(&Args::load(root.path(), &config).unwrap()).is_err());
+    assert_eq!(unsupported, fs::read(state.join("state.sqlite3")).unwrap());
     assert_eq!(tags, fs::read(state.join("tags.db")).unwrap());
     assert_eq!(
         fs::read(files.path().join("keep.txt")).unwrap(),
         b"business data"
     );
-    offline::migrate(root.path(), &config, &state, &target, &target)
-        .await
-        .unwrap();
-    assert_eq!(before, fs::read(state.join("state.sqlite3")).unwrap());
     let mut document: serde_json::Value =
         serde_json::from_slice(&fs::read(&config).unwrap()).unwrap();
     document["trusted_proxies"] = serde_json::json!(["127.0.0.1/32"]);
     fs::write(&config, serde_json::to_vec(&document).unwrap()).unwrap();
     let old_config = fs::read(&config).unwrap();
-    assert!(
-        offline::migrate(root.path(), &config, &state, &target, &target)
-            .await
-            .is_err()
-    );
+    assert!(Args::load(root.path(), &config).is_err());
     assert_eq!(old_config, fs::read(config).unwrap());
-    assert_eq!(before, fs::read(state.join("state.sqlite3")).unwrap());
+    assert_eq!(unsupported, fs::read(state.join("state.sqlite3")).unwrap());
 }
 
 fn now() -> u64 {
@@ -137,9 +148,7 @@ async fn shared_directory_cannot_expose_control_or_private_namespaces() {
     ] {
         fs::write(&config, serde_json::json!({"serve_path": root.path().join(name), "bind": "127.0.0.1:0", "development": true}).to_string()).unwrap();
         assert!(
-            offline::validate_config(root.path(), &config)
-                .await
-                .is_err(),
+            Args::load(root.path(), &config).is_err(),
             "namespace {name}"
         );
     }

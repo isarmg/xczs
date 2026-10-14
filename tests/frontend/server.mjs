@@ -12,6 +12,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn, spawnSync } from "node:child_process";
+import { generateTestTls } from "./tls-fixture.mjs";
 
 if (process.platform !== "linux") {
   console.error("Xczs frontend tests support Linux only");
@@ -25,6 +26,7 @@ const stateRoot = mkdtempSync(join(tmpdir(), "xczs-frontend-state-"));
 const authRoot = mkdtempSync(join(tmpdir(), "xczs-frontend-auth-"));
 chmodSync(stateRoot, 0o700);
 chmodSync(authRoot, 0o700);
+process.on("exit", cleanup);
 const externalPort = Number(process.env.XCZS_FRONTEND_TEST_PORT);
 if (
   !Number.isSafeInteger(externalPort) ||
@@ -34,14 +36,9 @@ if (
   console.error("XCZS_FRONTEND_TEST_PORT is required");
   process.exit(1);
 }
-const tlsCert = resolve(
-  projectRoot,
-  process.env.XCZS_FRONTEND_TEST_CERT || "tests/data/cert.pem",
-);
-const tlsKey = resolve(
-  projectRoot,
-  process.env.XCZS_FRONTEND_TEST_KEY || "tests/data/key_pkcs8.pem",
-);
+const tlsRoot = join(authRoot, "tls");
+mkdirSync(tlsRoot, { mode: 0o700 });
+const { cert: tlsCert, key: tlsKey } = generateTestTls(tlsRoot);
 const cargoTargetDir = resolve(
   projectRoot,
   process.env.CARGO_TARGET_DIR || "target",

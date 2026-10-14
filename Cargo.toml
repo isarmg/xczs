@@ -1,6 +1,6 @@
 [package]
 name = "xczs"
-version = "1.0.4"
+version = "1.0.0"
 edition = "2024"
 rust-version = "1.99"
 description = "A Linux browser file manager"
@@ -12,10 +12,11 @@ publish = false
 build = "build.rs"
 
 [dependencies]
+schemars = "=1.2.3"
 hex = "=0.4.3"
 thiserror = "=2.0.21"
 sqlx = { version = "=0.9.0", default-features = false, features = ["sqlite-bundled", "runtime-tokio"] }
-xcss = { git = "https://github.com/isarmg/xcss.git", rev = "b9b5858088510d0bf6832044353c92d09ee123fe", version = "=1.0.13", features = ["tracing"] }
+xcss = { git = "https://github.com/isarmg/xcss.git", rev = "b34b3861e15edd2b1348e7d03b9c9a93e97d6521", version = "=1.0.0", features = ["tracing"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "tokio", "json"] }
 http = "1"
 http-body = "1"
@@ -46,9 +47,12 @@ subtle = "2.6"
 tempfile = "3"
 
 [build-dependencies]
+tokio = { version = "1.53.2", features = ["sync"] }
+schemars = "=1.2.3"
+serde = { version = "1", features = ["derive"] }
 sha2 = "0.11"
 serde_json = "1"
-xcss = { git = "https://github.com/isarmg/xcss.git", rev = "b9b5858088510d0bf6832044353c92d09ee123fe", version = "=1.0.13" }
+xcss = { git = "https://github.com/isarmg/xcss.git", rev = "b34b3861e15edd2b1348e7d03b9c9a93e97d6521", version = "=1.0.0" }
 
 [dev-dependencies]
 socket2 = "0.6"

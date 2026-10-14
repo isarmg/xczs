@@ -1,4 +1,6 @@
-//! Isolated test fixture initialization. This example is never installed or packaged.
+#[path = "../tests/support/database.rs"]
+mod fixture_database;
+// Isolated test fixture initialization. This example is never installed or packaged.
 use std::{io::Read, path::PathBuf};
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -31,11 +33,6 @@ async fn main() -> anyhow::Result<()> {
         }
     }
     let password = String::from_utf8(bytes)?;
-    xczs::offline::initialize(
-        &root,
-        &root.join("config/config.json"),
-        &username,
-        &password,
-    )
-    .await
+    let args = xczs::Args::load(&root, &root.join("config/config.json"))?;
+    fixture_database::initialize(&args, &username, &password)
 }

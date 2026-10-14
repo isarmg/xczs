@@ -177,7 +177,7 @@ URI → RoutePath → RootedPath → 根 FD 相对打开 → fstat identity
 - [scripts/check-docs.mjs](../../scripts/check-docs.mjs)；
 - [playwright.config.js](../../playwright.config.js)；
 - [tests/support/fixtures.rs](../../tests/support/fixtures.rs)；
-- [systemd/xczs.service](../../systemd/xczs.service)；
+- 独立 xssi 仓库的 systemd 模板和安装脚本；
 - [安装手册](../runtime-package.md)；
 - [docs/operations.md](../operations.md)。
 

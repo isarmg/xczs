@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import "./check-xcss-web.mjs";
 import { cpSync, lstatSync, mkdtempSync, rmSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { assertWebOutput } from "@xcss/web/web-toolchain/server";
 
 // Vite interprets '#' in physical filenames as a URL fragment. Build the
@@ -58,6 +58,11 @@ try {
     cpSync(join(root, "web", name), join(output, name));
   }
   cpSync(output, runtimeOutput, { recursive: true });
+  if (process.env.XSSI_BUILD_TOOLS_DIR) {
+    if (!process.env.XSSI_FRONTEND_METADATA_FILE) throw new Error("Explicit runtime inventory output is required");
+    const { completeRuntimeInventory } = await import(pathToFileURL(join(process.env.XSSI_BUILD_TOOLS_DIR,"scripts/frontend_build.mjs")));
+    completeRuntimeInventory({metadata:process.env.XSSI_FRONTEND_METADATA_FILE,root,distribution:runtimeOutput});
+  }
 } finally {
   rmSync(scratch, { recursive: true, force: true });
 }

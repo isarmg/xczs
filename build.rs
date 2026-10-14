@@ -1,7 +1,19 @@
+#[path = "src/config_definition.rs"]
+#[allow(dead_code)] // Runtime-only fields are intentionally absent from exported configuration.
+mod config_definition;
+#[path = "src/installation_definition.rs"]
+mod installation_definition;
+#[path = "src/log_format_definition.rs"]
+mod log_format_definition;
+#[path = "src/persistent_definition.rs"]
+mod persistent_definition;
+#[path = "src/schema_definition.rs"]
+mod schema_definition;
 use std::{path::Path, process::Command};
 
 fn main() {
     println!("cargo:rerun-if-env-changed=XSSI_BUILD_METADATA_DIR");
+    println!("cargo:rerun-if-changed=src/schema_definition.rs");
     let tagging = include_str!("schema/tagging.sql");
     let tagging_fingerprint =
         xcss::sqlite::fingerprint_trusted_ddl(&[tagging]).expect("current tag schema fingerprint");
@@ -167,21 +179,17 @@ fn emit_offline_metadata() {
         xcss::admin_sqlite::ADMIN_PERSISTENT_DDL
     )])
     .expect("schema hash");
-    let schema =
-        xcss::contracts::SchemaIdentity::new("xczs", "1.0.0", 2, hash).expect("schema identity");
+    let schema = schema_definition::identity(hash).expect("schema identity");
     let contract = StateContract {
         contract_version: xcss::contracts::STATE_CONTRACT_VERSION,
         application: "xczs".into(),
         application_version: std::env::var("CARGO_PKG_VERSION").unwrap(),
         source_revision: revision.clone(),
         schema: Some(StateSchemaIdentity {
-            revision: 2,
+            revision: schema.schema_revision,
             sha256: hash.into(),
         }),
-        maintenance_locks: vec![
-            ".state-instance.lock".into(),
-            ".state-maintenance.lock".into(),
-        ],
+        maintenance_locks: vec![".state-instance.lock".into()],
         resources: vec![
             StateResource {
                 name: "state".into(),
@@ -211,6 +219,11 @@ fn emit_offline_metadata() {
         state_contract_sha256: digest,
     };
     identity.validate().expect("release identity");
+    let ddl = std::fs::read_to_string(
+        std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap()).join("current_schema.sql"),
+    )
+    .unwrap();
+    installation_definition::emit(&destination, &identity, &schema, &ddl);
     std::fs::write(
         destination.join("xczs-identity.json"),
         serde_json::to_vec(&identity).unwrap(),

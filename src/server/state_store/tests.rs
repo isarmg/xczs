@@ -1957,7 +1957,7 @@ async fn raw_main_validation_rejects_a_valid_current_wal_shadow_without_modifica
          ) VALUES (1, ?1, ?2, ?3, ?4)",
     )
     .bind(APPLICATION)
-    .bind("1.0.0")
+    .bind(crate::schema_definition::APPLICATION_VERSION)
     .bind(CURRENT_SCHEMA_REVISION)
     .bind(database::expected_schema_fingerprint()?)
     .execute(&mut *transaction)
@@ -2273,7 +2273,7 @@ async fn disk_database_has_expected_identity_permissions_and_pragmas() -> Result
     assert_eq!(pragmas.trusted_schema, 0);
     assert_eq!(pragmas.mmap_size, 0);
     assert_eq!(pragmas.application, APPLICATION);
-    assert_eq!(pragmas.application_version, "1.0.0");
+    assert_eq!(pragmas.application_version, "xczs-db-v1");
     assert_eq!(pragmas.schema_revision, CURRENT_SCHEMA_REVISION);
     assert_eq!(
         pragmas.schema_sha256,

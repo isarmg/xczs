@@ -188,13 +188,11 @@ fn sensitive_request_header_variable_suffixes_are_case_insensitive(
 }
 
 #[rstest]
-fn mixed_case_non_sensitive_request_header_variable_is_logged(
-    tmpdir: TempDir,
-) -> Result<(), Error> {
+fn mixed_case_unknown_request_header_variable_is_redacted(tmpdir: TempDir) -> Result<(), Error> {
     let _test_guard = serialize_http_logger_test();
     let (mut child, port, _state_dir) = spawn_logged_server_with_accounts(
         &tmpdir,
-        serde_json::json!({"log_format": "REQUEST_ID $http_X_ReQuEsT_Id"}),
+        serde_json::json!({"log_format": "REQUEST_ID raw=$http_X_ReQuEsT_Id native=$request_id"}),
         &[USER_ACCOUNT],
     )?;
     let session = login(port, "user", TEST_PASSWORD)?;
@@ -204,13 +202,26 @@ fn mixed_case_non_sensitive_request_header_variable_is_logged(
         .header("x-request-id", "desktop-request-123")
         .send()?;
     assert_eq!(response.status(), 200);
+    let validated_id = response
+        .headers()
+        .get("x-request-id")
+        .ok_or("Missing validated response request ID")?
+        .to_str()?
+        .to_owned();
+    assert_eq!(validated_id, "desktop-request-123");
 
     let output = stop_and_read(&mut child)?;
-    assert!(
-        output
-            .lines()
-            .any(|line| line == "REQUEST_ID desktop-request-123")
-    );
+    let expected = format!("REQUEST_ID raw=[REDACTED] native={validated_id}");
+    assert!(output.lines().any(|line| line == expected));
+    let correlated = output
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .filter(|entry| {
+            entry["event"] == "xczs.http.completed" && entry["request_id"] == validated_id
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(correlated.len(), 1);
+    assert_eq!(correlated[0]["attributes"]["access"], expected);
     Ok(())
 }
 
@@ -541,8 +552,9 @@ fn malformed_http_connection_produces_a_safe_structured_warning(
         .collect::<Vec<_>>();
     assert_eq!(warnings.len(), 1);
     assert_eq!(warnings[0]["service"], "xczs");
-    assert_eq!(warnings[0]["event"], "xczs.diagnostic");
-    assert_eq!(warnings[0]["component"], "xcss::server_runtime::http1");
+    assert_eq!(warnings[0]["event"], "common.http.connection_failed");
+    assert_eq!(warnings[0]["component"], "http");
+    assert_eq!(warnings[0]["attributes"]["category"], "protocol");
     assert!(!output.contains("Invalid Header"));
     Ok(())
 }

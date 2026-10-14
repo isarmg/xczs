@@ -10,8 +10,6 @@ chmod 0700 "$test_root"
 repository="$test_root/source with spaces & #"
 output="$test_root/output with spaces & #"
 package="$test_root/package"
-key="$test_root/test-signing.pem"
-public="$test_root/test-public.pem"
 git clone --quiet --no-local -- "$project_dir" "$repository"
 git -C "$repository" checkout --quiet --detach "$source_sha"
 version="$(python3 - "$repository/Cargo.toml" <<'PY'
@@ -21,18 +19,15 @@ PY
 )"
 git -C "$repository" -c user.name=package-e2e -c user.email=package-e2e@example.invalid -c tag.gpgSign=false tag --annotate --force --message='isolated package verification' "v$version" "$source_sha"
 mkdir -m 0700 "$output" "$package"
-openssl genpkey -algorithm Ed25519 -out "$key"
-chmod 0600 "$key"
-openssl pkey -in "$key" -pubout -out "$public"
-"$repository/scripts/package-release.sh" --output-dir "$output" --signing-key "$key"
+"$repository/scripts/package-release.sh" --output-dir "$output"
 archive="xczs-$version-linux-x86_64.tar.gz"
 (cd "$output" && sha256sum --check SHA256SUMS)
 tar --extract --gzip --no-same-owner --file "$output/$archive" --directory "$package"
-# Verify the externally controlled test key before executing anything in the package.
-openssl pkeyutl -verify -pubin -rawin -inkey "$public" -in "$package/share/package.json" -sigfile "$package/share/package.sig"
 python3 - "$package" "$source_sha" <<'PY'
 import hashlib,json,pathlib,stat,sys
-root=pathlib.Path(sys.argv[1]);manifest=json.loads((root/'share/package.json').read_bytes())
+root=pathlib.Path(sys.argv[1]);raw=(root/'share/package.json').read_bytes()
+assert (root/'share/package.sha256').read_bytes()==(hashlib.sha256(raw).hexdigest()+'\n').encode()
+manifest=json.loads(raw)
 assert manifest['manifest_version']==1
 assert manifest['identity']['product']=='xczs'
 assert manifest['identity']['source_revision']==sys.argv[2]
@@ -46,8 +41,7 @@ for item in manifest['files']:
     assert hashlib.sha256(target.read_bytes()).hexdigest()==item['sha256']
 assert (root/'install.sh').is_file() and (root/'maintenance.sh').is_file()
 PY
-fingerprint="$(openssl pkey -pubin -in "$public" -outform DER | sha256sum | awk '{print $1}')"
-python3 "$package/libexec/package.py" verify "$package" --public-key "$public" --key-sha256 "$fingerprint" > "$test_root/verified.json"
+python3 "$package/libexec/package.py" verify "$package" > "$test_root/verified.json"
 "$package/bin/xczs" --version
 bash "$project_dir/scripts/check-release-runtime.sh" "$package/bin/xczs"
 if [[ -n "${XCZS_FORMAL_E2E_EXPORT_DIR:-}" ]]; then
@@ -55,4 +49,4 @@ if [[ -n "${XCZS_FORMAL_E2E_EXPORT_DIR:-}" ]]; then
   install -d -m 0700 "$XCZS_FORMAL_E2E_EXPORT_DIR"
   install -m 0644 "$output/$archive" "$output/SHA256SUMS" "$XCZS_FORMAL_E2E_EXPORT_DIR/"
 fi
-printf 'Formal signed package and runtime verification passed for %s at %s\n' "$version" "$source_sha"
+printf 'Formal SHA-256 package and runtime verification passed for %s at %s\n' "$version" "$source_sha"

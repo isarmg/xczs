@@ -80,7 +80,7 @@
 | IDX-21 | 键盘/焦点/错误恢复 UI | Web modules、Playwright/a11y | 建议保留 | 中 | 基本 API 仍在，但桌面可用性和无障碍下降 | keyboard、dialog、live region |
 | IDX-22 | doctor/self-test 与当前合同检查 | CLI、state/config/root verifier | 开发运维 | 高 | 部署问题只能运行后发现 | 健康、坏权限、错 schema、锁 |
 | IDX-23 | systemd/安装器 部署基线 | deploy、proxy headers、limits | 开发运维 | 高 | 操作者需自行重建 TLS/隔离/启动语义 | verify/installer tests |
-| IDX-24 | 精确源码 release、实际 SBOM、签名与 payload 校验 | package script、workflow | 开发运维 | 高 | 来源、依赖和制品完整性不可独立证明 | clean/tag/SHA、staged receipt、签名与篡改拒绝 |
+| IDX-24 | 精确源码 release、实际 SBOM、SHA-256 与 payload 校验 | package script、workflow | 开发运维 | 高 | 来源、依赖和制品完整性不可独立证明 | clean/tag/SHA、staged receipt、SHA-256 与篡改拒绝 |
 | IDX-25 | Rust/JS/浏览器/部署安全门禁 | tests、ESLint/TS、CI | 开发运维 | 高 | 路径、协议或常见动态 JS 误用可能进入发行 | 全门禁和策略边界单测 |
 | IDX-26 | 中文学习、流程、功能和运维文档 | README、`docs/` | 开发运维 | 低 | 新开发者难以定位复杂状态机边界 | 本地链接、命令和代码引用 |
 | IDX-27 | 只接受单一当前配置/API/管理员/Schema 合同 | strict parser/router/schema；无 alias/fallback | 保障 | 中 | 若加入第二解析路径，测试矩阵和攻击面随格式数量增长 | 非当前路径/字段/身份/Schema 一律拒绝且不修改状态 |
@@ -97,7 +97,7 @@
 | P-05 | 现代桌面浏览器 | 面向 Chromium、Edge、Firefox 桌面环境；不承诺手机 Web | 恢复移动端需要重新设计布局、交互和测试矩阵 | 核心 | 中 |
 | P-06 | 单个可执行文件 | HTML、CSS、JavaScript 和图标编译进 Rust 可执行文件 | 改成独立前端会增加部署单元和版本协调 | 建议保留 | 中 |
 | P-07 | 外部网关终止 HTTPS | Xczs 只提供明文 HTTP/TCP，默认绑定回环地址；是否仅在内网可达由显式 bind、防火墙/ACL 和网关部署共同保证。证书、TLS、HSTS 和公网策略由网关负责 | 若恢复内置 TLS，会重新引入证书配置和 TLS 依赖 | 保障 | 高 |
-| P-08 | 可验证交付 | 版本 tag 的只读任务审计依赖并构建带完整源码身份的签名归档；固定工具生成依赖 SBOM，签名清单绑定程序、资源及辅助工具，写权限任务只发布本次精确 artifact | 首次安装必须通过独立渠道固定公钥；目标主机和工具链仍属于信任边界 | 开发运维 | 中 |
+| P-08 | 可验证交付 | 版本 tag 的只读任务审计依赖并构建带完整源码身份的完整发行归档；固定工具生成依赖 SBOM，SHA-256 文件清单绑定程序、资源及辅助工具，写权限任务只发布本次精确 artifact | 首次安装检查完整 SHA-256 文件清单；目标主机和工具链仍属于信任边界 | 开发运维 | 中 |
 | P-09 | current-only | 只接受文档所列当前参数、xcss 管理员 API/身份和当前 SQLite identity；JSON 未知字段直接报错 | 增加 alias/fallback 会扩大分支和维护成本；历史数据处理属于独立仓库 | 保障 | 中 |
 
 ## 3. 启动、命令行和 JSON 配置
@@ -168,7 +168,7 @@ Xczs 的认证唯一所有者是 xcss：state.sqlite3 公共表由 xcss SqliteAd
 
 生产采用规范域名的同源 HTTPS，后端由网关独占访问；具体头部与来源规则见[运行参考](runtime-reference.md#请求与网关)。
 
-当前 xcss Rust/Web 固定正式 1.0.13 的完整 revision、Release tarball 与锁文件 integrity。Xczs 1.0.4 的独立构建和发行验收由当前提交的 CI 与标签工作流执行；独立发布不代表公开二进制带独立发布者签名。
+当前 xcss Rust/Web 固定正式 1.0.0 的完整 revision、Release tarball 与锁文件 integrity。Xczs 1.0.4 的独立构建和发行验收由当前提交的 CI 与标签工作流执行；独立发布不代表公开二进制带独立发布者签名。
 
 ## 5. 浏览器目录界面
 
@@ -235,7 +235,7 @@ Xczs 的认证唯一所有者是 xcss：state.sqlite3 公共表由 xcss SqliteAd
 | U-08 | 当前页面内安全重试 | 同一个 `File` 对象在已知可重试失败后先 HEAD 查询原 upload ID，再按 owner-scoped state 决定 PATCH 或新 ID。响应 `not-started` 只证明本次尝试在任何上传 mutation 前停止，仍必须先查询旧 ID；服务端 deadline 在原子 mutation boundary 前胜出时可明确给出 `408 not-started + retry`，而已发请求的客户端断线、提交等待超时、边界后服务端错误或明确 `unknown` 不允许盲重放 | 网络波动时不必总是从头上传，同时避免把“本次未启动”误读为“旧 ID 必定不存在”，或在结果不确定时重复覆盖 | 建议保留 | 高 |
 | U-09 | 不跨刷新恢复 | 不使用 `localStorage`；刷新后必须重新选择并新建 ID | 已是安全取舍；恢复跨刷新需要可靠内容身份方案 | 保障 | 高 |
 | U-10 | 预检与条件 PUT | 浏览器先向 `POST /__xczs__/api/upload/preflight` 提交最终绝对逻辑路径，服务按原顺序返回存在性、可替换提示和 revision。根 fd 相对路径最多 4095 个 UTF-8 字节，每个组件最多 255 字节；超过 Linux `openat2` 可寻址边界的值在任何文件系统探测前以 `400 invalid_path` 拒绝。无冲突零确认；只有已存在且可替换的文件进入覆盖/跳过/取消对话框。PUT 的 upload ID 和总长度必须各自精确出现一次；缺少 `X-Xczs-Upload-Overwrite` 或值为 `false` 使用原子 no-replace，`true` 必须携带 64 位小写十六进制 target revision。revision 绑定账号摘要、规范根内路径和完整 replacement identity，并在 rename 前复核；预检本身不提供原子锁。Missing 发布使用 `RENAME_NOREPLACE` 并在成功后核对目的名称与已打开 stage；Existing 覆盖是 identity 复核后执行普通 rename，不是对外部 writer 的目录项 CAS。目录、FIFO、Unix socket、设备等目标只返回不可替换提示或稳定拒绝，不会自动覆盖。fresh PUT 仍在创建 stage 前检查 upload/purge 路径义务；stage 在目标父目录下当前 `.xczs-upload-stages` 私有目录中初建为 `0600`，目录固定 `0700`，新文件发布后固定为 `0600`，覆盖 stage 则可能在发布前重放旧目标权限 | 预检减少无意义确认，no-replace 与条件复核防止当前 Xczs 的陈旧请求盲目覆盖；共享根仍须排除外部 writer | 核心 | 高 |
-| U-11 | HEAD 查询检查点与终态 | schema revision 2 `upload_sessions` 以 owner 摘要+UUID 为键，持久化根内相对目标/stage 路径、长度/offset、stage dev/inode、可选 target revision 与 `Running/CommitStarted/AwaitingConfirmation/Committed/Rejected/Unknown`；stage 位于目标父目录中的当前 `0700` 子目录，启动时分页验证当前路径、目录权限/owner/设备与活跃 inode；非当前路径失败关闭且不移动文件或改写 SQLite。对外映射为 `running/awaiting-confirmation/committed/rejected/unknown`，`not-seen/not-started` 是仅存在于响应中的词汇。SQLite 是唯一状态权威。首个 offset 按 stage fsync、父目录 fsync、DB 提交排序；活跃 stage 路径跨 owner 唯一，部分 `Running` 与 `AwaitingConfirmation` 只接受记录绑定的 stage 身份。rename 前同步 stage 再持久化 `CommitStarted`，重启恢复为 `Unknown`；revision 条件冲突会退回持久的 `AwaitingConfirmation` 而不是丢弃满 stage。discard 原位 CAS `AwaitingConfirmation→Rejected` 后按 identity 清理，已有 `Rejected` 重试不续 TTL。仅部分 `running` 可续传，满 offset `awaiting-confirmation` 可明确发布或丢弃，`rejected/not-seen` 才允许换 ID，`committed` 精确匹配才成功 | 即使删除断点续传，也需保留终态和 awaiting-confirmation 协议，才能避免网络断开后重复覆盖，并让晚到冲突不必无条件重传；删除 owner、路径、stage identity、私有目录验证或提交屏障会造成跨账号泄露、路径竞态或歧义 ID 被错误重启 | 保障 | 高 |
+| U-11 | HEAD 查询检查点与终态 | schema revision 1 `upload_sessions` 以 owner 摘要+UUID 为键，持久化根内相对目标/stage 路径、长度/offset、stage dev/inode、可选 target revision 与 `Running/CommitStarted/AwaitingConfirmation/Committed/Rejected/Unknown`；stage 位于目标父目录中的当前 `0700` 子目录，启动时分页验证当前路径、目录权限/owner/设备与活跃 inode；非当前路径失败关闭且不移动文件或改写 SQLite。对外映射为 `running/awaiting-confirmation/committed/rejected/unknown`，`not-seen/not-started` 是仅存在于响应中的词汇。SQLite 是唯一状态权威。首个 offset 按 stage fsync、父目录 fsync、DB 提交排序；活跃 stage 路径跨 owner 唯一，部分 `Running` 与 `AwaitingConfirmation` 只接受记录绑定的 stage 身份。rename 前同步 stage 再持久化 `CommitStarted`，重启恢复为 `Unknown`；revision 条件冲突会退回持久的 `AwaitingConfirmation` 而不是丢弃满 stage。discard 原位 CAS `AwaitingConfirmation→Rejected` 后按 identity 清理，已有 `Rejected` 重试不续 TTL。仅部分 `running` 可续传，满 offset `awaiting-confirmation` 可明确发布或丢弃，`rejected/not-seen` 才允许换 ID，`committed` 精确匹配才成功 | 即使删除断点续传，也需保留终态和 awaiting-confirmation 协议，才能避免网络断开后重复覆盖，并让晚到冲突不必无条件重传；删除 owner、路径、stage identity、私有目录验证或提交屏障会造成跨账号泄露、路径竞态或歧义 ID 被错误重启 | 保障 | 高 |
 | U-12 | PATCH 续传与空正文确认 | 普通续传的总长度和 offset 必须与 owner-scoped 会话完全一致，只写剩余内容；`AwaitingConfirmation` 只接受同一 ID、原总长度、满 offset 的空正文 PATCH，并要求当前 revision。长度或 offset 不匹配时响应仍准确携带 `awaiting-confirmation` 和原绑定值，要求先查询而不会把满 stage 降格成 `running`；目标再次变化也仍返回 awaiting-confirmation。每次可信 target-change 都重新发出 `refresh-required`，不会因同一 uploader 早先已失效过列表就吞掉后续通知。若带旧目标 metadata 的 stage 遇到目标消失，服务返回 `upload_metadata_preservation_refused`，浏览器先 discard，再以新 ID 完整 create-only PUT | 删除普通续传后失败任务只能重新 PUT；删除空 PATCH 确认会让每次晚到冲突都重传完整文件，错误降格确认状态会诱导客户端向只读满 stage 继续续传；忽略 metadata 例外则会把旧对象属性错误带到新文件 | 建议保留 | 高 |
 | U-13 | 精确正文边界 | 超出声明剩余量返回 `413`；正文不足返回 `409`。确认态的剩余量固定为零，无论 `Content-Length` 已知还是以 chunked/流式正文送来首个多余字节，都会保留 `awaiting-confirmation` 与原绑定值并要求查询；传输层不会把只读满 stage 当作普通续传文件截断，也不会伪装成 `running` | 防止请求走私式额外数据和错误成功；截断或降格确认态会破坏满 stage，并诱导客户端继续重放正文 | 保障 | 高 |
 | U-14 | 分阶段上传超时 | 服务端正文空闲时限默认 60 秒，绝对总 deadline 默认 24 小时并从等待路径租约前开始覆盖整个请求；首次 mutation 与该 deadline 原子竞争，deadline 先赢为 `not-started`，mutation 先赢后的外层超时为 `unknown/query_upload`。前端正文空闲 2 分钟、传输阶段总时限 24 小时，正文发送后清除传输计时并进入最长 5 分钟的独立提交确认等待；客户端提交等待超时或断线仍显示结果未知 | 删除会让卡死连接长期占槽；混淆服务端确定未启动与客户端“已经发送但未确认”会导致不安全重放 | 保障 | 中 |
@@ -341,7 +341,7 @@ Xczs 的认证唯一所有者是 xcss：state.sqlite3 公共表由 xcss SqliteAd
 | ID | 当前特性 | 详细行为 | 删除或简化后的影响 | 级别 | 复杂度 |
 | --- | --- | --- | --- | --- | --- |
 | O-01 | HTTP 访问日志 | 默认记录时间、级别、请求、状态，以及 mutation operation ID/state（无则为 `-`）；可加入认证管理员 username 或请求头 | 完全删除会降低故障、访问和结果不确定性定位能力 | 开发运维 | 中 |
-| O-02 | 自定义日志变量 | 支持时间、毫秒、请求、方法、URI、状态、remote addr/user、operation ID/state、`$http_...` | 可硬编码固定格式以删除解析器 | 可选 | 中 |
+| O-02 | 自定义日志变量 | 支持UTC 时间、毫秒、请求、方法、URI、状态、管理员、operation ID/state、request ID、`$http_...` | 可硬编码固定格式以删除解析器 | 可选 | 中 |
 | O-03 | 敏感头脱敏 | Authorization、Proxy-Authorization、Cookie、CSRF 统一记录为 `[REDACTED]` | 删除可能把凭据写入日志 | 保障 | 低 |
 | O-04 | 单行转义和长度上限 | 控制字符转义；格式最多 4096 字节/128 元素；单条最多 16 KiB | 防止日志注入和巨型分配 | 保障 | 中 |
 | O-05 | 有界异步日志 | 容量 4096；请求线程不阻塞；满时丢最新并聚合告警；250 ms flush；刷新失败保留 dirty 状态供后续重试 | 改同步写会让慢磁盘阻塞请求 | 保障 | 中 |
@@ -380,7 +380,7 @@ Xczs 的认证唯一所有者是 xcss：state.sqlite3 公共表由 xcss SqliteAd
 | ID | 当前特性 | 作用 | 删除后的影响 | 级别 |
 | --- | --- | --- | --- | --- |
 | T-01 | 固定 Rust 工具链 | Rust 1.99.0、edition 2024、Rustfmt、Clippy | 开发机结果可能漂移 | 开发运维 |
-| T-02 | 锁定不可变 xcss 来源 | 当前固定 xcss 1.0.13 的完整 Git revision、一个 @xcss/web Release tarball 和 Rust/Web 锁图；本版本独立发行门通过后方可发布 | 未完成不可发布，禁止复制共享机制或可变分支 fallback | 开发运维 |
+| T-02 | 锁定不可变 xcss 来源 | 当前固定 xcss 1.0.0 的完整 Git revision、一个 @xcss/web Release tarball 和 Rust/Web 锁图；本版本独立发行门通过后方可发布 | 未完成不可发布，禁止复制共享机制或可变分支 fallback | 开发运维 |
 | T-03 | Linux 构建守卫 | 编译阶段明确拒绝错误目标 | 错误平台可能到运行时才失败 | 保障 |
 | T-04 | Rust 模块分层 | `server.rs` 保留共享状态与模块协调；`router.rs`、`assets.rs`、`delete.rs`、`purge.rs` 分别负责请求路由、内置资源注册/摘要、删除提交事务和回收调度。`listing/{snapshot,walk}.rs` 隔离进程级快照/游标缓存与有界递归遍历；`rooted_fs/purge.rs` 隔离 fd-relative 删除执行器；`internal_names.rs` 与 `maintenance.rs` 提供服务端中性的内部名称和清理边界；`upload/{prepare,target,transfer,commit,failure,protocol,record}.rs` 隔离路径/会话准备、目标 identity/revision、传输、提交、失败、协议与检查点持久化。`server`、`listing`、`rooted_fs` 与 `upload` 的大段内联单元测试均位于各自 `tests.rs`，仍保留模块私有访问 | 拆分只移动内部职责，不改变 HTTP/上传协议，也不新增第三方依赖；重新合并不会减少能力，只降低边界清晰度、维护性和测试定位 | 开发运维 |
 | T-05 | 可复用 `lib.rs` | 测试可在进程内构造服务层 | 删除会增加只能启动外部进程的测试成本 | 开发运维 |
@@ -390,17 +390,17 @@ Xczs 的认证唯一所有者是 xcss：state.sqlite3 公共表由 xcss SqliteAd
 | T-09 | Rust 自动化 | 单元、集成、故障注入、不可变分页/搜索快照、退役目录归档路由、Range、认证、限流、协议、符号链接、纯 fd 清理和真实停机测试；范围与 URI 编解码另有大样本性质测试 | 删除后修改核心文件语义的风险显著上升 | 开发运维 |
 | T-10 | 隔离 Playwright | Chromium 和 Firefox 必需、正式 Edge 可选；通过只呈现一个客户端地址的本地 HTTPS 网关运行，因此固定单 worker 串行执行，避免无关用例争抢生产登录令牌桶；失败重试 1 次且 `failOnFlakyTests: true`，所以重试通过仍会让门禁失败；每项测试使用随机目录。Rust HTTP 集成测试精确断言安全响应头；Playwright 验证 Secure Cookie、CSP violation、可访问性语义和真实浏览器交互 | 删除后无法验证真实浏览器行为及测试间状态污染；删除 Rust 断言会让响应头策略漂移失去精确回归保护 | 开发运维 |
 | T-11 | 依赖安全审计 | `cargo audit` 固定为 0.22.2，并与 `npm audit --audit-level=high` 一起由 lockfile/manifest push、PR、每周计划及人工任务触发；Rust 审计显式 `--deny yanked`。发布只复用通过 canonical origin、HEAD/FETCH_HEAD、新鲜度、物理/Git/内容完整性检查的宿主 RustSec DB；alternates、不安全条目、untracked 或 tracked 内容/mode 漂移均拒绝。数据库以无硬链接私有 clone 封存 revision/fetch epoch/index/config；否则在任何项目/依赖代码前用 dummy lockfile 联网刷新。先执行 sealed `--no-fetch --no-yanked` advisory pre-audit，再用私有 Cargo home `fetch --locked` 填充覆盖完整锁图的 crates.io 索引项并执行 `--deny yanked`，随后以必填 `XCZS_QUALITY_AUDIT_DB` 交给 `scripts/check.sh`，在任何构建、测试或依赖安装前复审；预审计和 yanked 检查后重验封存，完整门后随质量树销毁数据库。制品清单只记录 revision/fetch epoch | 无法及时发现已知漏洞或已撤回依赖；空 crates.io 索引会让 cargo-audit 只打印无法检查而仍返回成功，因此覆盖完整锁图的私有索引项也是绿色结论的必要输入；直接复用可变、过期、内容漂移或来源不明的数据库会破坏时间、来源和完整性证据 | 开发运维 |
-| T-12 | 统一质量与部署门禁 | `scripts/check.sh` 运行 Rustfmt、Clippy `-D warnings`、全 targets/features 测试、固定 `cargo-llvm-cov 0.8.6` 且行覆盖率不低于 70%、Cargo/npm 审计、固定 ESLint 与 `no-unsanitized` 的语法/格式/常见浏览器安全规则及边界单测、TypeScript 7.0.2 strict 全生产源码类型检查、支持围栏代码与 symlink fail-closed 的 Markdown 链接/锚点检查、含固定 `@axe-core/playwright 4.13.0` WCAG A/AA 扫描的双浏览器测试、生产解析器 JSON 校验、systemd 语法及安装器离线行为测试，并执行发布 no-clobber、Git 来源替换、归档树、SPDX notice、签名算法矩阵/失败传播和 lockfile npm cache 播种自测。统一入口自动发现 `scripts/` 与 `tests/` 中未忽略的 Shell 源，逐文件执行 `bash -n`，安装 ShellCheck 时再执行 warning 门；CI 固定安装并强制使用 0.11.0。外部/解析输入保持 `unknown` 并由类型守卫收窄，生产源码不保留显式或隐式 `any`。部署 fixture 的真实 checkout 路径包含空格、`&`、`#` 和反斜杠，运行副本再使用安全名称 | 仍可手工执行，但容易漏项或让文档/部署示例与代码漂移；ESLint 规则用于正常维护中的常见误用，不是完整跨过程别名或污点证明；严格 TypeScript 检查不等价于运行时守卫或通用 CommonMark parser。本地缺少 ShellCheck 时会明确跳过以保持离线可用，强制性由 CI 提供 | 开发运维 |
+| T-12 | 统一质量与部署门禁 | `scripts/check.sh` 运行 Rustfmt、Clippy `-D warnings`、全 targets/features 测试、固定 `cargo-llvm-cov 0.8.6` 且行覆盖率不低于 70%、Cargo/npm 审计、固定 ESLint 与 `no-unsanitized` 的语法/格式/常见浏览器安全规则及边界单测、TypeScript 7.0.2 strict 全生产源码类型检查、支持围栏代码与 symlink fail-closed 的 Markdown 链接/锚点检查、含固定 `@axe-core/playwright 4.13.0` WCAG A/AA 扫描的双浏览器测试、生产解析器 JSON 校验、systemd 语法及安装器离线行为测试，并执行发布 no-clobber、Git 来源替换、归档树、SPDX notice、SHA-256 清单及失败传播和 lockfile npm cache 播种自测。统一入口自动发现 `scripts/` 与 `tests/` 中未忽略的 Shell 源，逐文件执行 `bash -n`，安装 ShellCheck 时再执行 warning 门；CI 固定安装并强制使用 0.11.0。外部/解析输入保持 `unknown` 并由类型守卫收窄，生产源码不保留显式或隐式 `any`。部署 fixture 的真实 checkout 路径包含空格、`&`、`#` 和反斜杠，运行副本再使用安全名称 | 仍可手工执行，但容易漏项或让文档/部署示例与代码漂移；ESLint 规则用于正常维护中的常见误用，不是完整跨过程别名或污点证明；严格 TypeScript 检查不等价于运行时守卫或通用 CommonMark parser。本地缺少 ShellCheck 时会明确跳过以保持离线可用，强制性由 CI 提供 | 开发运维 |
 | T-13 | 100000 项手工基准 | 默认忽略，按需创建真实超大目录检查第一页性能 | 删除不影响正确性，但失去大目录回归基线 | 开发运维 |
-| T-14 | 可验证本地发布 | 仓库质量门、精确源码快照、依赖审计、实际 SBOM、强算法签名与不覆盖发布；细节见[发行指南](releasing.md) | 改动需保持源码、依赖和产物对应，签名由隔离身份或主机管理 | 开发运维 |
+| T-14 | 可验证本地发布 | 仓库质量门、精确源码快照、依赖审计、实际 SBOM、SHA-256 校验与不覆盖发布；细节见[发行指南](releasing.md) | 改动需保持源码、依赖和产物对应，文件清单由同次构建生成并绑定最终制品 | 开发运维 |
 | T-15 | 工具链与宿主记录 | Node 26.7.0、Rust 1.99.0 与锁定前端工具由各构建入口核对；完整运行包记录实际构建环境，源码 `.node-version` 是工具链基准 | 更换工具后重新执行平台和发行验证，记录宿主差异 | 开发运维 |
 | T-16 | 制品身份与私密报告 | 程序完整 SHA、checksum 和发行身份定位问题；安全报告提供脱敏复现和实际版本 | 明确发布者与报告渠道，保护配置和用户内容 | 开发运维 |
 | T-17 | 只读分层 CI | Rust、静态、质量与双浏览器回归分别报告，工作流权限及平台见[发行指南](releasing.md) | 保持各层结果可追溯，目标环境失败时修复或报告 | 开发运维 |
-| T-18 | 完整签名包 E2E | 只读工作流用临时 Ed25519 key 验证打包、签名和清单 | 临时测试签名与生产信任分别管理 | 开发运维 |
+| T-18 | 完整SHA-256 校验包 E2E | 只读工作流验证实际打包、完整文件清单和 SHA-256 | 检查只使用隔离目录和当前候选包 | 开发运维 |
 
 T-12 的覆盖率门要求仓库总行覆盖率至少 70%，并保留逐文件报告供审查。日常开发门不重复运行插桩测试。
 
-T-14 的依赖审计、文件系统原子发布、签名隔离和制品检查统一见[发行指南](releasing.md)。部署测试使用纯离线安装器 fixture、静态 systemd 验证；正式主机还需实际启动和文件操作验收。
+T-14 的依赖审计、文件系统原子发布、完整文件清单和制品检查统一见[发行指南](releasing.md)。部署测试使用纯离线安装器 fixture、静态 systemd 验证；正式主机还需实际启动和文件操作验收。
 
 ## 15. HTTP 入口总表
 
@@ -489,7 +489,7 @@ browser API JSON 中的 `path`、`source`、`directory` 与 `name` 已经是逻�
 17. Xczs 后端使用 Axum 路由和 xcss HTTP/1 传输层，接受 HTTP/1.0 和 HTTP/1.1；标准 HTTP/2 prior-knowledge connection preface 会被拒绝，也不实现 HTTP/1.1 `Upgrade: h2c`。浏览器到网关仍可使用 HTTP/2 或 HTTP/3，但生产网关固定用 HTTP/1.1 回源。
 18. `upload/manager.ts` 返回对象中的 `isBusy()` 当前没有生产或测试调用，可作为不改变功能的微型代码清理。
 19. 固定 localhost Playwright 私钥和证书只供自动化测试，不能用于生产网关。
-20. 正式包装器采用精确 Git 源码快照、固定依赖审计与 SBOM 工具、ELF 同次构建 receipt、签名 payload 清单和不覆盖既有资产的发布。它不声称完全隔离宿主工具链或同 UID 恶意进程；生产签名身份与私钥仍须由部署者独立保护。
+20. 正式包装器采用精确 Git 源码快照、固定依赖审计与 SBOM 工具、ELF 同次构建 receipt、校验 payload 清单和不覆盖既有资产的发布。它不声称完全隔离宿主工具链或同 UID 恶意进程；实际依赖、原始许可和最终文件摘要必须完整进入交付材料。
 22. 会话 Cookie 固定为 `__Host-admin-xczs-session; Path=/`，Cookie 不按端口隔离：同一主机名下的应用共享 host/path 作用域；若还共用 scheme 和端口，则浏览器也会把它们视为同源。同主机再部署另一份 Xczs 还会发生 Cookie 名冲突。因此 Xczs 必须独占一个主机名，并固定部署在该域名的根路径 `/`。
 23. 同一共享根上的第二个 Xczs 实例会因根 fd 的非阻塞独占 `flock` 启动失败；该 advisory lock 没有 PID 文件，也不能阻止 shell、宿主机、网络文件系统另一节点或忽略 flock 的程序修改目录。多个根目录仍由多个进程分别管理。
 24. 上传总 deadline 从每次 PUT/PATCH 等待路径租约前开始，覆盖准备、正文、写入、flush、metadata 重放和等待提交结果；每次 PATCH 重试重新计时。合法头解析后依次等待路径租约、尝试上传槽、受跟踪地读取 route metadata；fresh PUT 随后在同一 deadline 内分页检查目标及后代的 durable upload/purge obligations，才进入 owner checkpoint/上传准备，PATCH 不重复扫描自身会话。路径、route 或状态检查超时返回绑定的 `408 not-started`，持久状态冲突/不可用分别返回 `409/503 not-started`，槽满直接返回 `429 not-started` 且不读旧 state；这些分支都不创建 stage/SQLite 行。后续 tracked upload task 的只读准备也不等于 unknown：首次 filesystem/upload-state mutation 与总 deadline 原子竞争，deadline 先赢会关闭边界、abort 并返回 `408 not-started + retry`，边界前未处理只读 I/O 为 `408/503 not-started + retry`；task 先越界后的外层 deadline/未处理错误才保守返回 `unknown + query_upload`，后台继续持有租约和槽安全收尾。两类可重试响应都必须先 HEAD；最终 rename/fsync 进入提交后不可取消，前端不提供盲目重试。
@@ -501,7 +501,7 @@ browser API JSON 中的 `path`、`source`、`directory` 与 `name` 已经是逻�
 30. 管理员 username 配置必须为 3～64 个小写 ASCII 字节，首尾为字母数字、字符仅 `[a-z0-9._-]`，明确禁止 `@` 且允许相邻分隔符；登录 candidate 可为 1～64 bytes 且每字节 `0x20`～`0x7e`，服务端执行 ASCII trim/lowercase 后再验证，自动规范化绝不能用于放宽持久配置。密码字段由内联脚本 `TextEncoder` 提示，服务端权威执行 12～1024 UTF-8 字节和无 ASCII 控制字符边界。
 31. 备份和恢复完全属于外部运维职责。可靠文件级备份或存储快照需要按实际语义保留 uid/gid、mode、ACL、xattr、稀疏布局、符号链接、硬链接和 Xczs 内部暂存项，并定期做恢复演练；仅复制二进制、配置或可见普通文件不能证明可恢复。
 32. 发布脚本会把最终目录 rename 与输出父目录 sync 放在短暂忽略 HUP/INT/TERM 的提交窗中；普通信号不会在两步之间中断，但 SIGKILL、主机掉电或实际 sync 失败仍可能留下“完整目录已经可见、持久性尚未确认”的结果，必须重新校验制品和文件系统状态。若公开输出路径在提交期间被换绑，脚本会在事后复核中报错，但不会撤销已经提交到 fd 锁定原目录中的制品。
-33. 与制品一起下载的公钥只能证明包内材料彼此自洽，不能独立建立发布者身份。生产验收必须使用通过另一可信渠道预先固定的公钥，并从独立发布记录取得预期完整 Git SHA；同源下载的归档、签名、公钥和 SHA 不能共同构成信任根。
+33. 发行包使用 SHA-256 检查下载和文件内容完整性；校验清单、源码提交、当前契约和最终文件必须一致。SHA-256 不提供独立的发布者身份认证。
 
 ## 18. 最值得优先判断的可选项
 

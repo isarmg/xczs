@@ -1,7 +1,10 @@
 //! Persistent administrator credentials and sessions share the private state database.
+#[cfg(test)]
 use anyhow::Result;
 use std::sync::Arc;
-use xcss::admin_core::{AdministratorRecord, AdministratorService, Identifier};
+use xcss::admin_core::AdministratorService;
+#[cfg(test)]
+use xcss::admin_core::{AdministratorRecord, Identifier};
 use xcss::admin_sqlite::SqliteAdministratorStore;
 
 /// Stable administrator ID used by durable file operations and their ACLs.
@@ -10,6 +13,7 @@ pub struct FilePrincipal {
     pub username: String,
 }
 
+#[cfg(test)]
 pub(crate) async fn initialize_administrator(
     connection: &mut sqlx::SqliteConnection,
     username: &str,
@@ -34,6 +38,7 @@ pub(crate) async fn initialize_administrator(
     insert_administrator(connection, &record).await
 }
 
+#[cfg(test)]
 pub(crate) async fn insert_administrator(
     connection: &mut sqlx::SqliteConnection,
     record: &AdministratorRecord,

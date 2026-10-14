@@ -1,3 +1,5 @@
+#[path = "database.rs"]
+mod fixture_database;
 use assert_fs::fixture::TempDir;
 use assert_fs::prelude::*;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
@@ -866,7 +868,7 @@ fn test_root(command: &Command) -> PathBuf {
     root
 }
 
-/// Test instances use the same explicit initialization boundary as deployments.
+/// Isolated tests construct current state from authoritative DDL and primitives.
 #[allow(dead_code)]
 pub fn initialize_test_instance(command: &mut Command) {
     prepare_test_command(command, true);
@@ -891,7 +893,7 @@ pub fn prepare_test_command(command: &mut Command, initialize: bool) {
             .and_then(|(_, value)| value)
             .and_then(|value| value.to_str())
             .unwrap_or(TEST_USER);
-        xczs::server::Server::initialize(args, username, TEST_PASSWORD)
+        fixture_database::initialize(&args, username, TEST_PASSWORD)
             .expect("explicit library fixture initialization");
     }
 }

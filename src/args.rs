@@ -1,12 +1,10 @@
+use crate::config_definition::*;
 use anyhow::{Context, Result, bail, ensure};
 use clap::{Arg, ArgMatches, Command, value_parser};
-use serde::{Deserialize, Deserializer, Serialize};
-use std::collections::BTreeMap;
 use std::env;
 use std::ffi::OsString;
 use std::fmt;
 use std::fs::Metadata;
-use std::net::SocketAddr;
 use std::ops::Deref;
 use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
@@ -15,19 +13,6 @@ use xcss::config::{ConfigSource, EnvMapping, EnvValueKind};
 
 use crate::http_logger::HttpLogger;
 
-const DEFAULT_MAX_UPLOAD_SIZE: u64 = 100 * 1024 * 1024 * 1024;
-const DEFAULT_UPLOAD_IDLE_TIMEOUT: u64 = 60;
-const DEFAULT_UPLOAD_TOTAL_TIMEOUT: u64 = 24 * 60 * 60;
-const DEFAULT_MAX_CONCURRENT_UPLOADS: usize = 4;
-const DEFAULT_MIN_FREE_SPACE: u64 = 1024 * 1024 * 1024;
-const DEFAULT_MAX_CONNECTIONS: usize = 256;
-const DEFAULT_MAX_SEARCH_ENTRIES: usize = 10_000;
-const MAX_SEARCH_ENTRIES: usize = 100_000;
-const DEFAULT_MAX_CONCURRENT_SEARCHES: usize = 2;
-const DEFAULT_REQUEST_TIMEOUT: u64 = 300;
-const DEFAULT_TAG_SCAN_INTERVAL_SECONDS: u64 = 3600;
-const DEFAULT_MAX_TAG_SCAN_ENTRIES: usize = 1_000_000;
-const MAX_TIMEOUT_SECONDS: u64 = 365 * 24 * 60 * 60;
 const STATE_DATABASE_FILE_NAME: &str = "state.sqlite3";
 const LONG_VERSION: &str = concat!(
     env!("CARGO_PKG_VERSION"),
@@ -233,42 +218,12 @@ pub fn build_cli() -> Command {
             Arg::new("root")
                 .long("root")
                 .value_parser(value_parser!(PathBuf))
-                .default_value("/opt/isarmg/xczs")
+                .required(true)
                 .help("Instance installation root"),
         )
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
-#[serde(default)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "snake_case")]
-pub struct Args {
-    #[serde(skip)]
-    pub root: PathBuf,
-    pub development: bool,
-    #[serde(default = "default_serve_path")]
-    pub serve_path: PathBuf,
-    #[serde(rename = "data_dir")]
-    pub state_dir: Option<PathBuf>,
-    pub bind: SocketAddr,
-    #[serde(deserialize_with = "deserialize_log_http")]
-    #[serde(rename = "log_format")]
-    pub http_logger: HttpLogger,
-    pub log_level: String,
-    pub max_upload_size: u64,
-    pub upload_idle_timeout: u64,
-    pub upload_total_timeout: u64,
-    pub max_concurrent_uploads: usize,
-    pub min_free_space: u64,
-    pub max_connections: usize,
-    pub max_search_entries: usize,
-    pub max_concurrent_searches: usize,
-    pub request_timeout: u64,
-    pub tag_scan_interval_seconds: u64,
-    pub max_tag_scan_entries: usize,
-    #[serde(skip)]
-    pub config_sources: BTreeMap<String, ConfigSource>,
-}
+pub type Args = crate::config_definition::ArgsDefinition<HttpLogger, ConfigSource>;
 
 /// Startup settings that have passed every cross-field and filesystem check.
 ///
@@ -308,32 +263,6 @@ impl ValidatedConfig {
             .as_ref()
             .expect("validated configuration requires a persistent state directory")
             .join(STATE_DATABASE_FILE_NAME)
-    }
-}
-
-impl Default for Args {
-    fn default() -> Self {
-        Self {
-            root: "/opt/isarmg/xczs".into(),
-            serve_path: default_serve_path(),
-            state_dir: Some(PathBuf::from("/opt/isarmg/xczs/state")),
-            bind: default_bind(),
-            development: false,
-            http_logger: HttpLogger::default(),
-            log_level: "info".to_owned(),
-            max_upload_size: DEFAULT_MAX_UPLOAD_SIZE,
-            upload_idle_timeout: DEFAULT_UPLOAD_IDLE_TIMEOUT,
-            upload_total_timeout: DEFAULT_UPLOAD_TOTAL_TIMEOUT,
-            max_concurrent_uploads: DEFAULT_MAX_CONCURRENT_UPLOADS,
-            min_free_space: DEFAULT_MIN_FREE_SPACE,
-            max_connections: DEFAULT_MAX_CONNECTIONS,
-            max_search_entries: DEFAULT_MAX_SEARCH_ENTRIES,
-            max_concurrent_searches: DEFAULT_MAX_CONCURRENT_SEARCHES,
-            request_timeout: DEFAULT_REQUEST_TIMEOUT,
-            tag_scan_interval_seconds: DEFAULT_TAG_SCAN_INTERVAL_SECONDS,
-            max_tag_scan_entries: DEFAULT_MAX_TAG_SCAN_ENTRIES,
-            config_sources: BTreeMap::new(),
-        }
     }
 }
 
@@ -412,37 +341,12 @@ impl Args {
             !state.starts_with(&self.serve_path) && !self.serve_path.starts_with(state),
             "data_dir and serve_path must not overlap"
         );
-        if self.root.is_absolute() {
-            ensure!(
-                self.serve_path != self.root,
-                "shared directory cannot be the installation root"
-            );
-            for name in [
-                "bin",
-                "libexec",
-                "share",
-                "maintenance",
-                "config",
-                "logs",
-                "run",
-            ] {
-                let protected = self.root.join(name);
-                for selected in [&self.serve_path, state] {
-                    ensure!(
-                        !selected.starts_with(&protected) && !protected.starts_with(selected),
-                        "data or shared directory overlaps a private or immutable ROOT namespace"
-                    );
-                }
-            }
-        }
-        ensure!(
-            self.upload_total_timeout >= self.upload_idle_timeout,
-            "upload-total-timeout must be greater than or equal to upload-idle-timeout"
-        );
-        ensure!(
-            !self.development || self.bind.ip().is_loopback(),
-            "development mode requires a loopback bind address"
-        );
+        xcss::configuration_contract::validate_rules(
+            &crate::config_definition::current_rules(true, false),
+            &serde_json::to_value(&self)?,
+            &self.root,
+            ConfigSource::File,
+        )?;
         Ok(self)
     }
 
@@ -777,7 +681,10 @@ impl fmt::Debug for ReadConfig {
 
 fn read_config(path: &Path) -> Result<ReadConfig> {
     let before = ObjectIdentity::from_metadata(&std::fs::symlink_metadata(path)?);
-    let bytes = xcss::config::read_private_file(path)?;
+    let bytes = xcss::config::read_managed_file(
+        path,
+        cfg!(debug_assertions) && env!("XCZS_SOURCE_REVISION") == "unbound",
+    )?;
     let after = ObjectIdentity::from_metadata(&std::fs::symlink_metadata(path)?);
     ensure!(
         before == after,
@@ -800,22 +707,6 @@ fn validate_timeout(name: &str, seconds: u64, origin: Instant) -> Result<()> {
         bail!("{name} cannot be represented by the platform monotonic clock");
     }
     Ok(())
-}
-
-fn deserialize_log_http<'de, D>(deserializer: D) -> Result<HttpLogger, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let value: String = Deserialize::deserialize(deserializer)?;
-    value.parse().map_err(serde::de::Error::custom)
-}
-
-fn default_serve_path() -> PathBuf {
-    PathBuf::new()
-}
-
-fn default_bind() -> SocketAddr {
-    SocketAddr::from(([127, 0, 0, 1], 5000))
 }
 
 #[cfg(test)]
@@ -932,46 +823,27 @@ fn validate_development_web_selection(args: &Args) -> Result<()> {
 }
 
 fn validate_intrinsic(args: &Args, source: ConfigSource) -> Result<(), xcss::config::ConfigError> {
-    let invalid =
-        |path| xcss::config::ConfigError::new(xcss::config::Reason::InvalidValue, path, source);
-    if !matches!(
-        args.log_level.as_str(),
-        "off" | "error" | "warn" | "info" | "debug" | "trace"
-    ) {
-        return Err(invalid("/log_level"));
+    let mut value = serde_json::to_value(args).map_err(|_| {
+        xcss::config::ConfigError::new(xcss::config::Reason::TypeMismatch, "", source)
+    })?;
+    if source == ConfigSource::Default && args.serve_path.as_os_str().is_empty() {
+        value["serve_path"] = serde_json::Value::Null;
     }
-    if args.state_dir.is_none() {
-        return Err(invalid("/data_dir"));
-    }
-    if !args.serve_path.as_os_str().is_empty() && !args.serve_path.is_absolute() {
-        return Err(invalid("/serve_path"));
-    }
-    for (path, value) in [
-        ("/max_concurrent_uploads", args.max_concurrent_uploads),
-        ("/max_connections", args.max_connections),
-        ("/max_search_entries", args.max_search_entries),
-        ("/max_concurrent_searches", args.max_concurrent_searches),
-    ] {
-        if value == 0 || value > tokio::sync::Semaphore::MAX_PERMITS {
-            return Err(invalid(path));
-        }
-    }
-    if args.max_search_entries > MAX_SEARCH_ENTRIES {
-        return Err(invalid("/max_search_entries"));
-    }
+    xcss::configuration_contract::validate_rules(
+        &crate::config_definition::current_rules(false, false),
+        &value,
+        &args.root,
+        source,
+    )?;
     let now = Instant::now();
     for (path, value) in [
         ("/upload_idle_timeout", args.upload_idle_timeout),
         ("/upload_total_timeout", args.upload_total_timeout),
         ("/request_timeout", args.request_timeout),
     ] {
-        validate_timeout(path, value, now).map_err(|_| invalid(path))?;
-    }
-    if args.tag_scan_interval_seconds < 60 {
-        return Err(invalid("/tag_scan_interval_seconds"));
-    }
-    if args.max_tag_scan_entries == 0 || args.max_tag_scan_entries > DEFAULT_MAX_TAG_SCAN_ENTRIES {
-        return Err(invalid("/max_tag_scan_entries"));
+        validate_timeout(path, value, now).map_err(|_| {
+            xcss::config::ConfigError::new(xcss::config::Reason::InvalidValue, path, source)
+        })?;
     }
     Ok(())
 }

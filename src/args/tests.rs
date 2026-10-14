@@ -131,7 +131,7 @@ fn direct_validation_enforces_runtime_invariants() {
 }
 
 #[test]
-fn validated_config_exposes_only_a_normalized_read_view() {
+fn validated_config_requires_a_canonical_absolute_path() {
     let tmpdir = assert_fs::TempDir::new().unwrap();
     let state_dir = private_state_dir();
     let relative = tmpdir.path().join(".");
@@ -140,7 +140,19 @@ fn validated_config_exposes_only_a_normalized_read_view() {
         state_dir: Some(state_dir.path().to_path_buf()),
         ..Args::default()
     };
-    let config = ValidatedConfig::try_from(args).unwrap();
+    let error = ValidatedConfig::try_from(args.clone()).unwrap_err();
+    assert_eq!(
+        error
+            .downcast_ref::<xcss::config::ConfigError>()
+            .unwrap()
+            .path,
+        "/serve_path"
+    );
+    let config = ValidatedConfig::try_from(Args {
+        serve_path: tmpdir.path().to_path_buf(),
+        ..args
+    })
+    .unwrap();
     assert!(config.serve_path.is_absolute());
     assert!(config.serve_path.is_dir());
 }
@@ -187,14 +199,14 @@ fn private_reader_requires_owned_0600_file_and_0700_parent() {
     let file = directory.child("config.json");
     file.write_str("{}").unwrap();
     make_config_private(file.path());
-    assert!(read_config(file.path()).is_ok());
+    assert!(xcss::config::read_private_file(file.path()).is_ok());
     for mode in [0o400, 0o440, 0o640, 0o644] {
         std::fs::set_permissions(file.path(), std::fs::Permissions::from_mode(mode)).unwrap();
-        assert!(read_config(file.path()).is_err());
+        assert!(xcss::config::read_private_file(file.path()).is_err());
     }
     make_config_private(file.path());
     std::fs::set_permissions(directory.path(), std::fs::Permissions::from_mode(0o750)).unwrap();
-    assert!(read_config(file.path()).is_err());
+    assert!(xcss::config::read_private_file(file.path()).is_err());
 }
 
 #[test]

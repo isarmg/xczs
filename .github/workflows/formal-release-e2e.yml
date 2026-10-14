@@ -1,4 +1,4 @@
-name: Formal signed release package E2E
+name: Formal SHA256 release package E2E
 
 on:
   workflow_call:
@@ -153,10 +153,9 @@ jobs:
           mv --version | sed -n '1p'
           df -h "${RUNNER_TEMP}"
 
-      - name: Run the real formal signed-package path
+      - name: Run the real formal SHA-256 package path
         shell: bash
         env:
-          XSSI_REPOSITORY_TOKEN: ${{ secrets.XSSI_REPOSITORY_TOKEN }}
           XCZS_FORMAL_E2E_EXPORT_DIR: ${{ runner.temp }}/formal-release-candidate
           XCZS_FORMAL_E2E_DIAGNOSTICS_DIR: ${{ runner.temp }}/formal-release-diagnostics
         run: |

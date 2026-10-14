@@ -15,6 +15,7 @@ concurrency:
 env:
   RUST_TOOLCHAIN: "1.99.0"
   CARGO_AUDIT_VERSION: "0.22.2"
+  CARGO_CYCLONEDX_VERSION: "0.5.9"
   TARGET: x86_64-unknown-linux-gnu
   CARGO_TERM_COLOR: always
 
@@ -106,10 +107,15 @@ jobs:
           cargo +"$RUST_TOOLCHAIN" install cargo-audit \
             --version "$CARGO_AUDIT_VERSION" \
             --locked
+          cargo +"$RUST_TOOLCHAIN" install cargo-cyclonedx \
+            --version "$CARGO_CYCLONEDX_VERSION" \
+            --locked
           rustc +"$RUST_TOOLCHAIN" --version --verbose
           cargo +"$RUST_TOOLCHAIN" --version --verbose
           test "$(cargo audit --version)" = \
             "cargo-audit-audit $CARGO_AUDIT_VERSION"
+          test "$(cargo cyclonedx --version)" = \
+            "cargo-cyclonedx-cyclonedx $CARGO_CYCLONEDX_VERSION"
 
       - name: Use the fixed Node.js release
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
@@ -126,24 +132,11 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund
           npm audit --audit-level=high
 
-      - name: Build and verify the complete signed release package
+      - name: Build and verify the complete release package and SHA-256 inventory
         id: prepare_release_inputs
         shell: bash
-        env:
-          PACKAGE_SIGNING_KEY: ${{ secrets.XSSI_PACKAGE_SIGNING_KEY }}
-          XSSI_REPOSITORY_TOKEN: ${{ secrets.XSSI_REPOSITORY_TOKEN }}
         run: |
           set -euo pipefail
-          export XSSI_SIGNING_KEY="$RUNNER_TEMP/package-signing.pem"
-          umask 077
-          python3 - <<'PYKEY'
-          import os,pathlib
-          key=os.environ.pop("PACKAGE_SIGNING_KEY")
-          if not key: raise SystemExit("XSSI_PACKAGE_SIGNING_KEY is required")
-          pathlib.Path(os.environ["XSSI_SIGNING_KEY"]).write_text(key)
-          PYKEY
-          unset PACKAGE_SIGNING_KEY
-          trap 'rm -f -- "$XSSI_SIGNING_KEY"' EXIT
           install -d -m 0755 dist
           ./scripts/package-release.sh --output-dir "$GITHUB_WORKSPACE/dist"
           asset_name="xczs-${VERSION}-linux-x86_64.tar.gz"

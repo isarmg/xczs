@@ -147,7 +147,7 @@ struct LogEntry {
 enum LogOutput {
     #[cfg(test)]
     File(BufWriter<File>),
-    Rotating(xcss::log::RotatingLogFile),
+    Process,
 }
 
 impl LogOutput {
@@ -155,7 +155,7 @@ impl LogOutput {
         match self {
             #[cfg(test)]
             Self::File(file) => entry.record.write_to(file).map_err(std::io::Error::other),
-            Self::Rotating(file) => file.write(&entry.record).map_err(std::io::Error::other),
+            Self::Process => entry.record.emit().map_err(std::io::Error::other),
         }
     }
 
@@ -163,7 +163,7 @@ impl LogOutput {
         match self {
             #[cfg(test)]
             Self::File(file) => file.flush(),
-            Self::Rotating(_) => Ok(()),
+            Self::Process => Ok(()),
         }
     }
 }
@@ -262,10 +262,11 @@ impl log::Log for AsyncLogger {
 pub fn init(root: &Path, level: LevelFilter) -> Result<()> {
     xcss::fs_safety::PrivateDirectory::open_existing(root.join("logs"))?;
     let path = root.join("logs/xczs.jsonl");
-    let output = LogOutput::Rotating(xcss::log::RotatingLogFile::open_file(
+    xcss::log::install_rotating_file(xcss::log::RotatingLogFile::open_file(
         path,
         xcss::log::LogRetention::default(),
-    )?);
+    )?)?;
+    let output = LogOutput::Process;
 
     let (sender, receiver) = sync_channel(LOG_QUEUE_CAPACITY);
     let dropped = Arc::new(AtomicU64::new(0));

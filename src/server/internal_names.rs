@@ -8,20 +8,12 @@ use uuid::Uuid;
 pub(super) const UPLOAD_TEMP_PREFIX: &str = ".xczs-upload-";
 pub(super) const UPLOAD_TEMP_SUFFIX: &str = ".part";
 pub(super) const UPLOAD_STAGE_DIRECTORY: &str = ".xczs-upload-stages";
-pub(super) const READINESS_PROBE_ANCHOR: &str = ".xczs-readiness.probe";
-const READINESS_PREFIX: &str = ".xczs-readiness-";
-const READINESS_SUFFIX: &str = ".probe";
 pub(super) const DELETE_TRASH_PREFIX: &str = ".xczs-upload-delete-";
 pub(super) const DELETE_TRASH_SUFFIX: &str = ".trash";
 pub(super) const QUARANTINE_PREFIX: &str = ".xczs-quarantine-";
 pub(super) const QUARANTINE_SUFFIX: &str = ".hold";
 fn upload_stage_name(target_tag: &str, upload_id: Uuid) -> String {
     format!("{UPLOAD_TEMP_PREFIX}{target_tag}-{upload_id}{UPLOAD_TEMP_SUFFIX}")
-}
-
-#[cfg(test)]
-pub(in crate::server) fn upload_readiness_probe_name(upload_id: Uuid) -> String {
-    format!("{READINESS_PREFIX}{upload_id}{READINESS_SUFFIX}")
 }
 
 pub(in crate::server) fn delete_trash_name(trash_id: Uuid) -> String {
@@ -62,7 +54,6 @@ pub(in crate::server) fn upload_stage_directory(path: &Path) -> Option<&Path> {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) enum InternalEntryName {
     StageDirectory,
-    Readiness,
     DeleteTrash,
     Quarantine,
 }
@@ -75,17 +66,11 @@ pub(super) fn classify_internal_name(file_name: &str) -> Option<InternalEntryNam
     if file_name == UPLOAD_STAGE_DIRECTORY {
         return Some(InternalEntryName::StageDirectory);
     }
-    if file_name == READINESS_PROBE_ANCHOR {
-        return Some(InternalEntryName::Readiness);
-    }
     if is_quarantine_name(file_name) {
         return Some(InternalEntryName::Quarantine);
     }
     if is_delete_trash_name(file_name) {
         return Some(InternalEntryName::DeleteTrash);
-    }
-    if is_readiness_name(file_name) {
-        return Some(InternalEntryName::Readiness);
     }
     None
 }
@@ -107,13 +92,6 @@ pub(super) fn is_upload_stage_name(file_name: &str) -> bool {
         return false;
     }
     value.get(64..65) == Some("-") && value.get(65..).is_some_and(is_canonical_uuid)
-}
-
-fn is_readiness_name(file_name: &str) -> bool {
-    file_name
-        .strip_prefix(READINESS_PREFIX)
-        .and_then(|value| value.strip_suffix(READINESS_SUFFIX))
-        .is_some_and(is_canonical_uuid)
 }
 
 fn is_delete_trash_name(file_name: &str) -> bool {
@@ -153,7 +131,7 @@ mod tests {
     }
 
     #[test]
-    fn generated_stage_readiness_and_trash_names_are_reserved() {
+    fn generated_stage_and_trash_names_are_reserved() {
         let upload_id = Uuid::new_v4();
         let stage_path = upload_temp_path(Path::new("file.bin"), upload_id).unwrap();
         assert_eq!(stage_path.parent(), Some(Path::new(UPLOAD_STAGE_DIRECTORY)));
@@ -164,16 +142,6 @@ mod tests {
         let stage = stage_path.file_name().unwrap().to_str().unwrap();
         assert!(is_upload_stage_name(stage));
         assert_eq!(classify_internal_name(stage), None);
-
-        let readiness = upload_readiness_probe_name(upload_id);
-        assert_eq!(
-            classify_internal_name(&readiness),
-            Some(InternalEntryName::Readiness)
-        );
-        assert_eq!(
-            classify_internal_name(READINESS_PROBE_ANCHOR),
-            Some(InternalEntryName::Readiness)
-        );
 
         let trash = delete_trash_name(upload_id);
         assert_eq!(

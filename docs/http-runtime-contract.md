@@ -1,7 +1,7 @@
 # Xczs HTTP 与运行时合同
 
 本文描述当前 Xczs 的 HTTP 行为、xcss 分工和验证入口。Rust 与 Web 依赖由
-`Cargo.toml`、`Cargo.lock`、`package.json` 和 `package-lock.json` 固定到 xcss 1.0.13。
+`Cargo.toml`、`Cargo.lock`、`package.json` 和 `package-lock.json` 固定到 xcss 1.0.0。
 当前为本地已验证、尚未发布的候选输入，来源及安装条件见[公共依赖](common-support.md)。
 
 ## 请求与认证
@@ -61,7 +61,7 @@ cargo test --locked --target x86_64-unknown-linux-gnu --all-targets --all-featur
 | 标签扫描、筛选、关联和下载边界 | `src/server/tagging/db.rs`、`src/server/tagging/scan.rs`、`tests/tags.rs` |
 | 正式运行时和发行包 | `scripts/check-release-runtime.sh`、`scripts/check-formal-release-e2e.sh` |
 
-测试使用独立临时共享根和状态目录。正式发布还要求候选包、完整源码提交、签名和验收结果一致；
+测试使用独立临时共享根和状态目录。正式发布还要求候选包、完整源码提交、SHA-256 清单和验收结果一致；
 具体流程见[运维文档](operations.md)。
 
 目录 API 的 `file_tags` 数组与 `paths` 一一对应，包含 `file_id`、有界 `tags` 和 `tags_has_more`。读取标签会核对当前文件的设备、inode、大小及 mtime/ctime；替换文件不继承旧标签。暂时无法读取标签时 `file_tags` 为 `null`，文件列表仍可操作，页面明确显示标签不可用。`GET /api/v1/file-tags/file?path=相对路径` 以同一身份规则读取单个文件的标签。

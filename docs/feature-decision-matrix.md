@@ -13,7 +13,7 @@
 | DFM-003 | Linux `openat2` 必需，不降级到路径拼接 | `src/server/rooted_fs.rs` | 保障 | 高 | 共享根逃逸和 TOCTOU 安全证明失效 | 缺系统调用启动失败；symlink、magic link 和路径竞态测试 |
 | DFM-004 | 使用 xcss React Profile，复用文件业务控制器 | `web/react/`、`src/server/assets.rs` | 已实施 | 高 | 必须同时验证 React、嵌入、CSP、缓存和供应链 | 生产无 Node 服务；无原生页面兼容入口 |
 | DFM-005 | 客户端统一在 `web/`，源码配置在 `config/`，部署资产在 `systemd/` | 三个同名目录 | 开发运维 | 中 | 代码与资产散落，登记和审查易漏 | 新生产模块进入 asset registry；不复制当前配置/部署模板 |
-| DFM-006 | 生产配置故意使用 `ROOT/config/config.json`，TLS 由外部网关管理 | `systemd/xczs.service`、xssi 安装脚本 | 开发运维 | 中 | 随意换路径会破坏 systemd/安装器 权限约定 | 这是 FHS/TLS 权限例外，不是旧路径兼容 |
+| DFM-006 | 生产配置故意使用 `ROOT/config/config.json`，TLS 由外部网关管理 | xssi 服务模板和安装脚本 | 开发运维 | 中 | 随意换路径会破坏 systemd/安装器 权限约定 | 这是 FHS/TLS 权限例外，不是旧路径兼容 |
 | DFM-007 | current-only：只接受当前配置、API、页面和 SQLite identity | `src/args.rs`、`src/server/router/`、`src/server/state_store/database.rs` | 保障 | 高 | alias/fallback 令分支、攻击面和测试矩阵增加 | 非当前字段、路径、schema 在修改状态前拒绝 |
 | DFM-008 | 外部 HTTPS 网关终止 TLS，Xczs 只做明文 HTTP/1 回源 | `src/main.rs`、xssi 安装脚本 | 保障 | 高 | 直接公网暴露会泄露凭据；内置 TLS 则新增证书生命周期 | 默认回环；HTTP/1.0/1.1；无 h2c；浏览器入口必须 HTTPS |
 | DFM-009 | 现代桌面浏览器是唯一 UI 支持范围 | `web/index.css`、`playwright.config.js` | 核心 | 中 | 扩到移动端会新增布局、输入、性能与测试合同 | Chromium/Firefox、320 CSS px 缩放回流；不承诺手机产品体验 |
@@ -122,7 +122,7 @@
 | DFM-082 | TypeScript/TSX strict，外部输入为 unknown | `web/tsconfig.json`、`package.json` | 开发运维 | 中 | 前端协议漂移更晚发现 | 无 any；runtime guard 仍必需 |
 | DFM-083 | ESLint 核心规则与 `no-unsanitized` 浏览器安全门 | `eslint.config.mjs`、`scripts/check-js.mjs` | 开发运维 | 高 | 常见动态 HTML、模态框、动态执行或网络边界误用进入生产 | 成熟规则加少量模块边界；不承担完整别名或污点分析 |
 | DFM-084 | 日常、集成与发行三级质量门 | `scripts/check.sh`、`scripts/check-integration.sh`、`scripts/check-release.sh` | 开发运维 | 高 | 协议、路径、样例和依赖漂移进入发布 | 日常快速反馈；候选二进制集成；发行覆盖率/审计/Playwright/安装器/systemd |
-| DFM-085 | exact-source、实际 SBOM、receipt、checksum/signature | `scripts/package-release.sh` | 开发运维 | 高 | 无法证明源码/依赖/制品一致或发现篡改 | clean tag=version=HEAD、SHA、no-clobber、强算法、独立固定公钥 |
+| DFM-085 | exact-source、实际 SBOM、receipt、SHA-256 文件清单 | `scripts/package-release.sh` | 开发运维 | 高 | 无法证明源码/依赖/制品一致或发现篡改 | clean tag=version=HEAD、SHA、no-clobber、逐文件摘要、大小和模式 |
 | DFM-086 | 中文 README/指南/流程/功能/运维文档是交付合同 | `README.md`、`docs/`、`scripts/check-docs.mjs` | 开发运维 | 中 | 开发者凭旧经验重建已删除兼容分支 | 只保留五类；links/anchors；协议/路径变更同步 |
 
 ## 8. 明确不实现的能力

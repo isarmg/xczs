@@ -10,7 +10,7 @@ ROOT/bin/xczs --version
 
 默认 ROOT `/opt/isarmg/xczs`。配置固定 `ROOT/config/config.json`，必须是服务账号拥有的 0600 普通单硬链接文件，父目录 0700。配置缺失、权限错误、未知字段或旧配置都失败关闭。环境变量使用产品前缀 `XCZS_`，优先级为环境、JSON、默认值，server CLI 不提供业务配置覆盖。
 
-维护由 xssi 的 `maintenance.sh --root ROOT check`、`admin-reset --username NAME` 执行；签名 `libexec/setup` 提供配置校验、显式初始化、只读检查和密码重置。密码来自标准输入，不进入 server argv、配置或日志。
+维护由 xssi 的 `maintenance.sh --root ROOT check`、`admin-reset --username NAME` 执行；独立 `libexec/setup` 提供配置校验、显式初始化、只读检查和密码重置。密码来自标准输入，不进入 server argv、配置或日志。
 
 - `serve_path`：业务共享根，已存在的绝对目录。
 - `data_dir`：默认 ROOT/state，数据库 state.sqlite3、tags.db 和公共锁所在地，可明确外置实例业务数据。

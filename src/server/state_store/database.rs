@@ -1,14 +1,16 @@
 use super::*;
 
 use std::{
-    fs::{self, File, OpenOptions, Permissions},
+    fs::{self, File, OpenOptions},
     io::ErrorKind,
-    os::unix::fs::{MetadataExt, OpenOptionsExt, PermissionsExt},
+    os::unix::fs::{MetadataExt, OpenOptionsExt},
 };
 use xcss::schema_identity::SchemaIdentity;
 
 #[cfg(test)]
 use std::io::{self, Read, Seek, SeekFrom};
+#[cfg(test)]
+use std::{fs::Permissions, os::unix::fs::PermissionsExt};
 
 const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 // Repository row counts and Linux root-relative path limits keep legitimate
@@ -461,6 +463,7 @@ impl SqliteSidecarGuard {
         Ok(changed)
     }
 
+    #[cfg(test)]
     fn has_present_sidecar(&self) -> bool {
         self.entries
             .iter()
@@ -512,6 +515,7 @@ fn validate_main_database_metadata(path: &Path, metadata: &fs::Metadata) -> Resu
     Ok(())
 }
 
+#[cfg(test)]
 pub(super) fn prepare_database_file(path: &Path, root: &RootIdentity) -> Result<()> {
     ensure!(
         path.file_name().is_some(),
@@ -654,6 +658,7 @@ pub(super) fn open_initialized_connection(
     Ok(connection)
 }
 
+#[cfg(test)]
 pub(in crate::server) fn initialize_current(path: &Path, root: RootIdentity) -> Result<()> {
     ensure!(
         !path.try_exists()?,
@@ -760,6 +765,7 @@ impl Drop for ValidationConnection {
     }
 }
 
+#[cfg(test)]
 fn open_existing_database_for_preflight(
     path: &Path,
     root: RootIdentity,
@@ -829,6 +835,7 @@ where
     })
 }
 
+#[cfg(test)]
 fn open_existing_database_for_preflight_after_snapshot<F>(
     path: &Path,
     root: RootIdentity,
@@ -1060,6 +1067,7 @@ pub(in crate::server) async fn configure_validated_connection(
     Ok(())
 }
 
+#[cfg(test)]
 fn preflight_existing_database(path: &Path, root: RootIdentity) -> Result<()> {
     let mut connection = open_existing_database_for_preflight(path, root)?;
     xcss::sqlite::block_on_sqlite_connection(validate_database_before_mutation(
@@ -1395,6 +1403,7 @@ async fn validate_integrity(connection: &mut Connection) -> Result<()> {
     Ok(())
 }
 
+#[cfg(test)]
 async fn initialize_schema(connection: &mut Connection, root: RootIdentity) -> Result<()> {
     if persistent_object_count(connection).await? != 0 {
         validate_product_metadata(connection).await?;
@@ -1418,7 +1427,7 @@ async fn initialize_schema(connection: &mut Connection, root: RootIdentity) -> R
          ) VALUES (1, ?1, ?2, ?3, ?4)",
     )
     .bind(APPLICATION)
-    .bind("1.0.0")
+    .bind(crate::schema_definition::APPLICATION_VERSION)
     .bind(CURRENT_SCHEMA_REVISION)
     .bind(expected_fingerprint)
     .execute(&mut *transaction)
@@ -1443,35 +1452,37 @@ pub(super) fn expected_schema_fingerprint() -> Result<String> {
     Ok(env!("XCZS_CURRENT_SCHEMA_SHA256").to_owned())
 }
 
+#[cfg(test)]
 async fn schema_fingerprint(connection: &mut Connection) -> Result<String> {
     Ok(xcss::sqlite::schema_fingerprint(connection).await?)
 }
 
 pub(in crate::server) fn expected_schema_identity() -> Result<SchemaIdentity> {
-    SchemaIdentity::new(
-        APPLICATION,
-        "1.0.0",
-        u64::try_from(CURRENT_SCHEMA_REVISION)
-            .context("Current schema revision cannot be represented as u64")?,
-        expected_schema_fingerprint()?,
-    )
-    .context("Compiled XCZS schema identity violates the xcss contract")
+    crate::schema_definition::identity(&expected_schema_fingerprint()?)
+        .context("Compiled XCZS schema identity violates the xcss contract")
 }
 
+#[cfg(test)]
 async fn insert_root_identity(transaction: &mut Connection, root: RootIdentity) -> Result<()> {
-    sqlx::query(
-        "INSERT INTO store_meta(key, value) VALUES \
-         ('root-device-be', ?1), ('root-inode-be', ?2)",
-    )
-    .bind(root.device.to_be_bytes().as_slice())
-    .bind(root.inode.to_be_bytes().as_slice())
-    .execute(&mut *transaction)
-    .await
-    .map(|result| result.rows_affected())?;
+    sqlx::query(crate::persistent_definition::INITIALIZE_SHARED_ROOT)
+        .bind(root.device.to_be_bytes().as_slice())
+        .bind(root.inode.to_be_bytes().as_slice())
+        .execute(&mut *transaction)
+        .await
+        .map(|result| result.rows_affected())?;
     Ok(())
 }
 
 async fn verify_root_identity(connection: &mut Connection, expected: RootIdentity) -> Result<()> {
+    let valid: i64 = sqlx::query_scalar(crate::persistent_definition::CHECK_SHARED_ROOT)
+        .bind(expected.device.to_be_bytes().as_slice())
+        .bind(expected.inode.to_be_bytes().as_slice())
+        .fetch_one(&mut *connection)
+        .await?;
+    ensure!(
+        valid == 1,
+        "State database shared-root binding is not exactly current"
+    );
     let device = load_meta(connection, "root-device-be").await?;
     let inode = load_meta(connection, "root-inode-be").await?;
     ensure!(
@@ -1588,6 +1599,7 @@ async fn recover_database(
     Ok(())
 }
 
+#[cfg(test)]
 pub(in crate::server) fn initialize_administrator(
     path: &Path,
     username: &str,

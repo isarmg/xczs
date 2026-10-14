@@ -823,9 +823,6 @@ where
                 if internal_name == Some(InternalEntryName::Quarantine) {
                     return Ok(true);
                 }
-                if name == super::internal_names::READINESS_PROBE_ANCHOR {
-                    return Ok(true);
-                }
                 if internal_name == Some(InternalEntryName::StageDirectory) {
                     if is_dir {
                         descend = Some(entry.path);

@@ -15,9 +15,9 @@ use http_body::{Body, Frame, SizeHint};
 
 use crate::{logger::BoundedLogLine, utils::decode_uri};
 
-pub const DEFAULT_LOG_FORMAT: &str = r#"$time_iso8601 $log_level - "$request" $status operation_id=$operation_id operation_state=$operation_state request_id=$http_x_request_id"#;
-const MAX_LOG_FORMAT_BYTES: usize = 4096;
-const MAX_LOG_FORMAT_ELEMENTS: usize = 128;
+pub use crate::config_definition::DEFAULT_LOG_FORMAT;
+#[cfg(test)]
+use crate::log_format_definition::{MAX_LOG_FORMAT_BYTES, MAX_LOG_FORMAT_ELEMENTS};
 
 #[derive(Debug, Clone)]
 pub struct HttpLogger {
@@ -70,24 +70,20 @@ impl LogNeeds {
         self.0 |= Self::variable_flag(name).unwrap_or(0);
     }
 
-    fn supports(name: &str) -> bool {
-        Self::variable_flag(name).is_some()
-    }
-
     fn variable_flag(name: &str) -> Option<u16> {
-        Some(match name {
-            "request" => Self::REQUEST,
-            "request_method" => Self::REQUEST_METHOD,
-            "request_uri" => Self::REQUEST_URI,
-            "remote_user" => Self::REMOTE_USER,
-            "time_utc" => Self::TIME_UTC,
-            "time_iso8601" => Self::TIME_ISO8601,
-            "msec" => Self::MSEC,
-            "status" => Self::STATUS,
-            "operation_id" => Self::OPERATION_ID,
-            "operation_state" => Self::OPERATION_STATE,
-            "log_level" => 0,
-            _ => return None,
+        use crate::log_format_definition::{Variable, named};
+        Some(match named(name)? {
+            Variable::Request => Self::REQUEST,
+            Variable::RequestMethod => Self::REQUEST_METHOD,
+            Variable::RequestUri => Self::REQUEST_URI,
+            Variable::RemoteUser => Self::REMOTE_USER,
+            Variable::TimeUtc => Self::TIME_UTC,
+            Variable::TimeIso8601 => Self::TIME_ISO8601,
+            Variable::Msec => Self::MSEC,
+            Variable::Status => Self::STATUS,
+            Variable::OperationId => Self::OPERATION_ID,
+            Variable::OperationState => Self::OPERATION_STATE,
+            Variable::LogLevel | Variable::RequestId => 0,
         })
     }
 
@@ -375,49 +371,22 @@ fn emit_http_access(msg: &str, is_error: bool) {
 impl FromStr for HttpLogger {
     type Err = anyhow::Error;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        if s.len() > MAX_LOG_FORMAT_BYTES {
-            return Err(anyhow::anyhow!(
-                "HTTP log format exceeds the {MAX_LOG_FORMAT_BYTES}-byte limit"
-            ));
-        }
-        let mut elements = vec![];
-        let mut is_var = false;
-        let mut cache = String::new();
-        for c in format!("{s} ").chars() {
-            if c == '$' {
-                if !cache.is_empty() {
-                    elements.push(LogElement::Literal(cache.to_string()));
-                }
-                cache.clear();
-                is_var = true;
-            } else if is_var && !(c.is_alphanumeric() || c == '_') {
-                if let Some(value) = cache.strip_prefix("$http_") {
-                    let normalized = value.to_ascii_lowercase().replace('_', "-");
-                    let name = HeaderName::from_bytes(normalized.as_bytes()).map_err(|_| {
-                        anyhow::anyhow!("Invalid HTTP request header log variable `{cache}`")
-                    })?;
-                    let sensitive = is_sensitive_header(&name);
-                    elements.push(LogElement::Header { name, sensitive });
-                } else if let Some(value) = cache.strip_prefix('$') {
-                    if !LogNeeds::supports(value) {
-                        return Err(anyhow::anyhow!("Unknown HTTP log variable `${value}`"));
+        use crate::log_format_definition::{Token, parse};
+        let elements = parse(s)
+            .map_err(anyhow::Error::msg)?
+            .into_iter()
+            .map(|token| {
+                Ok(match token {
+                    Token::Literal(value) => LogElement::Literal(value),
+                    Token::Variable(variable) => LogElement::Variable(variable.name().to_owned()),
+                    Token::Header(value) => {
+                        let name = HeaderName::from_bytes(value.as_bytes())?;
+                        let sensitive = is_sensitive_header(&name);
+                        LogElement::Header { name, sensitive }
                     }
-                    elements.push(LogElement::Variable(value.to_string()));
-                }
-                cache.clear();
-                is_var = false;
-            }
-            cache.push(c);
-        }
-        let cache = cache.trim();
-        if !cache.is_empty() {
-            elements.push(LogElement::Literal(cache.to_string()));
-        }
-        if elements.len() > MAX_LOG_FORMAT_ELEMENTS {
-            return Err(anyhow::anyhow!(
-                "HTTP log format exceeds the {MAX_LOG_FORMAT_ELEMENTS}-element limit"
-            ));
-        }
+                })
+            })
+            .collect::<Result<Vec<_>, anyhow::Error>>()?;
         let mut needs = LogNeeds::default();
         for element in &elements {
             if let LogElement::Variable(name) = element {
@@ -433,12 +402,25 @@ impl FromStr for HttpLogger {
 }
 
 fn is_sensitive_header(name: &HeaderName) -> bool {
-    if matches!(name.as_str(), "cookie" | "set-cookie" | "x-csrf-token") {
-        return true;
-    }
-    let mut value = serde_json::json!({name.as_str():"present"});
-    xcss::log::redact(&mut value);
-    value[name.as_str()].is_object()
+    // Arbitrary request headers can carry credentials or visitor addresses.
+    // Only these protocol metadata fields are eligible for access logging.
+    !matches!(
+        name.as_str(),
+        "accept"
+            | "accept-encoding"
+            | "accept-language"
+            | "cache-control"
+            | "connection"
+            | "content-length"
+            | "content-type"
+            | "if-match"
+            | "if-none-match"
+            | "if-modified-since"
+            | "if-unmodified-since"
+            | "if-range"
+            | "range"
+            | "transfer-encoding"
+    )
 }
 
 fn sanitize_log_value(s: &str) -> String {
@@ -612,6 +594,24 @@ mod tests {
                 assert_eq!(variant.parse::<HttpLogger>().unwrap(), canonical);
             }
         }
+    }
+
+    #[test]
+    fn arbitrary_request_headers_are_redacted_before_access_logging() {
+        let logger = "$http_x_caller_address|$http_cookie|$http_content_type"
+            .parse::<HttpLogger>()
+            .unwrap();
+        let request = Request::builder()
+            .header("x-caller-address", "192.0.2.44")
+            .header("cookie", "session=private")
+            .header("content-type", "application/json")
+            .body(())
+            .unwrap();
+        let fields = logger.data(&request);
+        assert_eq!(fields["x-caller-address"], "[REDACTED]");
+        assert_eq!(fields["cookie"], "[REDACTED]");
+        assert_eq!(fields["content-type"], "application/json");
+        assert!(fields.values().all(|value| !value.contains("192.0.2.44")));
     }
 
     #[test]

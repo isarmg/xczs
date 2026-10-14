@@ -34,10 +34,9 @@ use super::StatePathScanLease;
 mod actor;
 mod database;
 pub(super) use database::expected_schema_identity;
-pub(super) use database::{
-    initialize_administrator, initialize_current, open_administrator_pool,
-    validate_current_with_administrator_in,
-};
+#[cfg(test)]
+pub(super) use database::{initialize_administrator, initialize_current};
+pub(super) use database::{open_administrator_pool, validate_current_with_administrator_in};
 mod model;
 mod operation;
 mod purge;
@@ -50,8 +49,10 @@ pub(super) use model::{
     StoredTerminalState, StoredUploadSession, StoredUploadState, UploadSessionKey,
 };
 
-const APPLICATION: &str = "xczs";
-const CURRENT_SCHEMA_REVISION: i64 = 2;
+#[cfg(test)]
+const APPLICATION: &str = crate::schema_definition::APPLICATION;
+#[cfg(test)]
+const CURRENT_SCHEMA_REVISION: i64 = crate::schema_definition::SCHEMA_REVISION;
 const COMMAND_QUEUE_CAPACITY: usize = 256;
 const UPLOAD_SESSION_CAPACITY: usize = 16_384;
 const UPLOAD_SESSION_PER_OWNER_CAPACITY: usize = 4_096;

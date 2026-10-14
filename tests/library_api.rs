@@ -1,3 +1,5 @@
+#[path = "support/database.rs"]
+mod fixture_database;
 use std::os::unix::fs::PermissionsExt;
 use std::path::Path;
 use xczs::{Args, server::Server};
@@ -21,7 +23,7 @@ fn authenticated_args(root: &Path, state_dir: &Path) -> Args {
     if !state_dir.join("state/state.sqlite3").exists()
         && Server::check_reserved_path_conflicts(&args.serve_path).is_ok()
     {
-        Server::initialize(args.clone(), "user", "test-password")
+        fixture_database::initialize(&args, "user", "test-password")
             .expect("explicit fixture initialization");
     }
     args
@@ -68,7 +70,7 @@ async fn runtime_shutdown_is_observable_and_idempotent() {
 }
 
 #[tokio::test]
-async fn explicit_initialization_creates_private_state_database() {
+async fn installed_fixture_uses_private_current_database() {
     let root = assert_fs::TempDir::new().expect("create temporary shared root");
     let state_dir = private_state_dir();
     let state_db = state_dir.path().join("state/state.sqlite3");

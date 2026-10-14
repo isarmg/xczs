@@ -1,6 +1,8 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { createXcssReactViteConfig } from "@xcss/web/web-toolchain/vite";
 import { createHash } from "node:crypto";
+import {fileURLToPath,pathToFileURL} from "node:url";
+import {join} from "node:path";
 
 const config = createXcssReactViteConfig({ base: "./" });
 function moduleEntries(directory = "web/modules") {
@@ -53,4 +55,11 @@ config.plugins.push({
     }
   } },
 });
-export default config;
+export default async () => {
+  if (process.env.XSSI_BUILD_TOOLS_DIR) {
+    if (!process.env.XSSI_FRONTEND_METADATA_FILE) throw new Error("Explicit runtime inventory output is required");
+    const {runtimeInventory} = await import(pathToFileURL(join(process.env.XSSI_BUILD_TOOLS_DIR,"scripts/frontend_build.mjs")));
+    config.plugins.push(runtimeInventory({root:fileURLToPath(new URL("./",import.meta.url)),output:process.env.XSSI_FRONTEND_METADATA_FILE}));
+  }
+  return config;
+};

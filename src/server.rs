@@ -382,6 +382,7 @@ impl Server {
     }
 
     /// Create current product state only at an explicit initialization boundary.
+    #[cfg(test)]
     pub fn initialize(args: Args, username: &str, password: &str) -> Result<()> {
         anyhow::ensure!(
             args.serve_path.is_absolute(),
@@ -392,13 +393,11 @@ impl Server {
         xcss::admin_auth::validate_password(password)?;
         Self::check_reserved_path_conflicts(&args.serve_path)?;
         let directory = args.state_dir.as_ref().context("data_dir is required")?;
-        xcss::server_cli::create_empty_private_directory(directory)
-            .map_err(xcss::server_cli::CliError)?;
+        xcss::state_file::PrivateStateDirectory::create(directory)?;
         let args = args.validate()?;
         let directory = args.state_dir.as_ref().context("data_dir is required")?;
         let state = xcss::state_file::PrivateStateDirectory::open(directory)?;
-        let _maintenance = state.try_maintenance_lock()?;
-        xcss::server_cli::runtime_allowed(directory).map_err(xcss::server_cli::CliError)?;
+        let _instance = state.try_instance_lock()?;
         for child in ["logs", "run"] {
             xcss::state_file::PrivateStateDirectory::create(args.root.join(child))?;
         }

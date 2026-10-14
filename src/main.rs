@@ -77,10 +77,8 @@ async fn run(raw_args: Vec<std::ffi::OsString>) -> Result<()> {
 
 async fn run_server(args: Args) -> Result<()> {
     let data_dir = args.state_dir.as_ref().context("data_dir is required")?;
-    xcss::server_cli::runtime_allowed(data_dir).map_err(xcss::server_cli::CliError)?;
     let directory = xcss::state_file::PrivateStateDirectory::open(data_dir)?;
     let _common_lock = directory.try_instance_lock()?;
-    xcss::server_cli::runtime_allowed(data_dir).map_err(xcss::server_cli::CliError)?;
     logger::init(&args.root, args.log_level.parse()?)
         .map_err(|e| anyhow!("Failed to init logger, {e}"))?;
     info!(target:"common.config.loaded", "configuration loaded");
