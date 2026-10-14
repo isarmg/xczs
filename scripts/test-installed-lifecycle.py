@@ -141,6 +141,21 @@ class ArchiveBoundary(unittest.TestCase):
                     with self.assertRaisesRegex(RuntimeError, 'root-controlled'):
                         lifecycle.verify_install_parent(parent)
 
+    def test_config_permissions_follow_readonly_product_contract(self):
+        directory = SimpleNamespace(st_uid=0, st_gid=987, st_mode=stat.S_IFDIR | 0o750)
+        config = SimpleNamespace(st_uid=0, st_gid=987, st_mode=stat.S_IFREG | 0o640)
+        with patch.object(Path, 'lstat', side_effect=[directory, config]):
+            lifecycle.verify_config_permissions(Path('/installed'), 987)
+        for changes in ({'st_uid': 987}, {'st_gid': 0},
+                        {'st_mode': stat.S_IFREG | 0o600},
+                        {'st_mode': stat.S_IFREG | 0o660},
+                        {'st_mode': stat.S_IFLNK | 0o640}):
+            bad = SimpleNamespace(**(vars(config) | changes))
+            with self.subTest(changes=changes), \
+                    patch.object(Path, 'lstat', side_effect=[directory, bad]):
+                with self.assertRaisesRegex(RuntimeError, 'read-only configuration'):
+                    lifecycle.verify_config_permissions(Path('/installed'), 987)
+
     def test_journal_diagnostics_only_return_public_whitelisted_fields(self):
         root = Path(self.work.name)
         (root / 'maintenance').mkdir()

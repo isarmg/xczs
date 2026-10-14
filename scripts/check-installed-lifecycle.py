@@ -71,6 +71,17 @@ def verify_install_parent(parent):
                 f'Installation parent must be a root-controlled directory: {path}')
 
 
+def verify_config_permissions(root, service_gid):
+    # xczs declares no mutable configuration paths. Only the administrator
+    # owns configuration; the service's primary group receives read access.
+    for relative, kind, mode in (('config', stat.S_ISDIR, 0o750),
+                                 ('config/config.json', stat.S_ISREG, 0o640)):
+        info = (root / relative).lstat()
+        require(kind(info.st_mode) and info.st_uid == 0
+                and info.st_gid == service_gid and stat.S_IMODE(info.st_mode) == mode,
+                'Installed read-only configuration permissions differ')
+
+
 def installation_observation(root):
     """Read only the fixed public journal fields, never credentials or state."""
     journal = root / 'maintenance/install.json'
@@ -258,9 +269,7 @@ def main():
             'Fresh install unexpectedly started')
     identity = pwd.getpwnam(ACCOUNT)
     require(identity.pw_uid != 0 and property_value('User') == ACCOUNT, 'Service identity is incorrect')
-    config_info = (root / 'config/config.json').stat()
-    require(config_info.st_uid == identity.pw_uid and stat.S_IMODE(config_info.st_mode) == 0o600,
-            'Installed configuration permissions differ')
+    verify_config_permissions(root, identity.pw_gid)
     print('PASS: verified exact release archive; real installer initialized state and left service stopped', flush=True)
     proxy, client_tls = tls_frontend(base, port)
     origin = f'https://127.0.0.1:{proxy.server_port}'
