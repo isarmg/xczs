@@ -207,6 +207,59 @@ def tls_frontend(base, backend_port):
     return server, ssl.create_default_context(cafile=str(certificate))
 
 
+
+def verify_file_tags(request, file_id, tag_ids):
+    status, body = request(f'/api/v1/file-tags/files/{file_id}/tags')
+    page = json.loads(body)
+    actual = [tag['id'] for tag in page['tags']]
+    require(status == 200 and len(actual) == 16 and set(actual) == set(tag_ids)
+            and page['previous_cursor'] is None and page['next_cursor'] is None,
+            'Installed file tags differ from the 16 accepted tags')
+
+
+def exercise_tag_limit(request, csrf_token):
+    """Use only the installed application's authenticated public HTTP API."""
+    prefix = '/api/v1/file-tags'
+    headers = {'Content-Type': 'application/json', 'X-CSRF-Token': csrf_token}
+    require(request(prefix + '/scan', 'POST', headers=headers)[0] == 200,
+            'Installed tag scan failed')
+    status, body = request(prefix + '/file?path=lifecycle.txt')
+    file_id = json.loads(body)['file_id']
+    require(status == 200 and type(file_id) is int and file_id > 0,
+            'Uploaded file was not indexed')
+    tag_ids = []
+    for index in range(17):
+        status, body = request(prefix + '/tags', 'POST',
+                               json.dumps({'name': f'lifecycle-{index:02}', 'color': None}).encode(),
+                               headers)
+        tag_id = json.loads(body)['id']
+        require(status == 201 and type(tag_id) is int and tag_id > 0
+                and tag_id not in tag_ids, 'Installed tag creation failed')
+        tag_ids.append(tag_id)
+
+    def add(ids):
+        return request(prefix + '/file-tags', 'POST',
+                       json.dumps({'file_ids': [file_id], 'tag_ids': ids, 'action': 'add'}).encode(),
+                       headers)
+
+    require(add(tag_ids[:16])[0] == 204, 'Installed service rejected 16 file tags')
+    verify_file_tags(request, file_id, tag_ids[:16])
+    try:
+        add([tag_ids[16]])
+    except urllib.error.HTTPError as error:
+        # Read and assert the real API error envelope, without logging bodies or credentials.
+        with error:
+            body = json.loads(error.read(1024 * 1024))
+        require(error.code == 409 and body == {
+            'code': 'tag_limit_exceeded', 'message': 'Request could not be completed',
+            'retryable': False, 'details': {}},
+            'Installed service returned the wrong tag-limit error')
+    else:
+        raise RuntimeError('Installed service accepted a seventeenth file tag')
+    verify_file_tags(request, file_id, tag_ids[:16])
+    return file_id, tag_ids[:16]
+
+
 def main():
     global INSTALL_ROOT
     parser = argparse.ArgumentParser(description=__doc__)
@@ -319,12 +372,17 @@ def main():
                          'X-Xczs-Upload-Length': str(len(payload))})
     require(status == 201, 'Authenticated upload failed')
     require(request('/lifecycle.txt') == (200, payload), 'Uploaded contents differ')
+    phase('installed-file-tag-limit')
+    file_id, tag_ids = exercise_tag_limit(request, session['csrf_token'])
+    require(request('/lifecycle.txt') == (200, payload), 'Tag mutation changed uploaded contents')
     phase('restart-and-persistence')
     run('systemctl', 'restart', SERVICE)
     ready()
     require(property_value('MainPID') != first_pid, 'Restart did not replace the service process')
     require(request('/lifecycle.txt') == (200, payload), 'Session or uploaded data did not survive restart')
     require((shared / 'lifecycle.txt').read_bytes() == payload, 'Business file was not persisted')
+    verify_file_tags(request, file_id, tag_ids)
+    print('PASS: installed API accepted 16 tags, rejected 17 atomically, and retained tags after restart', flush=True)
     print('PASS: real systemd start, administrator login, upload, restart, persisted session and download', flush=True)
     phase('stop-and-offline-check')
     run('systemctl', 'disable', '--now', SERVICE)

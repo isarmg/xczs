@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Archive/guard regression tests only; these do not count as installation tests."""
+"""Lifecycle assertion/guard regression tests only; these do not count as installation tests."""
 import importlib.util
 import io
 import os
@@ -190,6 +190,82 @@ class ArchiveBoundary(unittest.TestCase):
         self.assertEqual(result.returncode, 1)
         self.assertIn('Requires root on a disposable GitHub-hosted runner', result.stderr)
 
+
+
+class TagLimitAssertions(unittest.TestCase):
+    """Test the gate's assertions; fake responses are not installed acceptance."""
+    def request_stub(self, *, rejected_status=409, rejected_code='tag_limit_exceeded',
+                     accept_seventeenth=False, mutate_on_rejection=False):
+        created, attached = [], []
+        calls = []
+
+        def request(path, method='GET', body=None, headers=None):
+            calls.append((path, method))
+            if method == 'POST':
+                self.assertEqual(headers['X-CSRF-Token'], 'test-csrf')
+            if path.endswith('/scan'):
+                return 200, b'{"scanned": 1}'
+            if path.endswith('/file?path=lifecycle.txt'):
+                return 200, b'{"file_id": 7}'
+            if method == 'POST' and path.endswith('/tags'):
+                value = json.loads(body)
+                self.assertNotIn(value['name'], created)
+                created.append(value['name'])
+                return 201, json.dumps({'id': len(created)}).encode()
+            if method == 'POST' and path.endswith('/file-tags'):
+                value = json.loads(body)
+                self.assertEqual(value['file_ids'], [7])
+                self.assertEqual(value['action'], 'add')
+                if len(attached) == 16:
+                    if accept_seventeenth or mutate_on_rejection:
+                        attached.extend(value['tag_ids'])
+                    if not accept_seventeenth:
+                        error = json.dumps({'code': rejected_code,
+                                            'message': 'Request could not be completed',
+                                            'retryable': False, 'details': {}}).encode()
+                        raise lifecycle.urllib.error.HTTPError(
+                            path, rejected_status, 'Conflict', {}, io.BytesIO(error))
+                else:
+                    attached.extend(value['tag_ids'])
+                return 204, b''
+            self.assertEqual(path, '/api/v1/file-tags/files/7/tags')
+            return 200, json.dumps({'tags': [{'id': tag} for tag in attached],
+                                    'previous_cursor': None, 'next_cursor': None}).encode()
+
+        return request, calls
+
+    def test_real_api_sequence_checks_tags_before_and_after_rejection(self):
+        request, calls = self.request_stub()
+        self.assertEqual(lifecycle.exercise_tag_limit(request, 'test-csrf'),
+                         (7, list(range(1, 17))))
+        self.assertEqual(calls.count(('/api/v1/file-tags/files/7/tags', 'GET')), 2)
+        self.assertEqual(calls.count(('/api/v1/file-tags/tags', 'POST')), 17)
+
+    def test_rejects_wrong_error_status_or_code(self):
+        for change in ({'rejected_status': 400}, {'rejected_code': 'invalid_request'}):
+            request, _ = self.request_stub(**change)
+            with self.subTest(change=change), self.assertRaisesRegex(RuntimeError, 'wrong tag-limit error'):
+                lifecycle.exercise_tag_limit(request, 'test-csrf')
+
+    def test_rejects_successful_seventeenth_tag(self):
+        request, _ = self.request_stub(accept_seventeenth=True)
+        with self.assertRaisesRegex(RuntimeError, 'accepted a seventeenth'):
+            lifecycle.exercise_tag_limit(request, 'test-csrf')
+
+    def test_rejects_partial_mutation_after_error(self):
+        request, _ = self.request_stub(mutate_on_rejection=True)
+        with self.assertRaisesRegex(RuntimeError, '16 accepted tags'):
+            lifecycle.exercise_tag_limit(request, 'test-csrf')
+
+    def test_persistence_check_rejects_replacement_and_paginated_tags(self):
+        expected = list(range(1, 17))
+        for ids, cursor in [(list(range(2, 18)), None), (expected, 'another-page'),
+                            (list(range(1, 16)), None)]:
+            def request(_path):
+                return 200, json.dumps({'tags': [{'id': tag} for tag in ids],
+                                        'previous_cursor': None, 'next_cursor': cursor}).encode()
+            with self.subTest(ids=ids, cursor=cursor), self.assertRaisesRegex(RuntimeError, '16 accepted tags'):
+                lifecycle.verify_file_tags(request, 7, expected)
 
 if __name__ == '__main__':
     unittest.main()
