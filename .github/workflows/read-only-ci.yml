@@ -186,7 +186,7 @@ jobs:
   coverage:
     name: Coverage
     needs: classify
-    if: ${{ always() && (github.event_name != 'pull_request' || needs.classify.outputs.release_sensitive == 'true') }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.classify.outputs.release_sensitive == 'true') }}
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
@@ -241,7 +241,7 @@ jobs:
   release_smoke:
     name: Deployment and release smoke
     needs: classify
-    if: ${{ always() && (github.event_name != 'pull_request' || needs.classify.outputs.release_sensitive == 'true') }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.classify.outputs.release_sensitive == 'true') }}
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:

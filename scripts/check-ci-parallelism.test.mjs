@@ -15,7 +15,7 @@ test("quality work runs in parallel with the same scope and required check name"
   assert.equal(jobs.quality.if, "${{ always() }}");
   for (const id of ["coverage", "release_smoke"]) {
     assert.equal(jobs[id].needs, "classify");
-    assert.equal(jobs[id].if, "${{ always() && (github.event_name != 'pull_request' || needs.classify.outputs.release_sensitive == 'true') }}");
+    assert.equal(jobs[id].if, "${{ !cancelled() && (github.event_name != 'pull_request' || needs.classify.outputs.release_sensitive == 'true') }}");
     assert.equal(jobs[id].steps.some(step => step["continue-on-error"]), false);
   }
   const coverage = jobs.coverage.steps.map(step => step.run ?? "").join("\n");
