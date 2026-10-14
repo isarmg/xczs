@@ -11,6 +11,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 SCRIPT = Path(__file__).with_name('check-installed-lifecycle.py')
@@ -121,6 +122,24 @@ class ArchiveBoundary(unittest.TestCase):
             bundle.addfile(directory)
         with self.assertRaisesRegex(RuntimeError, 'directory mode must be 0755'):
             lifecycle.extract_package(self.archive, Path(self.work.name) / 'rejected')
+
+    def test_install_parent_requires_every_ancestor_to_be_root_controlled(self):
+        parent = Path('/var/lib')
+        safe = SimpleNamespace(st_uid=0, st_mode=stat.S_IFDIR | 0o755)
+        unsafe = [SimpleNamespace(st_uid=0, st_mode=stat.S_IFDIR | 0o777),
+                  SimpleNamespace(st_uid=1001, st_mode=stat.S_IFDIR | 0o755),
+                  SimpleNamespace(st_uid=0, st_mode=stat.S_IFLNK | 0o755)]
+        with patch.object(Path, 'lstat', return_value=safe) as inspect:
+            lifecycle.verify_install_parent(parent)
+            self.assertEqual(inspect.call_count, 3)
+        for bad in unsafe:
+            for position in range(3):
+                records = [safe, safe, safe]
+                records[position] = bad
+                with self.subTest(mode=bad.st_mode, uid=bad.st_uid, ancestor=position), \
+                        patch.object(Path, 'lstat', side_effect=records):
+                    with self.assertRaisesRegex(RuntimeError, 'root-controlled'):
+                        lifecycle.verify_install_parent(parent)
 
     def test_journal_diagnostics_only_return_public_whitelisted_fields(self):
         root = Path(self.work.name)

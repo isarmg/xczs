@@ -60,6 +60,17 @@ def phase(name):
 
 
 
+def verify_install_parent(parent):
+    """Match the real installer's root-controlled ancestor requirement."""
+    for path in (parent, *parent.parents):
+        info = path.lstat()
+        diagnostic('installation_parent', path=str(path), uid=info.st_uid,
+                   mode=oct(stat.S_IMODE(info.st_mode)))
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid == 0
+                and not info.st_mode & 0o022,
+                f'Installation parent must be a root-controlled directory: {path}')
+
+
 def installation_observation(root):
     """Read only the fixed public journal fields, never credentials or state."""
     journal = root / 'maintenance/install.json'
@@ -213,7 +224,11 @@ def main():
             require(not os.path.lexists(Path(parent) / (SERVICE + suffix)), 'Existing service authority must be preserved')
     archive = args.archive.resolve(strict=True)
     digest = verify_archive(archive, args.revision)
-    base = Path(tempfile.mkdtemp(prefix='xczs-install-smoke-', dir='/opt'))
+    # GitHub runner images make /opt world-writable; never change that
+    # shared system directory or weaken the installer's ancestor check.
+    parent = Path('/var/lib')
+    verify_install_parent(parent)
+    base = Path(tempfile.mkdtemp(prefix='xczs-install-smoke-', dir=parent))
     base.chmod(0o755)
     root, package, shared = base / 'installed', base / 'package', base / 'shared'
     INSTALL_ROOT = root
@@ -343,7 +358,7 @@ def main():
         run('groupdel', ACCOUNT)
     proxy.shutdown()
     proxy.server_close()
-    # This exact fresh /opt child is the only data tree disposed by the test.
+    # This exact fresh /var/lib child is the only data tree disposed by the test.
     shutil.rmtree(base)
     phase('complete')
     print('PASS: offline state check; operator uninstall retained data; isolated test resources removed', flush=True)
