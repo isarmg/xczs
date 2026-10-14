@@ -166,6 +166,14 @@ test("push release smoke reuses its candidate for real installation with exact c
   const cache = steps.find(step => step.id === "inventory_tools");
   assert.match(cache.with.key, /runner\.os.*runner\.arch.*rust-1\.99\.0-audit-0\.22\.2-cyclonedx-0\.5\.9/u);
   assert.equal(cache.with["restore-keys"], undefined);
+  assert.equal(cache.uses, "actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809");
+  const saved = steps.find(step => step.name === "Save verified inventory tools before testing the candidate");
+  assert.equal(saved.uses, "actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809");
+  assert.equal(saved.if, "${{ steps.inventory_tools.outputs.cache-hit != 'true' && steps.install_tools.outcome == 'success' }}");
+  assert.equal(saved.with.path, cache.with.path);
+  assert.equal(saved.with.key, "${{ steps.inventory_tools.outputs.cache-primary-key }}");
+  assert.ok(steps.indexOf(saved) > steps.findIndex(step => step.id === "install_tools"));
+  assert.ok(steps.indexOf(saved) < candidate);
   const evidence = steps.find(step => step.name === "Retain redacted installation lifecycle evidence");
   assert.equal(evidence.if, "${{ always() }}");
   assert.equal(evidence.with.path, "${{ runner.temp }}/install-diagnostics");

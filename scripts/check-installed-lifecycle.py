@@ -107,6 +107,23 @@ def verify_archive(archive, revision):
     return expected
 
 
+
+def extract_package(archive, destination):
+    def package_filter(member, target):
+        filtered = tarfile.data_filter(member, target)
+        if filtered is not None and filtered.isdir():
+            # data_filter intentionally clears directory mode. Reapply only
+            # the exact immutable package contract, never a permissive mode
+            # from untrusted metadata or the caller's current umask.
+            require(member.mode == 0o755, 'Package directory mode must be 0755')
+            filtered = filtered.replace(mode=0o755)
+        return filtered
+
+    with tarfile.open(archive) as bundle:
+        bundle.extractall(destination, filter=package_filter)
+    return destination / archive.name.removesuffix('.tar.gz')
+
+
 def tls_frontend(base, backend_port):
     """A loopback-only TLS terminator, matching the supported production topology."""
     certificate, key = base / 'cert.pem', base / 'key.pem'
@@ -182,9 +199,7 @@ def main():
     base.chmod(0o755)
     root, package, shared = base / 'installed', base / 'package', base / 'shared'
     package.mkdir(mode=0o700)
-    with tarfile.open(archive) as bundle:
-        bundle.extractall(package, filter='data')
-    package = package / archive.name.removesuffix('.tar.gz')
+    package = extract_package(archive, package)
     require(archive_digest(archive) == digest, 'Archive changed during extraction')
     run('python3', '-I', '-B', str(package / 'libexec/package.py'), 'verify', str(package))
     with socket.socket() as reservation:

@@ -266,7 +266,7 @@ jobs:
             --profile minimal
       - name: Cache exact source-built inventory tools
         id: inventory_tools
-        uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        uses: actions/cache/restore@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
         with:
           path: ${{ runner.temp }}/inventory-tools
           key: xczs-inventory-tools-v1-${{ runner.os }}-${{ runner.arch }}-rust-1.99.0-audit-0.22.2-cyclonedx-0.5.9-${{ hashFiles('scripts/ci-inventory-tools.py') }}
@@ -287,6 +287,12 @@ jobs:
           git -C "$RUNNER_TEMP/install-xssi" checkout --quiet --detach FETCH_HEAD
           [[ "$(git -C "$RUNNER_TEMP/install-xssi" rev-parse HEAD)" == "$revision" ]]
           mkdir -m 0700 "$RUNNER_TEMP/install-metadata"
+      - name: Save verified inventory tools before testing the candidate
+        if: ${{ steps.inventory_tools.outputs.cache-hit != 'true' && steps.install_tools.outcome == 'success' }}
+        uses: actions/cache/save@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: ${{ runner.temp }}/inventory-tools
+          key: ${{ steps.inventory_tools.outputs.cache-primary-key }}
       - name: Build embedded React platform assets
         if: ${{ !cancelled() && steps.quality_source.outcome == 'success' && steps.quality_node.outcome == 'success' }}
         id: release_assets

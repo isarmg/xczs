@@ -5,6 +5,7 @@ import io
 import os
 import json
 from pathlib import Path
+import stat
 import subprocess
 import sys
 import tarfile
@@ -90,6 +91,36 @@ class ArchiveBoundary(unittest.TestCase):
         self.assertTrue((destination / PREFIX / 'share/package.json').is_file())
         formal = SCRIPT.with_name('check-formal-release-e2e.sh').read_text()
         self.assertIn('package="$package/xczs-$version-linux-x86_64"', formal)
+
+    def test_real_extraction_preserves_package_directories_under_private_umask(self):
+        with tarfile.open(self.archive, 'w:gz') as bundle:
+            for name in (PREFIX, PREFIX + '/share'):
+                directory = tarfile.TarInfo(name)
+                directory.type, directory.mode = tarfile.DIRTYPE, 0o755
+                bundle.addfile(directory)
+        legacy, fixed = Path(self.work.name) / 'legacy', Path(self.work.name) / 'fixed'
+        legacy.mkdir()
+        fixed.mkdir()
+        previous = os.umask(0o077)
+        try:
+            with tarfile.open(self.archive) as bundle:
+                bundle.extractall(legacy, filter='data')
+            package = lifecycle.extract_package(self.archive, fixed)
+        finally:
+            os.umask(previous)
+        # This reproduces the observed CI preflight failure without executing
+        # a fixture installer or changing the real package verifier.
+        self.assertNotEqual(stat.S_IMODE((legacy / PREFIX / 'share').stat().st_mode), 0o755)
+        self.assertEqual(stat.S_IMODE(package.stat().st_mode), 0o755)
+        self.assertEqual(stat.S_IMODE((package / 'share').stat().st_mode), 0o755)
+
+    def test_extraction_rejects_noncontract_directory_mode(self):
+        with tarfile.open(self.archive, 'w:gz') as bundle:
+            directory = tarfile.TarInfo(PREFIX)
+            directory.type, directory.mode = tarfile.DIRTYPE, 0o777
+            bundle.addfile(directory)
+        with self.assertRaisesRegex(RuntimeError, 'directory mode must be 0755'):
+            lifecycle.extract_package(self.archive, Path(self.work.name) / 'rejected')
 
     def test_failure_diagnostics_redact_exact_temporary_credentials(self):
         directory = Path(self.work.name) / 'diagnostics'
