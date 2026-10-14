@@ -124,6 +124,7 @@ jobs:
       - name: Check JavaScript and Markdown
         run: |
           node scripts/check-release-workflow.mjs
+          node --test scripts/check-ci-parallelism.test.mjs
           npm run check:js
           npm run check:types
           npm run check:docs
@@ -182,8 +183,8 @@ jobs:
           cargo +"$RUST_TOOLCHAIN" clippy --locked --target "$SERVER_TARGET" --all-targets --all-features -- -D warnings
           cargo +"$RUST_TOOLCHAIN" test --locked --target "$SERVER_TARGET" --all-targets --all-features
 
-  quality:
-    name: Coverage, deployment, and release smoke
+  coverage:
+    name: Coverage
     needs: classify
     if: ${{ always() && (github.event_name != 'pull_request' || needs.classify.outputs.release_sensitive == 'true') }}
     runs-on: ubuntu-26.04
@@ -236,6 +237,39 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund
           npm run build:platform
           ./scripts/check-coverage.sh
+
+  release_smoke:
+    name: Deployment and release smoke
+    needs: classify
+    if: ${{ always() && (github.event_name != 'pull_request' || needs.classify.outputs.release_sensitive == 'true') }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out the source without credentials
+        id: quality_source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Use the fixed Node.js release
+        id: quality_node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Install the fixed Rust toolchain
+        id: quality_rust
+        if: ${{ !cancelled() && steps.quality_source.outcome == 'success' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install "$RUST_TOOLCHAIN" \
+            --profile minimal
+      - name: Build embedded React platform assets
+        if: ${{ !cancelled() && steps.quality_source.outcome == 'success' && steps.quality_node.outcome == 'success' }}
+        id: release_assets
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build:platform
       - name: Install deployment validator when absent
         id: deployment_validator
         if: ${{ !cancelled() && steps.quality_source.outcome == 'success' && steps.quality_node.outcome == 'success' && steps.quality_rust.outcome == 'success' }}
@@ -254,7 +288,7 @@ jobs:
           set -euo pipefail
           ./scripts/check-deployment.sh
       - name: Build and execute the release binary
-        if: ${{ !cancelled() && steps.quality_source.outcome == 'success' && steps.quality_rust.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.quality_source.outcome == 'success' && steps.quality_rust.outcome == 'success' && steps.release_assets.outcome == 'success' }}
         shell: bash
         env:
           RUSTUP_TOOLCHAIN: ${{ env.RUST_TOOLCHAIN }}
@@ -263,6 +297,36 @@ jobs:
           npm run build:server:release -- --no-install --rust-only
           "./target/$SERVER_TARGET/release/xczs" --version | grep -F "xczs "
           bash scripts/check-release-runtime.sh "$GITHUB_WORKSPACE/target/$SERVER_TARGET/release/xczs"
+
+  quality:
+    name: Coverage, deployment, and release smoke
+    needs: [classify, coverage, release_smoke]
+    if: ${{ always() }}
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every applicable quality gate
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          CLASSIFY_RESULT: ${{ needs.classify.result }}
+          RELEASE_SENSITIVE: ${{ needs.classify.outputs.release_sensitive }}
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
+          RELEASE_RESULT: ${{ needs.release_smoke.result }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            [[ "$CLASSIFY_RESULT" == success ]]
+            case "$RELEASE_SENSITIVE" in
+              false)
+                [[ "$COVERAGE_RESULT" == skipped && "$RELEASE_RESULT" == skipped ]]
+                exit 0
+                ;;
+              true) ;;
+              *) exit 1 ;;
+            esac
+          fi
+          [[ "$COVERAGE_RESULT" == success && "$RELEASE_RESULT" == success ]]
 
   browser:
     name: Browser (${{ matrix.browser }})
