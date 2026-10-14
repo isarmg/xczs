@@ -23,6 +23,7 @@ mkdir -m 0700 "$output" "$package"
 archive="xczs-$version-linux-x86_64.tar.gz"
 (cd "$output" && sha256sum --check SHA256SUMS)
 tar --extract --gzip --no-same-owner --file "$output/$archive" --directory "$package"
+package="$package/xczs-$version-linux-x86_64"
 python3 - "$package" "$source_sha" <<'PY'
 import hashlib,json,pathlib,stat,sys
 root=pathlib.Path(sys.argv[1]);raw=(root/'share/package.json').read_bytes()

@@ -1,0 +1,325 @@
+#!/usr/bin/env python3
+"""Exercise the exact release archive on a disposable GitHub-hosted Linux VM.
+
+No fixture switches, rebuilding, production hosts or persistent credentials.
+Failed installations are left for VM disposal rather than guessing cleanup authority.
+"""
+import argparse
+import hashlib
+import grp
+import http.client
+import http.cookiejar
+import http.server
+import json
+import os
+from pathlib import Path
+import pwd
+import re
+import secrets
+import shutil
+import socket
+import ssl
+import stat
+import subprocess
+import sys
+import tarfile
+import tempfile
+import threading
+import time
+import urllib.error
+import urllib.request
+import uuid
+
+SERVICE = 'xczs.service'
+ACCOUNT = 'isarmg-xczs'
+SECRETS = []
+STAGE = 'preflight'
+
+
+def diagnostic(event, **fields):
+    destination = os.environ.get('LIFECYCLE_DIAGNOSTICS')
+    if not destination:
+        return
+    directory = Path(destination)
+    directory.mkdir(mode=0o755, parents=True, exist_ok=True)
+    text = json.dumps({'event': event, 'stage': STAGE, **fields})
+    for secret in SECRETS:
+        if secret:
+            text = text.replace(secret, '[REDACTED]')
+    # Defense in depth for structured diagnostic fields and HTTP headers.
+    text = re.sub(r'(?i)(bearer\s+)[a-z0-9._~+/-]+', r'\1[REDACTED]', text)
+    with (directory / 'lifecycle.jsonl').open('a') as output:
+        output.write(text[:262144] + '\n')
+
+
+def phase(name):
+    global STAGE
+    STAGE = name
+    diagnostic('phase')
+
+
+def require(condition, message):
+    if not condition:
+        raise RuntimeError(message)
+
+
+def run(*command, input=None):
+    # Capture all output: installation/authentication output can contain secrets.
+    result = subprocess.run(command, input=input, stdout=subprocess.PIPE,
+                            stderr=subprocess.PIPE, timeout=180, check=False)
+    if result.returncode != 0:
+        diagnostic('command_failed', command=list(command), exit_code=result.returncode,
+                   stdout=result.stdout.decode(errors='replace'), stderr=result.stderr.decode(errors='replace'))
+    require(result.returncode == 0, f'{Path(command[0]).name} failed at {STAGE} (exit {result.returncode})')
+    return result.stdout
+
+
+def property_value(name):
+    return run('systemctl', 'show', SERVICE, f'--property={name}', '--value').decode().strip()
+
+
+def archive_digest(archive):
+    with archive.open('rb') as stream:
+        return hashlib.file_digest(stream, 'sha256').hexdigest()
+
+
+def verify_archive(archive, revision):
+    require(archive.is_file() and not archive.is_symlink(), 'Expected one regular release archive')
+    expected = archive_digest(archive)
+    lines = (archive.parent / 'SHA256SUMS').read_text().splitlines()
+    matches = [line.split() for line in lines if len(line.split()) == 2
+               and line.split()[1].lstrip('*') == archive.name]
+    require(len(matches) == 1 and matches[0][0] == expected, 'Release archive checksum mismatch')
+    require(len(revision) == 40 and all(c in '0123456789abcdef' for c in revision), 'Expected exact source SHA')
+    with tarfile.open(archive) as bundle:
+        members = bundle.getmembers()
+        require(all(member.isfile() or member.isdir() for member in members), 'Only regular package entries allowed')
+        require(all(not Path(member.name).is_absolute() and '..' not in Path(member.name).parts
+                    for member in members), 'Unsafe package path')
+        require(len({member.name for member in members}) == len(members), 'Duplicate package path')
+        prefix = archive.name.removesuffix('.tar.gz')
+        require(prefix.startswith('xczs-') and prefix.endswith('-linux-x86_64'), 'Wrong archive name')
+        require(all(Path(member.name).parts[0] == prefix for member in members), 'Wrong package envelope')
+        manifest = json.load(bundle.extractfile(prefix + '/share/package.json'))
+        require(manifest['identity']['product'] == 'xczs', 'Wrong product')
+        require(manifest['identity']['source_revision'] == revision, 'Wrong candidate revision')
+        require([entry['name'] for entry in manifest['services']] == [SERVICE], 'Unexpected service set')
+    return expected
+
+
+def tls_frontend(base, backend_port):
+    """A loopback-only TLS terminator, matching the supported production topology."""
+    certificate, key = base / 'cert.pem', base / 'key.pem'
+    run('openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-days', '1',
+        '-subj', '/CN=127.0.0.1', '-addext', 'subjectAltName=IP:127.0.0.1',
+        '-keyout', str(key), '-out', str(certificate))
+    key.chmod(0o600)
+
+    class Proxy(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+        def forward(self):
+            length = int(self.headers.get('Content-Length', '0'))
+            if not 0 <= length <= 65536:
+                self.send_error(413)
+                return
+            connection = http.client.HTTPConnection('127.0.0.1', backend_port, timeout=5)
+            try:
+                connection.request(self.command, self.path, self.rfile.read(length), dict(self.headers))
+                response = connection.getresponse()
+                body = response.read(1024 * 1024)
+                self.send_response(response.status)
+                for name, value in response.getheaders():
+                    if name.lower() not in ('connection', 'transfer-encoding', 'content-length'):
+                        self.send_header(name, value)
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except OSError:
+                self.send_error(502)
+            finally:
+                connection.close()
+
+        do_GET = do_POST = do_PUT = forward
+
+    server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Proxy)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(certificate, key)
+    server.socket = context.wrap_socket(server.socket, server_side=True)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return server, ssl.create_default_context(cafile=str(certificate))
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('archive', type=Path)
+    parser.add_argument('revision')
+    args = parser.parse_args()
+    require(os.geteuid() == 0 and os.environ.get('GITHUB_ACTIONS') == 'true'
+            and os.environ.get('RUNNER_ENVIRONMENT') == 'github-hosted',
+            'Requires root on a disposable GitHub-hosted runner; no fixture fallback')
+    require(Path('/run/systemd/system').is_dir(), 'Real systemd is required')
+    try:
+        pwd.getpwnam(ACCOUNT)
+    except KeyError:
+        pass
+    else:
+        raise RuntimeError('Refusing to reuse an existing service account')
+    try:
+        grp.getgrnam(ACCOUNT)
+    except KeyError:
+        pass
+    else:
+        raise RuntimeError('Refusing to reuse an existing service group')
+    for parent in ('/etc/systemd/system', '/run/systemd/system', '/run/systemd/transient',
+                   '/usr/local/lib/systemd/system', '/usr/lib/systemd/system', '/lib/systemd/system'):
+        for suffix in ('', '.d'):
+            require(not os.path.lexists(Path(parent) / (SERVICE + suffix)), 'Existing service authority must be preserved')
+    archive = args.archive.resolve(strict=True)
+    digest = verify_archive(archive, args.revision)
+    base = Path(tempfile.mkdtemp(prefix='xczs-install-smoke-', dir='/opt'))
+    base.chmod(0o755)
+    root, package, shared = base / 'installed', base / 'package', base / 'shared'
+    package.mkdir(mode=0o700)
+    with tarfile.open(archive) as bundle:
+        bundle.extractall(package, filter='data')
+    package = package / archive.name.removesuffix('.tar.gz')
+    require(archive_digest(archive) == digest, 'Archive changed during extraction')
+    run('python3', '-I', '-B', str(package / 'libexec/package.py'), 'verify', str(package))
+    with socket.socket() as reservation:
+        reservation.bind(('127.0.0.1', 0))
+        port = reservation.getsockname()[1]
+    config = json.loads((package / 'share/config/config.json.example').read_text())
+    config.update(bind=f'127.0.0.1:{port}', data_dir=str(root / 'state'),
+                  serve_path=str(shared), development=False)
+    config_path = base / 'input.json'
+    config_path.write_text(json.dumps(config))
+    config_path.chmod(0o600)
+    password = secrets.token_urlsafe(32)
+    SECRETS.append(password)
+    phase('install-and-initialize')
+    result = json.loads(run('bash', str(package / 'install.sh'), '--package', str(package),
+                           '--root', str(root), '--config', str(config_path), '--username', 'admin',
+                           '--json', input=(password + '\n').encode()))
+    require(result['status'] == 'installed' and result['services_started'] is False
+            and result['state_checked'] is True and result['permissions_verified'] is True,
+            'Installer did not confirm initialized, verified, stopped installation')
+    require(property_value('ActiveState') == 'inactive' and property_value('MainPID') == '0',
+            'Fresh install unexpectedly started')
+    identity = pwd.getpwnam(ACCOUNT)
+    require(identity.pw_uid != 0 and property_value('User') == ACCOUNT, 'Service identity is incorrect')
+    config_info = (root / 'config/config.json').stat()
+    require(config_info.st_uid == identity.pw_uid and stat.S_IMODE(config_info.st_mode) == 0o600,
+            'Installed configuration permissions differ')
+    print('PASS: verified exact release archive; real installer initialized state and left service stopped', flush=True)
+    proxy, client_tls = tls_frontend(base, port)
+    origin = f'https://127.0.0.1:{proxy.server_port}'
+    # Disable proxy use explicitly; every HTTP request stays on loopback.
+    cookies = http.cookiejar.CookieJar()
+    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),
+                                        urllib.request.HTTPSHandler(context=client_tls),
+                                        urllib.request.HTTPCookieProcessor(cookies))
+
+    def request(path, method='GET', body=None, headers=None):
+        selected = {'Origin': origin, 'Sec-Fetch-Site': 'same-origin'}
+        selected.update(headers or {})
+        with opener.open(urllib.request.Request(origin + path, data=body, method=method,
+                                               headers=selected), timeout=5) as response:
+            return response.status, response.read(1024 * 1024)
+
+    def ready():
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            try:
+                if request('/readyz')[0] == 200:
+                    require(property_value('ActiveState') == 'active', 'Service is not active')
+                    return
+            except (urllib.error.URLError, TimeoutError, ConnectionError):
+                pass
+            time.sleep(.5)
+        raise RuntimeError('Installed service did not become ready within 60 seconds')
+
+    phase('start-and-ready')
+    run('systemctl', 'enable', '--now', SERVICE)
+    ready()
+    first_pid = property_value('MainPID')
+    require(first_pid.isdecimal() and int(first_pid) > 0, 'No real service process')
+    phase('administrator-login-and-upload')
+    status, body = request('/api/v1/auth/login', 'POST',
+                           json.dumps({'username': 'admin', 'password': password}).encode(),
+                           {'Content-Type': 'application/json'})
+    session = json.loads(body)
+    SECRETS.append(session.get('csrf_token', ''))
+    SECRETS.extend(cookie.value for cookie in cookies)
+    require(status == 200 and session['authenticated'] is True and session['role'] == 'admin',
+            'Initialized administrator login failed')
+    payload = b'One-time installed release lifecycle probe.\n'
+    status, _ = request('/lifecycle.txt', 'PUT', payload,
+                        {'Content-Type': 'application/octet-stream',
+                         'X-CSRF-Token': session['csrf_token'], 'X-Xczs-Upload-Id': str(uuid.uuid4()),
+                         'X-Xczs-Upload-Length': str(len(payload))})
+    require(status == 201, 'Authenticated upload failed')
+    require(request('/lifecycle.txt') == (200, payload), 'Uploaded contents differ')
+    phase('restart-and-persistence')
+    run('systemctl', 'restart', SERVICE)
+    ready()
+    require(property_value('MainPID') != first_pid, 'Restart did not replace the service process')
+    require(request('/lifecycle.txt') == (200, payload), 'Session or uploaded data did not survive restart')
+    require((shared / 'lifecycle.txt').read_bytes() == payload, 'Business file was not persisted')
+    print('PASS: real systemd start, administrator login, upload, restart, persisted session and download', flush=True)
+    phase('stop-and-offline-check')
+    run('systemctl', 'disable', '--now', SERVICE)
+    require(property_value('MainPID') == '0', 'Writer still running after stop')
+    run('bash', str(root / 'maintenance.sh'), '--root', str(root), '--json', 'check')
+    # Uninstall is deliberately operator-managed in this product. Only remove
+    # files whose recorded inode and digest still match this installation.
+    phase('operator-uninstall-retaining-data')
+    journal = json.loads((root / 'maintenance/install.json').read_text())
+    require(journal['phase'] == 'complete' and journal['root'] == str(root), 'Wrong installation authority')
+    allowed = {Path('/etc/systemd/system/xczs.service'),
+               Path('/etc/systemd/system/xczs.service.d/state.conf')}
+    require({Path(path) for path in journal['unit_files']} == allowed, 'Unexpected installed units')
+    for name, record in journal['unit_files'].items():
+        path = Path(name)
+        info = path.lstat()
+        require(stat.S_ISREG(info.st_mode) and info.st_uid == 0
+                and (info.st_dev, info.st_ino) == (record['device'], record['inode'])
+                and hashlib.sha256(path.read_bytes()).hexdigest() == record['sha256'],
+                'Installed unit ownership changed; refusing cleanup')
+    # Verify every authority before removing any of the files.
+    for path in allowed:
+        path.unlink()
+    Path('/etc/systemd/system/xczs.service.d').rmdir()
+    run('systemctl', 'daemon-reload')
+    require(property_value('LoadState') == 'not-found', 'Service registration still exists')
+    for name in ('bin', 'libexec', 'share'):
+        shutil.rmtree(root / name)
+    require((root / 'state/state.sqlite3').is_file() and (shared / 'lifecycle.txt').read_bytes() == payload,
+            'Operator uninstall did not retain private and business data')
+    require(pwd.getpwnam(ACCOUNT) == identity, 'Account identity changed; refusing cleanup')
+    run('userdel', ACCOUNT)
+    try:
+        remaining_group = grp.getgrnam(ACCOUNT)
+    except KeyError:
+        pass
+    else:
+        require(remaining_group.gr_gid == identity.pw_gid and not remaining_group.gr_mem,
+                'Group identity changed; refusing cleanup')
+        run('groupdel', ACCOUNT)
+    proxy.shutdown()
+    proxy.server_close()
+    # This exact fresh /opt child is the only data tree disposed by the test.
+    shutil.rmtree(base)
+    phase('complete')
+    print('PASS: offline state check; operator uninstall retained data; isolated test resources removed', flush=True)
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except Exception as error:
+        # Do not print response bodies, subprocess output, passwords or tokens.
+        diagnostic('failed', error_type=type(error).__name__, message=str(error))
+        print(f'Installed lifecycle FAILED: {type(error).__name__}: {error}', file=sys.stderr)
+        sys.exit(1)

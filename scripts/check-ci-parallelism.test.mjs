@@ -147,3 +147,26 @@ test("real Playwright discovery proves shard completeness, uniqueness, and seria
     process.stdout.write(`${browser}: ${full.length} tests; shards ${parts.map(part => part.length).join(" + ")}\n`);
   }
 });
+
+
+test("push release smoke reuses its candidate for real installation with exact cached tools", () => {
+  const workflow = document.toJS();
+  assert.deepEqual(workflow.on.push.branches, ["main"]);
+  const steps = jobs.release_smoke.steps;
+  const commands = steps.map(step => step.run ?? "").join("\n");
+  assert.equal((commands.match(/npm run build:server:release/g) ?? []).length, 1);
+  assert.doesNotMatch(commands, /check-formal-release-e2e|scripts\/package-release\.sh|gh release|git tag/u);
+  assert.match(commands, /XSSI_BUILD_METADATA_DIR=.*npm run build:server:release/u);
+  const candidate = steps.findIndex(step => step.run?.includes("bash scripts/package-installed-candidate.sh"));
+  const runtime = steps.findIndex(step => step.run?.includes("bash scripts/check-release-runtime.sh"));
+  assert.ok(candidate > runtime && runtime >= 0);
+  assert.match(steps[candidate].run, /sudo env GITHUB_ACTIONS=.*RUNNER_ENVIRONMENT=/u);
+  assert.match(steps[candidate].run, /check-installed-lifecycle\.py/u);
+  assert.match(steps[candidate].run, /LIFECYCLE_DIAGNOSTICS=/u);
+  const cache = steps.find(step => step.id === "inventory_tools");
+  assert.match(cache.with.key, /runner\.os.*runner\.arch.*rust-1\.99\.0-audit-0\.22\.2-cyclonedx-0\.5\.9/u);
+  assert.equal(cache.with["restore-keys"], undefined);
+  const evidence = steps.find(step => step.name === "Retain redacted installation lifecycle evidence");
+  assert.equal(evidence.if, "${{ always() }}");
+  assert.equal(evidence.with.path, "${{ runner.temp }}/install-diagnostics");
+});

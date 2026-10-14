@@ -155,6 +155,18 @@ jobs:
           )"
           printf 'release_input_digest=%s\n' "$release_input_digest" >> "$GITHUB_OUTPUT"
 
+      - name: Exercise real installed systemd lifecycle using the exact candidate
+        shell: bash
+        env:
+          CANDIDATE_DIR: ${{ github.workspace }}/dist
+        run: |
+          set -euo pipefail
+          python3 -I -B scripts/test-installed-lifecycle.py
+          candidates=("$CANDIDATE_DIR"/xczs-*-linux-x86_64.tar.gz)
+          [[ ${#candidates[@]} == 1 && -f "${candidates[0]}" ]]
+          sudo env GITHUB_ACTIONS="$GITHUB_ACTIONS" RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
+            python3 -I -B scripts/check-installed-lifecycle.py "${candidates[0]}" "$GITHUB_SHA"
+
       - name: Transfer the verified release inputs
         id: upload_release_input
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

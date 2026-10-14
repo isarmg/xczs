@@ -161,6 +161,18 @@ jobs:
         run: |
           set -euo pipefail
           ./scripts/check-formal-release-e2e.sh
+      - name: Exercise real installed systemd lifecycle using the exact candidate
+        shell: bash
+        env:
+          CANDIDATE_DIR: ${{ runner.temp }}/formal-release-candidate
+        run: |
+          set -euo pipefail
+          python3 -I -B scripts/test-installed-lifecycle.py
+          candidates=("$CANDIDATE_DIR"/xczs-*-linux-x86_64.tar.gz)
+          [[ ${#candidates[@]} == 1 && -f "${candidates[0]}" ]]
+          sudo env GITHUB_ACTIONS="$GITHUB_ACTIONS" RUNNER_ENVIRONMENT="$RUNNER_ENVIRONMENT" \
+            python3 -I -B scripts/check-installed-lifecycle.py "${candidates[0]}" "$GITHUB_SHA"
+
       - name: Transfer the exact package that passed formal verification
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
