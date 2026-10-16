@@ -1,7 +1,6 @@
 import js from "@eslint/js";
 import nounsanitized from "eslint-plugin-no-unsanitized";
 import globals from "globals";
-import typescript from "./scripts/eslint-typescript.mjs";
 
 const authoredFiles = [
   "eslint.config.mjs",
@@ -9,7 +8,7 @@ const authoredFiles = [
   "vite.platform.config.mjs",
   "scripts/**/*.mjs",
   "tests/frontend/**/*.mjs",
-  "web/**/*.{js,jsx}",
+  "web/**/*.{js,jsx,mjs}",
 ];
 
 export default [
@@ -21,6 +20,8 @@ export default [
       "test-results/**",
       "web/dist/**",
       "web/runtime-dist/**",
+      "web/pkg/**",
+      "web/tests/fixtures/**",
     ],
   },
   {
@@ -58,14 +59,22 @@ export default [
     rules: {
       "no-restricted-globals": [
         "error",
-        { name: "fetch", message: "Use modules/http/client.js." },
-        { name: "XMLHttpRequest", message: "Use modules/upload/transport.js." },
+        { name: "fetch", message: "Use the Rust browser transport." },
+        { name: "XMLHttpRequest", message: "Use the Rust upload transport." },
       ],
       "no-restricted-syntax": [
         "error",
         {
+          selector: "MemberExpression[property.name='fetch']",
+          message: "Use the Rust browser transport.",
+        },
+        {
+          selector: "MemberExpression[property.name='XMLHttpRequest']",
+          message: "Use the Rust upload transport.",
+        },
+        {
           selector: "Property[key.name='dangerouslySetInnerHTML']",
-          message: "React HTML injection is not allowed.",
+          message: "HTML injection is not allowed.",
         },
         {
           selector: "NewExpression[callee.name='DOMParser']",
@@ -82,47 +91,6 @@ export default [
       ],
       "nounsanitized/method": "error",
       "nounsanitized/property": "error",
-    },
-  },
-  {
-    files: ["web/modules/http/client.js"],
-    rules: {
-      "no-restricted-globals": [
-        "error",
-        { name: "XMLHttpRequest", message: "Use modules/upload/transport.js." },
-      ],
-    },
-  },
-  {
-    files: ["web/modules/upload/transport.js"],
-    rules: {
-      "no-restricted-globals": [
-        "error",
-        { name: "fetch", message: "Use modules/http/client.js." },
-      ],
-    },
-  },
-  {
-    files: ["web/**/*.{ts,tsx}"],
-    ignores: ["web/dist/**", "web/runtime-dist/**"],
-    plugins: { typescript },
-    processor: "typescript/source",
-  },
-  {
-    files: ["web/modules/http/client.ts/*.js"],
-    rules: {
-      "no-restricted-globals": ["error", { name: "XMLHttpRequest", message: "Use modules/upload/transport.ts." }],
-    },
-  },
-  {
-    files: ["web/**/*.ts/*.js", "web/**/*.tsx/*.js"],
-    // Oxc erases explanatory comments in deliberately empty catch blocks.
-    rules: { "no-empty": ["error", { allowEmptyCatch: true }] },
-  },
-  {
-    files: ["web/modules/upload/transport.ts/*.js"],
-    rules: {
-      "no-restricted-globals": ["error", { name: "fetch", message: "Use modules/http/client.ts." }],
     },
   },
 ];

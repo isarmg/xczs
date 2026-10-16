@@ -24,7 +24,7 @@ curl --fail http://127.0.0.1:5000/readyz
 
 ## 构建
 
-使用仓库固定 Rust、Node.js 版本和锁文件。正式打包要求干净源码、同版本 annotated tag、固定已发布 xssi 提交。
+使用仓库固定 Rust 1.99.0、Node.js 26.7.0、Python 3.11+ 和两份 Cargo/npm 锁图。浏览器前端使用 Rust/Leptos CSR，后端保留 Axum 并兼容既有 API，按 WASM 加载、缓存与传输需要适配优化。先执行 `bash scripts/install-leptos-tools.sh` 准备固定 WASM target、Rustfmt/Clippy 和 wasm-bindgen 0.2.129；开发与验收见 [Leptos 浏览器维护](docs/leptos-browser.md)。正式打包要求干净源码、同版本 annotated tag、固定已发布 xssi 提交。
 
 ```sh
 output="$(mktemp -d /tmp/xczs-release.XXXXXXXX)"

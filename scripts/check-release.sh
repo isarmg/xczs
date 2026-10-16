@@ -49,6 +49,9 @@ run npm run check:docs
 run npm run check:independence
 run npm run build:platform
 run npm run check:types
+run cargo +1.99.0 fmt --manifest-path web/leptos/Cargo.toml --all --check
+run cargo +1.99.0 clippy --manifest-path web/leptos/Cargo.toml --locked --target wasm32-unknown-unknown --all-targets --no-deps -- -D warnings
+run python3 -B scripts/test-leptos-build.py
 run npm run test:frontend:unit
 
 cargo_audit_version="$(cargo audit --version 2>/dev/null)" || {
@@ -72,12 +75,19 @@ if [[ "${XCZS_ISOLATED_QUALITY_GATE:-}" == "1" ]]; then
     --db "$XCZS_QUALITY_AUDIT_DB" \
     --no-fetch \
     --no-yanked
+  run cargo audit \
+    --file web/leptos/Cargo.lock \
+    --db "$XCZS_QUALITY_AUDIT_DB" \
+    --no-fetch \
+    --no-yanked
 elif [[ -n "${XCZS_QUALITY_AUDIT_DB:-}" ]]; then
   printf 'XCZS_QUALITY_AUDIT_DB is reserved for the isolated release gate\n' >&2
   exit 1
 else
   run cargo fetch --locked
   run cargo audit --deny yanked
+  run cargo fetch --manifest-path web/leptos/Cargo.toml --locked
+  run cargo audit --file web/leptos/Cargo.lock --deny yanked
 fi
 
 # The independent xssi repository tests signed packaging and installation.
@@ -91,7 +101,6 @@ run cargo build --locked --release --target x86_64-unknown-linux-gnu
 release_binary="${CARGO_TARGET_DIR:-$project_dir/target}/x86_64-unknown-linux-gnu/release/xczs"
 run bash scripts/check-release-runtime.sh "$release_binary"
 
-run ./node_modules/.bin/tsc --version
 run env XCZS_FRONTEND_BINARY="$release_binary" npm run test:frontend:run
 if [[ "${XCZS_ISOLATED_QUALITY_GATE:-}" == "1" ]]; then
   printf '\n==> SKIP: The isolated release gate does not run an unpinned host Microsoft Edge; Chromium and Firefox are required matrix entries.\n'

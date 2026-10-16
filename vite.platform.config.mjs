@@ -1,17 +1,11 @@
-import { readFileSync, readdirSync } from "node:fs";
-import { createXcssReactViteConfig } from "@xcss/web/web-toolchain/vite";
+import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import {fileURLToPath,pathToFileURL} from "node:url";
 import {join} from "node:path";
+import { defineConfig } from "vite";
+import { leptosStaticAssets } from "./web/leptos-assets.mjs";
 
-const config = createXcssReactViteConfig({ base: "./" });
-function moduleEntries(directory = "web/modules") {
-  return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
-    const path = `${directory}/${entry.name}`;
-    return entry.isDirectory() ? moduleEntries(path)
-      : entry.name.endsWith(".ts") ? [[path.slice(4, -3), path]] : [];
-  });
-}
+const config = defineConfig({ base: "./", plugins: [] });
 // A blocking same-origin stylesheet hides the body before first paint under CSP.
 config.plugins.push({
   name: "xczs-font-startup-style",
@@ -23,17 +17,33 @@ config.plugins.push({
   },
 });
 config.build = {
-  ...config.build, outDir: "web/dist", assetsInlineLimit: 0, cssCodeSplit: false,
+  ...config.build, target: "esnext", modulePreload: { polyfill: false },
+  outDir: "web/dist", assetsInlineLimit: 0, cssCodeSplit: false, sourcemap: false,
   rollupOptions: {
     input: {
-      index: "web/index.ts", login: "web/login.ts",
-      "dist/platform": "web/platform.ts",
-      ...Object.fromEntries(moduleEntries()),
+      index: "web/leptos-index.js",
+      login: "web/leptos-login.js",
+      "dist/platform": "web/leptos-platform.js",
     }, preserveEntrySignatures: "strict",
     output: { format: "es", entryFileNames: "[name].js", chunkFileNames: "dist/[hash].js",
       assetFileNames: asset => asset.names.some(name => name.endsWith(".css")) ? "dist/platform.css" : "dist/[name][extname]" },
   },
 };
+config.plugins.push(leptosStaticAssets(), {
+  name: "xczs-leptos-provenance-and-budget",
+  generateBundle: { order: "post", handler(_options, bundle) {
+    this.emitFile({ type: "asset", fileName: "assets/leptos-build.json", source: readFileSync(new URL("./web/pkg/leptos-build.json", import.meta.url)) });
+    let total = 0;
+    for (const [name, asset] of Object.entries(bundle)) {
+      const size = asset.type === "chunk" ? Buffer.byteLength(asset.code) : typeof asset.source === "string" ? Buffer.byteLength(asset.source) : asset.source.byteLength;
+      total += size;
+      const limit = /\.woff2?$/iu.test(name) ? 16 * 1024 * 1024 : /\.wasm(?:\.gz)?$/u.test(name) ? 4 * 1024 * 1024 : 512 * 1024;
+      if (name.endsWith(".map")) this.error("Frontend builds must not publish source maps");
+      if (size > limit) this.error(`Asset ${name} is ${size} bytes; budget is ${limit}`);
+    }
+    if (total > 16 * 1024 * 1024) this.error("Frontend exceeds the 16 MiB asset budget");
+  } },
+});
 // xcss's authored CSS masks are compile-time inputs, not user images.
 // Emit them as immutable same-origin assets so Xczs keeps data: disallowed.
 config.plugins.push({

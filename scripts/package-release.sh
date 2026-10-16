@@ -71,7 +71,9 @@ git -C "$source_root" fetch --quiet --no-tags "$original_source" "$source_revisi
 git -C "$source_root" reset --soft FETCH_HEAD
 git -C "$source_root" read-tree HEAD
 [[ "$(git -C "$source_root" rev-parse HEAD)" = "$source_revision" && -z "$(git -C "$source_root" status --porcelain=v1 --untracked-files=all)" ]] || { echo 'Private build checkout differs from the verified snapshot.' >&2; exit 1; }
+cargo +1.99.0 fetch --manifest-path "$source_root/web/leptos/Cargo.toml" --locked
 cargo audit --deny yanked --file "$source_root/Cargo.lock"
+cargo audit --deny yanked --file "$source_root/web/leptos/Cargo.lock"
 mkdir -p "$work/stage/bin" "$work/stage/share/systemd" "$work/stage/config" "$work/metadata"
 git init --quiet "$work/xssi"
 git -C "$work/xssi" remote add origin https://github.com/isarmg/xssi.git

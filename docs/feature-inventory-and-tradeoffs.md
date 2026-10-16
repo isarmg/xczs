@@ -57,7 +57,7 @@
 
 | ID | 功能闭包 | 实现/主要依赖 | 分类 | 复杂度 | 删除后的确定后果 | 最低验证 |
 |---|---|---|---|---|---|---|
-| IDX-01 | 单共享根浏览与面包屑导航 | listing route、`web/modules/listing` | 核心 | 高 | 无法查看目录和进入子目录 | 根/空目录/特殊字符/权限 |
+| IDX-01 | 单共享根浏览与面包屑导航 | listing route、`web/leptos/src/workspace.rs` | 核心 | 高 | 无法查看目录和进入子目录 | 根/空目录/特殊字符/权限 |
 | IDX-02 | 单文件、Range、条件下载 | file response、ETag/metadata | 核心 | 高 | 文件无法可靠下载或续传 | GET/HEAD/Range/If-* 矩阵 |
 | IDX-03 | 新建目录 | MKCOL/operation、路径租约、Web | 核心 | 中 | 只能上传到既有目录 | 冲突、权限、深层路径 |
 | IDX-04 | 重命名与移动 | operation protocol、renameat、revision | 核心 | 高 | 无法整理文件；只剩上传/下载 | 同/跨目录、覆盖、竞态 |
@@ -174,7 +174,7 @@ Xczs 的认证唯一所有者是 xcss：state.sqlite3 公共表由 xcss SqliteAd
 
 | ID | 当前特性 | 详细行为 | 删除后的用户影响 | 级别 | 复杂度 |
 | --- | --- | --- | --- | --- | --- |
-| B-01 | 中英文 React 目录页面 | Rust 返回 React 挂载文档，React 渲染页面结构，文件控制器通过受认证 list API 加载数据 | 删除后没有浏览器管理界面 | 核心 | 高 |
+| B-01 | 中英文 Leptos 目录页面 | Axum 返回挂载文档，Rust/WASM 渲染页面并通过受认证 list API 加载数据 | 删除后没有浏览器管理界面 | 核心 | 高 |
 | B-02 | 面包屑导航 | 从共享根逐级进入当前目录 | 深层目录只能依靠地址栏或返回操作 | 建议保留 | 低 |
 | B-03 | 当前管理员与注销 | 右上角显示已认证管理员 username 并提供 xcss 注销按钮 | 不影响文件 CRUD，但会降低会话可见性 | 建议保留 | 低 |
 | B-04 | 文件/目录表格 | 显示名称、修改时间、大小和操作；目录不统计子目录数量 | 删除表格即失去核心浏览能力 | 核心 | 高 |
@@ -360,10 +360,10 @@ Xczs 的认证唯一所有者是 xcss：state.sqlite3 公共表由 xcss SqliteAd
 | ID | 当前特性 | 详细行为 | 取舍建议 | 级别 |
 | --- | --- | --- | --- | --- |
 | E-01 | 编译时嵌入资源 | 生产运行不读取 `web/` 外部目录，不支持运行时覆盖 | 保留可保证代码和页面版本一致 | 建议保留 |
-| E-02 | 内容摘要资源 URL | 目录页的 `index.js`、18 个 ES module、`index.css`、登录页的 `login.css` 和 favicon 由 `server/assets.rs` 的单一注册表按名称、MIME 类型和内容共同生成完整 256 位 SHA-256，即 64 个十六进制字符的资源前缀；HTML 和内联登录脚本不参与该前缀，后者由独立 CSP SHA-256 授权。静态门双向核对 `web/modules/` 与 `EMBEDDED_ASSETS` | 删除后要改用短缓存或手工版本号；混淆两套摘要或漏嵌模块会造成缓存、404 或 CSP 文档漂移 | 建议保留 |
+| E-02 | 内容摘要资源 URL | JS、WASM及其gzip变体、CSS、字体、许可和favicon由统一清单按路径、MIME、大小和SHA-256绑定完整资源前缀；HTML引用该前缀，WASM通过Vary/独立ETag协商编码版本 | 漏嵌或摘要漂移会造成缓存、404或CSP失败，必须通过真实静态资源验收 | 建议保留 |
 | E-03 | 静态资源长期缓存 | 只有精确命中的成功摘要资源使用一年 `immutable`；其他响应 no-store | 删除会增加重复资源传输，但不影响功能 | 可选 |
-| E-04 | xcss React 前端 | React 负责登录、导航和页面结构，文件操作与上传控制器拥有独占 DOM 区域；构建后统一嵌入 Rust | React 更新不能重建进行中的上传或编辑器；要求固定依赖、同源 CSP、资源预算与浏览器验收 | 已实施 |
-| E-05 | 分层 React 前端 | xcss React Vite 生成 UI/Client/合同/设计令牌/字体/许可证；产品文件模块按 shared/http/listing/operations/upload 分层。HTML 只有业务数据，Session 单独恢复；全部资源同源摘要化，禁止内联脚本和 eval | 修改资源需重建平台和 Rust，并验证 React 不重建业务独占区域 | 已实施 |
+| E-04 | Rust/Leptos 前端 | 登录、导航、标签、列表和上传状态机编译为浏览器 WASM；静态资源统一嵌入 Axum | 需要固定 Rust/WASM 工具链，保留 CSP、资源预算及真实双浏览器验收 | 已实施 |
+| E-05 | 独立浏览器构建 | 独立 Cargo.lock、随产品提供的共享 Rust 快照、Vite 静态资源收集和来源清单 | 修改 Rust/CSS 后重建前端及服务端；历史 React 基线不能代替当前 WASM 验收 | 已实施 |
 | E-06 | 单地址 TCP | bind 同时包含 IP 与端口 | 监听结果报告实际地址，连接许可保持有界 | 保障 |
 | E-07 | IPv6 | JSON `bind` 显式包含 IPv6 地址与端口；IPv6 listener 强制 `IPV6_V6ONLY`，因此 `::` 不同时承接 IPv4，双栈必须分别配置 IPv4 与 IPv6 地址 | 仅使用 IPv4 网关时可删除，但代码收益有限 | 可选 |
 | E-08 | 严格分离的前端协议与响应边界 | 目录页 Fetch 统一经 `http/client.ts` 编排并使用 30 秒 deadline；登录页单独向 xcss `/api/v1/auth/login` 发送 JSON Fetch，原生导航和文件下载不在这两个边界内，上传正文另用专用 XHR。`http/response_buffer.ts` 先按严格 `Content-Length` 拒绝再逐块读取；错误响应最多 16 KiB、成功响应最多 16 MiB，超限取消 reader/body。Problem Details 只接受 current `application/problem+json` 平铺 snake_case 结构；xcss auth 则只接受 `AdministratorSession/ErrorEnvelope`。上传 XHR 在响应头、download progress 和最终 UTF-8 字节数三个阶段拒绝超过 16 KiB。operation 与 upload 解析都绑定规范 ID、状态、长度和 offset；异常 2xx、网络或协议结果只查询原 ID，不盲目重放 mutation | 删除会恢复无限等待/缓冲、两种错误合同混淆、协议词汇漂移和无法安全判断 mutation 是否可重试的问题；降低成功上限可能误拒合法大列表 | 保障 |
@@ -390,7 +390,7 @@ Xczs 的认证唯一所有者是 xcss：state.sqlite3 公共表由 xcss SqliteAd
 | T-09 | Rust 自动化 | 单元、集成、故障注入、不可变分页/搜索快照、退役目录归档路由、Range、认证、限流、协议、符号链接、纯 fd 清理和真实停机测试；范围与 URI 编解码另有大样本性质测试 | 删除后修改核心文件语义的风险显著上升 | 开发运维 |
 | T-10 | 隔离 Playwright | Chromium 和 Firefox 必需、正式 Edge 可选；通过只呈现一个客户端地址的本地 HTTPS 网关运行，因此固定单 worker 串行执行，避免无关用例争抢生产登录令牌桶；失败重试 1 次且 `failOnFlakyTests: true`，所以重试通过仍会让门禁失败；每项测试使用随机目录。Rust HTTP 集成测试精确断言安全响应头；Playwright 验证 Secure Cookie、CSP violation、可访问性语义和真实浏览器交互 | 删除后无法验证真实浏览器行为及测试间状态污染；删除 Rust 断言会让响应头策略漂移失去精确回归保护 | 开发运维 |
 | T-11 | 依赖安全审计 | `cargo audit` 固定为 0.22.2，并与 `npm audit --audit-level=high` 一起由 lockfile/manifest push、PR、每周计划及人工任务触发；Rust 审计显式 `--deny yanked`。发布只复用通过 canonical origin、HEAD/FETCH_HEAD、新鲜度、物理/Git/内容完整性检查的宿主 RustSec DB；alternates、不安全条目、untracked 或 tracked 内容/mode 漂移均拒绝。数据库以无硬链接私有 clone 封存 revision/fetch epoch/index/config；否则在任何项目/依赖代码前用 dummy lockfile 联网刷新。先执行 sealed `--no-fetch --no-yanked` advisory pre-audit，再用私有 Cargo home `fetch --locked` 填充覆盖完整锁图的 crates.io 索引项并执行 `--deny yanked`，随后以必填 `XCZS_QUALITY_AUDIT_DB` 交给 `scripts/check.sh`，在任何构建、测试或依赖安装前复审；预审计和 yanked 检查后重验封存，完整门后随质量树销毁数据库。制品清单只记录 revision/fetch epoch | 无法及时发现已知漏洞或已撤回依赖；空 crates.io 索引会让 cargo-audit 只打印无法检查而仍返回成功，因此覆盖完整锁图的私有索引项也是绿色结论的必要输入；直接复用可变、过期、内容漂移或来源不明的数据库会破坏时间、来源和完整性证据 | 开发运维 |
-| T-12 | 统一质量与部署门禁 | `scripts/check.sh` 运行 Rustfmt、Clippy `-D warnings`、全 targets/features 测试、固定 `cargo-llvm-cov 0.8.6` 且行覆盖率不低于 70%、Cargo/npm 审计、固定 ESLint 与 `no-unsanitized` 的语法/格式/常见浏览器安全规则及边界单测、TypeScript 7.0.2 strict 全生产源码类型检查、支持围栏代码与 symlink fail-closed 的 Markdown 链接/锚点检查、含固定 `@axe-core/playwright 4.13.0` WCAG A/AA 扫描的双浏览器测试、生产解析器 JSON 校验、systemd 语法及安装器离线行为测试，并执行发布 no-clobber、Git 来源替换、归档树、SPDX notice、SHA-256 清单及失败传播和 lockfile npm cache 播种自测。统一入口自动发现 `scripts/` 与 `tests/` 中未忽略的 Shell 源，逐文件执行 `bash -n`，安装 ShellCheck 时再执行 warning 门；CI 固定安装并强制使用 0.11.0。外部/解析输入保持 `unknown` 并由类型守卫收窄，生产源码不保留显式或隐式 `any`。部署 fixture 的真实 checkout 路径包含空格、`&`、`#` 和反斜杠，运行副本再使用安全名称 | 仍可手工执行，但容易漏项或让文档/部署示例与代码漂移；ESLint 规则用于正常维护中的常见误用，不是完整跨过程别名或污点证明；严格 TypeScript 检查不等价于运行时守卫或通用 CommonMark parser。本地缺少 ShellCheck 时会明确跳过以保持离线可用，强制性由 CI 提供 | 开发运维 |
+| T-12 | 统一质量与部署门禁 | `scripts/check.sh` 运行 Rustfmt、Clippy `-D warnings`、全 targets/features 测试、固定 `cargo-llvm-cov 0.8.6` 且行覆盖率不低于 70%、Cargo/npm 审计、固定 ESLint 与 `no-unsanitized` 的语法/格式/常见浏览器安全规则及边界单测、独立 Rust/WASM 编译检查、Clippy 与协议单测、支持围栏代码与 symlink fail-closed 的 Markdown 链接/锚点检查、含固定 `@axe-core/playwright 4.13.0` WCAG A/AA 扫描的双浏览器测试、生产解析器 JSON 校验、systemd 语法及安装器离线行为测试，并执行发布 no-clobber、Git 来源替换、归档树、SPDX notice、SHA-256 清单及失败传播和 lockfile npm cache 播种自测。统一入口自动发现 `scripts/` 与 `tests/` 中未忽略的 Shell 源，逐文件执行 `bash -n`，安装 ShellCheck 时再执行 warning 门；CI 固定安装并强制使用 0.11.0。外部/解析输入必须经过字段、边界与协议绑定验证。部署 fixture 的真实 checkout 路径包含空格、`&`、`#` 和反斜杠，运行副本再使用安全名称 | 仍可手工执行，但容易漏项或让文档/部署示例与代码漂移；ESLint 规则用于正常维护中的常见误用，不是完整跨过程别名或污点证明；Rust 编译检查不等价于运行时守卫或通用 CommonMark parser。本地缺少 ShellCheck 时会明确跳过以保持离线可用，强制性由 CI 提供 | 开发运维 |
 | T-13 | 100000 项手工基准 | 默认忽略，按需创建真实超大目录检查第一页性能 | 删除不影响正确性，但失去大目录回归基线 | 开发运维 |
 | T-14 | 可验证本地发布 | 仓库质量门、精确源码快照、依赖审计、实际 SBOM、SHA-256 校验与不覆盖发布；细节见[发行指南](releasing.md) | 改动需保持源码、依赖和产物对应，文件清单由同次构建生成并绑定最终制品 | 开发运维 |
 | T-15 | 工具链与宿主记录 | Node 26.7.0、Rust 1.99.0 与锁定前端工具由各构建入口核对；完整运行包记录实际构建环境，源码 `.node-version` 是工具链基准 | 更换工具后重新执行平台和发行验证，记录宿主差异 | 开发运维 |

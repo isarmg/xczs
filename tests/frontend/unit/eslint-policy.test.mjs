@@ -6,37 +6,54 @@ import { ESLint } from "eslint";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const eslint = new ESLint({ cwd: root });
+const bootstraps = ["web/leptos-index.js", "web/leptos-login.js", "web/leptos-platform.js"];
 
-async function ruleIds(source, filePath = "web/modules/listing/controller.ts") {
+async function ruleIds(source, filePath) {
   const [result] = await eslint.lintText(source, { filePath: resolve(root, filePath) });
   return result.messages.map(message => message.ruleId);
 }
 
-test("ESLint rejects common browser injection and dynamic-code APIs", async () => {
-  assert((await ruleIds("element.innerHTML = userInput;\n")).includes("nounsanitized/property"));
-  assert((await ruleIds("document.write(userInput);\n")).includes("nounsanitized/method"));
-  assert((await ruleIds("eval(userInput);\n")).includes("no-eval"));
-  assert((await ruleIds("alert(userInput);\n")).includes("no-alert"));
-  assert((await ruleIds("h('div', { dangerouslySetInnerHTML: value });\n"))
-    .includes("no-restricted-syntax"));
+test("all Leptos bootstrap entries reject browser injection and dynamic code", async () => {
+  const probes = [
+    ["element.innerHTML = userInput;\n", "nounsanitized/property"],
+    ["document.write(userInput);\n", "nounsanitized/method"],
+    ["eval(userInput);\n", "no-eval"],
+    ["alert(userInput);\n", "no-alert"],
+    ["new Function(userInput);\n", "no-new-func"],
+    ["setTimeout('alert(1)', 1);\n", "no-implied-eval"],
+    ["h('div', { dangerouslySetInnerHTML: value });\n", "no-restricted-syntax"],
+    ["new DOMParser();\n", "no-restricted-syntax"],
+    ["range.createContextualFragment(userInput);\n", "no-restricted-syntax"],
+    ["element.setHTMLUnsafe(userInput);\n", "no-restricted-syntax"],
+  ];
+  for (const filePath of bootstraps) {
+    for (const [source, rule] of probes) {
+      assert((await ruleIds(source, filePath)).includes(rule), `${filePath}: ${rule}`);
+    }
+  }
 });
 
-test("ESLint keeps network primitives in their owning modules", async () => {
-  assert((await ruleIds("fetch('/');\n")).includes("no-restricted-globals"));
-  assert((await ruleIds("new XMLHttpRequest();\n")).includes("no-restricted-globals"));
-  assert.equal(
-    (await ruleIds("fetch('/');\n", "web/modules/http/client.ts")).length,
-    0,
-  );
-  assert.equal(
-    (await ruleIds("new XMLHttpRequest();\n", "web/modules/upload/transport.ts")).length,
-    0,
-  );
+test("Leptos bootstrap network requests remain owned by Rust", async () => {
+  const probes = [
+    ["fetch('/');\n", "no-restricted-globals"],
+    ["new XMLHttpRequest();\n", "no-restricted-globals"],
+    ["window.fetch('/');\n", "no-restricted-syntax"],
+    ["globalThis.fetch('/');\n", "no-restricted-syntax"],
+    ["new window.XMLHttpRequest();\n", "no-restricted-syntax"],
+    ["new globalThis.XMLHttpRequest();\n", "no-restricted-syntax"],
+  ];
+  for (const filePath of bootstraps) {
+    for (const [source, rule] of probes) {
+      assert((await ruleIds(source, filePath)).includes(rule), `${filePath}: ${rule}`);
+    }
+  }
 });
 
-test("browser safety rules also inspect TypeScript assertions and TSX props", async () => {
-  assert((await ruleIds("(element as HTMLElement).innerHTML = userInput;\n"))
-    .includes("nounsanitized/property"));
-  assert((await ruleIds("const page = <div dangerouslySetInnerHTML={{ __html: userInput }} />;\n", "web/react/tags.tsx"))
-    .includes("no-restricted-syntax"));
+test("the three actual production bootstrap files pass the same active rules", async () => {
+  const results = await eslint.lintFiles(bootstraps);
+  assert.equal(results.length, bootstraps.length);
+  for (const result of results) {
+    assert.equal(result.errorCount, 0, JSON.stringify(result.messages));
+    assert.equal(result.warningCount, 0, JSON.stringify(result.messages));
+  }
 });

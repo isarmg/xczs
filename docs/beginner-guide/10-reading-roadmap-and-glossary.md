@@ -4,7 +4,7 @@
 
 ## 10.1 不推荐从最大的文件开始硬读
 
-直接打开 [upload.rs](../../src/server/upload.rs) 或 [upload/manager.ts](../../web/modules/upload/manager.ts) 从第一行读到最后，通常会同时遇到路径、状态、协议、DOM、取消和恢复，难以建立主线。
+直接打开 [upload.rs](../../src/server/upload.rs) 或 [浏览器 upload.rs](../../web/leptos/src/upload.rs) 从第一行读到最后，通常会同时遇到路径、状态、协议、DOM、取消和恢复，难以建立主线。
 
 更有效的方法是：
 
@@ -58,9 +58,9 @@
 
 - [src/auth.rs](../../src/auth.rs)；
 - [src/server/administrator_web.rs](../../src/server/administrator_web.rs)：xcss HTTP 响应与产品页面的适配；
-- [web/modules/platform-session.ts](../../web/modules/platform-session.ts)：每文档唯一的 xcss 浏览器客户端；
+- [web/leptos/vendor/xcss-web/src/api.rs](../../web/leptos/vendor/xcss-web/src/api.rs)：每文档唯一的 xcss 浏览器客户端；
 - [web/login.html](../../web/login.html)；
-- [web/login.ts](../../web/login.ts)；
+- [web/leptos/src/lib.rs](../../web/leptos/src/lib.rs)；
 - [tests/auth.rs](../../tests/auth.rs) 与 [tests/frontend/auth.spec.js](../../tests/frontend/auth.spec.js)。
 
 回答：
@@ -78,8 +78,8 @@
 - [src/server/listing/snapshot.rs](../../src/server/listing/snapshot.rs)；
 - [src/server/listing/walk.rs](../../src/server/listing/walk.rs)；
 - [web/index.html](../../web/index.html)；
-- [web/modules/app.ts](../../web/modules/app.ts)；
-- [web/modules/listing/controller.ts](../../web/modules/listing/controller.ts)。
+- [web/leptos/src/lib.rs](../../web/leptos/src/lib.rs)；
+- [web/leptos/src/workspace.rs](../../web/leptos/src/workspace.rs)。
 
 回答：
 
@@ -129,8 +129,8 @@ URI → RoutePath → RootedPath → 根 FD 相对打开 → fstat identity
 
 推荐先读重命名：
 
-- [web/modules/operations/file_operations.ts](../../web/modules/operations/file_operations.ts)；
-- [web/modules/http/client.ts](../../web/modules/http/client.ts)；
+- [web/leptos/src/operations.rs](../../web/leptos/src/operations.rs)；
+- [web/leptos/src/http.rs](../../web/leptos/src/http.rs)；
 - [src/server/browser_api.rs](../../src/server/browser_api.rs)；
 - [src/server/operation_registry.rs](../../src/server/operation_registry.rs)；
 - [src/server/problem.rs](../../src/server/problem.rs)；
@@ -188,17 +188,17 @@ URI → RoutePath → RootedPath → 根 FD 相对打开 → fstat identity
 | 用户动作/现象 | 前端起点 | 后端起点 | 先看测试 |
 | --- | --- | --- | --- |
 | 登录 | `login.html/js` | `administrator_web.rs` | `tests/auth.rs`、`auth.spec.js` |
-| 打开目录 | `app.ts`、`listing/controller.ts` | `listing.rs` | `tests/pagination.rs`、`browse.spec.js` |
-| 点击文件下载 | `listing/controller.ts` | `download.rs` | `tests/range.rs` |
-| 点击房子回根目录 | `app.ts` | 普通目录 GET | `browse.spec.js` |
-| 新建文件夹 | `operations/file_operations.ts` | `browser_api.rs` mkdir | `browser_api.rs` 测试、`operations.spec.js` |
-| 新建空文件 | `operations/file_operations.ts` | `upload.rs` PUT | upload 测试 |
-| 行内重命名 | `listing/controller.ts`、`operations/file_operations.ts` | `browser_api.rs` rename | `operations.spec.js` |
-| 移动 | `operations/file_operations.ts` | `browser_api.rs` move | `browser_api.rs`、`operations.spec.js` |
-| 删除 | `operations/file_operations.ts` | `delete.rs`、`purge.rs` | delete/purge 集成测试 |
-| 上传重名确认 | `upload/manager.ts` | `browser_api.rs` preflight、`upload.rs` | `upload.spec.js` |
+| 打开目录 | `lib.rs`、`workspace.rs` | `listing.rs` | `tests/pagination.rs`、`browse.spec.js` |
+| 点击文件下载 | `workspace.rs` | `download.rs` | `tests/range.rs` |
+| 点击房子回根目录 | `lib.rs` | 普通目录 GET | `browse.spec.js` |
+| 新建文件夹 | `operations.rs` | `browser_api.rs` mkdir | `browser_api.rs` 测试、`operations.spec.js` |
+| 新建空文件 | `operations.rs` | `upload.rs` PUT | upload 测试 |
+| 行内重命名 | `workspace.rs`、`operations.rs` | `browser_api.rs` rename | `operations.spec.js` |
+| 移动 | `operations.rs` | `browser_api.rs` move | `browser_api.rs`、`operations.spec.js` |
+| 删除 | `operations.rs` | `delete.rs`、`purge.rs` | delete/purge 集成测试 |
+| 上传重名确认 | `upload.rs` | `browser_api.rs` preflight、`upload.rs` | `upload.spec.js` |
 | 页面仍显示旧界面 | asset URL/cache | `assets.rs` | `tests/assets.rs` |
-| 操作 unknown | `http/client.ts` | router/protocol/operation registry | browser API 与前端 unknown 测试 |
+| 操作 unknown | `http.rs` | router/protocol/operation registry | browser API 与前端 unknown 测试 |
 | ready 503 | 页面/探针客户端 | `server.rs`、RootedFs、StateStore | `tests/health.rs` |
 
 ## 10.4 从错误关键词反查
@@ -269,7 +269,7 @@ rg "X-Xczs-Upload-Offset" src assets tests
 给列表响应增加一个明确可计算、无敏感性的字段：
 
 1. 修改 Rust response struct；
-2. 在前端以 `unknown` 接收并验证；
+2. 在前端将网络响应视为未验证输入并完成字段/边界校验；
 3. 同步修改当前服务、当前页面与严格解析器，不保留旧 wire schema 分支；
 4. 更新 Rust API、前端单元和浏览器测试。
 
@@ -305,7 +305,7 @@ rg "X-Xczs-Upload-Offset" src assets tests
 
 ### 输入与类型
 
-- 原始请求数据是否先按 `unknown`/未验证类型处理？
+- 原始响应是否先按未验证输入处理，并完成协议绑定校验？
 - 大小、数量、深度和 UTF-8 字节预算是否在分配前检查？
 - 是否用明确 enum/struct 代替自由字符串和松散对象？
 - URL path、逻辑根内 path 与 OS path 是否分开？
@@ -407,7 +407,7 @@ Linux 中识别文件系统对象的重要字段。路径名变化不一定改�
 ### E
 
 **ES Modules**
-浏览器原生的 `import`/`export` JavaScript 模块系统。本项目没有生产前端 bundler。
+浏览器的 `import`/`export` JavaScript 模块系统。本项目由 Vite 收集薄模块、WASM、CSS、字体和许可，生产只运行 Axum 服务。
 
 **ETag**
 HTTP 资源版本标识。下载 ETag 用对象 metadata 构造，不应自动理解为正文加密摘要。
@@ -448,7 +448,7 @@ Rust 中表示将来可能完成的异步计算。丢弃 Future 不会撤销已�
 ### J
 
 **JavaScript 编译产物**
-TypeScript/TSX 源码通过 Vite 编译为浏览器执行的 JavaScript，源码类型由严格 TypeScript 配置检查。静态类型不能代替网络输入运行时校验。
+Rust/Leptos 源码编译为浏览器 WASM；wasm-bindgen 和 Vite 提供绑定与静态资源。编译期类型不能代替网络输入运行时校验。
 
 ### L
 
@@ -567,9 +567,9 @@ Extended Attribute，Linux 文件扩展属性。覆盖重放时必须限制特�
 
 修改平台或业务资源后，重新执行 npm run build:platform、Cargo 构建、重启并取得新页面。全部注册 JS（包括 login.js）、CSS、图标、字体和许可证参与资源摘要；HTML 模板本身不参与该资源摘要，修改模板时直接核对 document 与同源 CSP。
 
-### Xczs 如何使用统一的 React/Vite？
+### Xczs 如何使用 Leptos 和 Vite？
 
-Xczs 使用 xcss React Profile 和共享组件，React 负责登录、导航与文件页结构。已有文件列表、操作和上传控制器保留自己的 DOM 区域和恢复语义；React 状态更新不能重建正在工作的行或编辑器。构建产物仍编译进单个 Rust 二进制，不需要生产 Node 服务，管理员身份仍完全采用 xcss current 合同。
+Xczs 使用随产品提供的 xcss Rust 共享快照，Leptos 负责登录、导航、文件和上传状态，Vite 收集浏览器绑定、WASM、CSS、字体和许可。生命周期需要保持进行中的上传、行内编辑、焦点和清理语义。产物内嵌 Axum 二进制，生产不需要 Node 服务，管理员身份继续使用 xcss current 合同。
 
 ### SQLite 是文件索引数据库吗？
 

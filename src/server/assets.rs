@@ -1,3 +1,5 @@
+#[path = "../leptos_assets.rs"]
+mod leptos_assets;
 use super::{Response, Server, status_not_found};
 use http::{
     HeaderMap, Method,
@@ -9,6 +11,19 @@ pub fn web_assets_manifest() -> anyhow::Result<&'static str> {
     xcss::web_assets::verify_embedded(ASSETS, MANIFEST, DIGEST)?;
     Ok(MANIFEST)
 }
+pub(super) fn wasm_preload(assets_prefix: &str) -> String {
+    ASSETS
+        .iter()
+        .find(|asset| asset.path.ends_with(".wasm"))
+        .map(|asset| {
+            format!(
+                "<link rel=\"preload\" href=\"/{assets_prefix}{}\" as=\"fetch\" type=\"application/wasm\" crossorigin=\"anonymous\">",
+                asset.path
+            )
+        })
+        .unwrap_or_default()
+}
+
 pub(super) fn embedded_assets_prefix() -> String {
     format!("__xczs_assets_{DIGEST}/")
 }
@@ -33,8 +48,10 @@ impl Server {
             status_not_found(res);
             return true;
         }
-        *res =
-            xcss::web_assets::response(ASSETS, name, method, headers).map(axum::body::Body::from);
+        *res = leptos_assets::response(name, method, headers, |path, method, headers| {
+            xcss::web_assets::response(ASSETS, path, method, headers)
+        })
+        .map(axum::body::Body::from);
         // The complete inventory digest is part of this URL, including fixed filenames.
         res.headers_mut().insert(
             CACHE_CONTROL,

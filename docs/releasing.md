@@ -4,7 +4,7 @@
 
 ## 构建输入
 
-使用固定 Rust、Node.js、Cargo/npm 锁图，以及 cargo-audit 0.22.2 和 cargo-cyclonedx 0.5.9；实际依赖 SBOM 进入校验 payload。config/xssi.lock 必须指向已审查的完整 xssi 提交。源码工作区必须干净，Cargo 版本对应的 annotated tag 必须精确指向 HEAD。打包器拒绝源码符号链接、submodule 和特殊文件，从目标 Git 对象生成私有快照，逐文件核对内容，再从快照构建内嵌 Web 的程序。构建脚本同时导出本次编译的身份、schema 和 Web 清单；server 不暴露资源或身份维护命令。
+使用固定 Rust、Node.js、Python、独立浏览器 Cargo.lock 与 Cargo/npm 锁图，以及 cargo-audit 0.22.2 和 cargo-cyclonedx 0.5.9；实际依赖 SBOM 进入校验 payload。config/xssi.lock 必须指向已审查的完整 xssi 提交。源码工作区必须干净，Cargo 版本对应的 annotated tag 必须精确指向 HEAD。打包器拒绝源码符号链接、submodule 和特殊文件，从目标 Git 对象生成私有快照，逐文件核对内容，再从快照构建内嵌 Web 的程序。构建脚本同时导出本次编译的身份、schema 和 Web 清单；server 不暴露资源或身份维护命令。
 
 ```sh
 output="$(mktemp -d /tmp/xczs-release.XXXXXXXX)"
@@ -20,3 +20,5 @@ bash scripts/package-release.sh --output-dir "$output"
 唯一 contents:write job 不 checkout、不编译、不执行候选程序，只下载本次 verify_build 的精确 artifact ID 并复核整组输入摘要后发布。不发布裸 ELF 安装资产，不覆写既有不同内容。
 
 formal-release-e2e.yml 可手动执行完整制品验收：独立源码 clone、完整发行包构建、归档及清单 SHA-256 校验、逐文件权限/哈希核对及真实运行故障恢复测试。正式发布前必须完成仓库质量检查，目标 systemd 的安装与升级验收由 xssi/XSSC 的工具测试负责。
+
+前端额外需要 Rust `wasm32-unknown-unknown` target 与 wasm-bindgen-cli 0.2.129，可执行 `bash scripts/install-leptos-tools.sh` 准备。`assets/leptos-build.json` 记录浏览器/共享源码、Cargo 包来源和 JS/WASM 摘要；构建生成的 WASM gzip 变体同样进入静态资源清单。构建和真实运行时验收说明见 [Leptos 浏览器维护](leptos-browser.md)。

@@ -819,7 +819,7 @@ impl Server {
         res.headers_mut().insert(
             "content-security-policy",
             HeaderValue::from_static(
-                "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' blob:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+                "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; font-src 'self'; img-src 'self' blob:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
             ),
         );
         if options.head_only {
@@ -841,6 +841,10 @@ impl Server {
         };
         let index_data = STANDARD.encode(serde_json::to_string(&data)?);
         let output = INDEX_HTML
+            .replace(
+                "__WASM_PRELOAD__",
+                &super::assets::wasm_preload(&self.content.assets_prefix),
+            )
             .replace(
                 "__ASSETS_PREFIX__",
                 &format!("/{}", self.content.assets_prefix),

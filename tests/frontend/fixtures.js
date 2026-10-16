@@ -86,7 +86,9 @@ const test = base.extend({
     await use(page);
     await context.close();
   },
-  appPage: async ({ page }, use, testInfo) => {
+  // Authentication and durable workspace seeding have their own bounded setup
+  // budget. UI assertions retain the normal per-test and expect deadlines.
+  appPage: [async ({ page }, use, testInfo) => {
     const pageErrors = [];
     const cspViolations = [];
     page.on("pageerror", error => pageErrors.push(error.message));
@@ -105,7 +107,7 @@ const test = base.extend({
     await use(page);
     expect(pageErrors).toEqual([]);
     expect(cspViolations).toEqual([]);
-  },
+  }, { timeout: 60_000 }],
 });
 
 async function rotateSession(page) {
@@ -228,10 +230,11 @@ async function pageData(page) {
   );
   const metadata = JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
   expect(Object.keys(metadata).sort()).toEqual(["dir_exists", "href"]);
+  await expect(page.locator("html")).toHaveAttribute("data-xcss-runtime", "leptos");
   const session = await page.evaluate(async () => {
     const entry = document.querySelector('script[type="module"][src$="/index.js"]');
-    const { administratorApi } = await import(new URL("modules/platform-session.js", entry.src).href);
-    return administratorApi.currentSession();
+    const platform = await import(new URL("dist/platform.js", entry.src).href);
+    return platform.administratorSession();
   });
   expect(session?.authenticated).toBe(true);
   return { ...metadata, session };

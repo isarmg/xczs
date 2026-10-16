@@ -1339,126 +1339,63 @@ test("Preflight failure releases upload capacity reserved for the selection", as
   expect(preflightCount).toBe(2);
 });
 
-test("Evicting a focused terminal-history row moves focus to an adjacent result or the history summary", async ({
-  appPage: page,
-}) => {
+async function assertRealQueueHistoryFocus(page) {
   let releaseSecond;
   let markSecondStarted;
-  const secondGate = new Promise(resolve => {
-    releaseSecond = resolve;
-  });
-  const secondStarted = new Promise(resolve => {
-    markSecondStarted = resolve;
-  });
+  const secondGate = new Promise(resolve => { releaseSecond = resolve; });
+  const secondStarted = new Promise(resolve => { markSecondStarted = resolve; });
   await page.route("**/focus-history-*.txt", async route => {
-    if (new URL(route.request().url()).pathname.endsWith(
-      "/focus-history-second.txt",
-    )) {
+    if (new URL(route.request().url()).pathname.endsWith("/focus-history-second.txt")) {
       markSecondStarted();
       await secondGate;
     }
-    await route.fulfill({
-      status: 201,
-      headers: protocolHeaders(route.request(), "committed", "length"),
-      body: "",
-    });
+    await route.fulfill({ status: 201,
+      headers: protocolHeaders(route.request(), "committed", "length"), body: "" });
   });
-
-  await page.evaluate(async () => {
-    const entrypoint = document.querySelector('script[type="module"]').src;
-    const { createUploadManager } = await import(
-      new URL("modules/upload/manager.js", entrypoint).href
-    );
-    const encoded = document.querySelector("#index-data").content.textContent;
-    const binary = atob(encoded.trim());
-    const bytes = Uint8Array.from(
-      binary,
-      character => character.charCodeAt(0),
-    );
-    const data = JSON.parse(new TextDecoder().decode(bytes));
-    const { administratorApi } = await import(new URL("modules/platform-session.js", entrypoint).href);
-    data.session = administratorApi.currentSession();
-
-    const fixture = document.createElement("section");
-    fixture.id = "focus-history-fixture";
-    const queueMessage = document.createElement("div");
-    const emptyFolder = document.createElement("div");
-    const table = document.createElement("table");
-    const historyStatus = table.createCaption();
-    historyStatus.className = "upload-history-status hidden";
-    table.createTHead().insertRow().insertCell().textContent = "Uploads";
-    fixture.append(queueMessage, emptyFolder, table);
-    document.body.append(fixture);
-
-    window.__xczsFocusHistoryManager = createUploadManager({
-      data,
-      dialogs: {
-        showMessage: async () => undefined,
-        chooseAction: async () => {
-          throw new Error("unexpected upload confirmation");
-        },
-      },
-      uploadersTable: table,
-      queueMessage,
-      historyStatus,
-      emptyFolder,
-      onMutation: () => {},
-      onUnauthorized: () => {
-        throw new Error("unexpected authentication failure");
-      },
-      maxConcurrentUploads: 1,
-      maxTerminalRows: 1,
-    });
-  });
-
-  const addFile = name => page.evaluate(async fileName => {
-    await window.__xczsFocusHistoryManager.addFiles([
-      new File([fileName], fileName, { type: "text/plain" }),
-    ]);
-  }, name);
-  const fixture = page.locator("#focus-history-fixture");
-  await addFile("focus-history-first.txt");
-  await expect(fixture.locator("#uploadStatus0")).toHaveAttribute(
-    "aria-label",
-    "focus-history-first.txt: upload complete",
-  );
-  await fixture.getByRole("link", {
-    name: "focus-history-first.txt",
-  }).focus();
-
-  await addFile("focus-history-second.txt");
+  await selectFiles(page, "#file", Array.from({length: 200}, (_,index) => ({
+    name: `focus-history-initial-${index}.txt`, buffer: Buffer.from(String(index)),
+  })));
+  // The production queue admits one real XHR at a time. Completing the full
+  // 200-row history has a larger workload than the legacy cap-one fixture.
+  await expect(page.locator('.upload-status[aria-label$="upload complete"]')).toHaveCount(200, {timeout: 120_000});
+  await page.locator("#upload0 .cell-name a").focus();
+  await selectFiles(page, "#file", [{name:"focus-history-second.txt",buffer:Buffer.from("second")}]);
   await secondStarted;
-  await fixture.locator("#upload1 .cell-name a").evaluate(link => {
-    window.__xczsDetachedFocusHistoryLink = link;
-    link.remove();
+  // Remove the remaining name links so eviction must use the live summary,
+  // exactly as the legacy one-row fixture did with its sole adjacent result.
+  await page.locator(".uploader .cell-name a").evaluateAll(links => {
+    window.__xczsHistoryLinks = new Map();
+    for (const link of links) {
+      const row = link.closest(".uploader");
+      if (row.id === "upload0") continue;
+      window.__xczsHistoryLinks.set(row.id,link);
+      link.remove();
+    }
   });
   releaseSecond();
-  const historyStatus = fixture.locator(".upload-history-status");
-  await expect(fixture.locator("#upload0")).toHaveCount(0);
+  const historyStatus = page.locator(".upload-history-status");
+  await expect(page.locator("#upload0")).toHaveCount(0);
   await expect(historyStatus).toBeFocused();
-  await expect(historyStatus).toHaveText(
-    "1 older upload result hidden; showing the most recent 1.",
-  );
-  await page.getByRole("button", { name: "Upload files", exact: true }).focus();
+  await expect(historyStatus).toHaveText("1 older upload result hidden; showing the most recent 200.");
+  await page.getByRole("button", {name:"Upload files",exact:true}).focus();
   await expect(historyStatus).not.toHaveAttribute("tabindex");
-
-  await fixture.locator("#upload1 .cell-name").evaluate(cell => {
-    cell.append(window.__xczsDetachedFocusHistoryLink);
-    delete window.__xczsDetachedFocusHistoryLink;
+  await page.locator("#upload1 .cell-name").evaluate(cell => {
+    cell.append(window.__xczsHistoryLinks.get("upload1"));
   });
-  const second = fixture.getByRole("link", {
-    name: "focus-history-second.txt",
-  });
-  await second.focus();
+  await page.locator("#upload1 .cell-name a").focus();
+  await selectFiles(page,"#file",[{name:"focus-history-third.txt",buffer:Buffer.from("third")}]);
+  await expect(page.locator("#upload1")).toHaveCount(0);
+  await expect(page.getByRole("link",{name:"focus-history-third.txt",exact:true})).toBeFocused();
+  await expect(historyStatus).toHaveText("2 older upload results hidden; showing the most recent 200.");
+}
 
-  await addFile("focus-history-third.txt");
-  await expect(fixture.locator("#upload1")).toHaveCount(0);
-  await expect(fixture.getByRole("link", {
-    name: "focus-history-third.txt",
-  })).toBeFocused();
-  await expect(historyStatus).toHaveText(
-    "2 older upload results hidden; showing the most recent 1.",
-  );
+test("Evicting a focused terminal-history row moves focus to an adjacent result or the history summary", async ({
+  appPage: page,
+}) => {
+  // Exercise the real Rust queue and its production 200-result bound. The
+  // original cap-one JS fixture is preserved in the archived React baseline.
+  test.setTimeout(180_000);
+  await assertRealQueueHistoryFocus(page);
 });
 
 test("A full pending queue retains recoverable terminal states for failed uploads", async ({
@@ -1634,6 +1571,11 @@ test("After Retry-After expires, the original session is queried before not-seen
   appPage: page,
 }) => {
   await page.clock.install();
+  // Keep Date fixed while network and assertion callbacks run. Installing the
+  // clock alone still advances real time, so a slow browser can legitimately
+  // reach the one-second deadline before the forced pre-deadline click.
+  const retryClock = await page.evaluate(() => Date.now());
+  await page.clock.setFixedTime(retryClock);
   let putCount = 0;
   let headCount = 0;
   const uploadIds = [];
@@ -1693,6 +1635,7 @@ test("After Retry-After expires, the original session is queried before not-seen
     button.click();
   });
   expect(putCount).toBe(1);
+  await page.clock.setFixedTime(retryClock + 1_001);
   await page.clock.fastForward(1_001);
   await expect(retry).toBeEnabled();
   await retry.click();
@@ -2351,6 +2294,8 @@ test("query_upload for unknown results queries status without replaying the uplo
 
 test("Busy status queries retry only HEAD according to Retry-After", async ({ appPage: page }) => {
   await page.clock.install();
+  const retryClock = await page.evaluate(() => Date.now());
+  await page.clock.setFixedTime(retryClock);
   const methods = [];
   let headCount = 0;
   const contents = Buffer.from("query after admission");
@@ -2414,6 +2359,7 @@ test("Busy status queries retry only HEAD according to Retry-After", async ({ ap
   });
   expect(methods).toEqual(["PUT", "HEAD"]);
 
+  await page.clock.setFixedTime(retryClock + 1_001);
   await page.clock.fastForward(1_001);
   await expect(query).toBeEnabled();
   await query.click();
@@ -2428,6 +2374,8 @@ test("Status service 503 allows only HEAD retry with or without Retry-After", as
   appPage: page,
 }) => {
   await page.clock.install();
+  const retryClock = await page.evaluate(() => Date.now());
+  await page.clock.setFixedTime(retryClock);
 
   for (const retryAfter of [null, "1"]) {
     const suffix = retryAfter === null ? "immediate" : "delayed";
@@ -2490,6 +2438,7 @@ test("Status service 503 allows only HEAD retry with or without Retry-After", as
       await expect(query).toBeEnabled();
     } else {
       await expect(query).toBeDisabled();
+      await page.clock.setFixedTime(retryClock + 1_001);
       await page.clock.fastForward(1_001);
       await expect(query).toBeEnabled();
     }

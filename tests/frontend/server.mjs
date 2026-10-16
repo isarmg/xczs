@@ -68,9 +68,11 @@ writeFileSync(join(shareRoot, "overwrite-source.txt"), "replacement content");
 writeFileSync(join(shareRoot, "overwrite-target.txt"), "original content");
 writeFileSync(join(shareRoot, "delete-me.txt"), "delete target");
 
-const initialization = spawnSync("cargo", [
+const preparedFixture = process.env.XCZS_FRONTEND_FIXTURE_BINARY;
+const fixtureArguments = ["--root", authRoot, "--username", "frontend-test-0"];
+const initialization = spawnSync(preparedFixture || "cargo", preparedFixture ? fixtureArguments : [
   "run", "--locked", "--target", "x86_64-unknown-linux-gnu", "--example", "offline_fixture", "--",
-  "--root", authRoot, "--username", "frontend-test-0",
+  ...fixtureArguments,
 ], {
   cwd: projectRoot,
   env: { ...process.env, XCZS_SOURCE_REVISION: "unbound" },

@@ -49,14 +49,12 @@ Xczs 因此把控制面和数据面分开：
 
 | 文件 | 负责什么 |
 | --- | --- |
-| [upload/manager.ts](../../web/modules/upload/manager.ts) | 预检、队列、任务状态机、重试与冲突编排 |
-| [upload/selection.ts](../../web/modules/upload/selection.ts) | 文件选择、批量路径预算与重复目标校验 |
-| [upload/preflight.ts](../../web/modules/upload/preflight.ts) | 严格验证 preflight JSON |
-| [upload/protocol.ts](../../web/modules/upload/protocol.ts) | 校验 HTTP status 与上传头部状态矩阵 |
-| [http/headers.ts](../../web/modules/http/headers.ts) | 供上传、传输和正文预算共用的规范非负整数头解析 |
-| [upload/transport.ts](../../web/modules/upload/transport.ts) | XHR 正文、进度、abort 和 timeout |
-| [upload/queue.ts](../../web/modules/upload/queue.ts) | FIFO、取消和有界终态历史 |
-| [upload/view.ts](../../web/modules/upload/view.ts) | DOM 行、速度、进度、ETA、按钮和 live status |
+| [upload.rs](../../web/leptos/src/upload.rs) | 文件选择、批量预算、预检、FIFO 队列、正文、冲突、取消、恢复、进度和有界终态历史 |
+| [protocol.rs](../../web/leptos/src/protocol.rs) | status/header 矩阵、Upload ID、长度、offset、revision 与恢复判定 |
+| [http.rs](../../web/leptos/src/http.rs) | Fetch/XHR、规范整数、响应预算、进度事件、abort、timeout 与错误分类 |
+| [model.rs](../../web/leptos/src/model.rs) | 上传数据、工作区状态和列表失效 |
+
+旧 TypeScript 源码及测试完整保存在迁移基线目录，供核对历史合同；本章的协议状态和提交边界仍适用。
 
 ### 服务端
 
@@ -152,7 +150,7 @@ stateDiagram-v2
 | DOM 入队分片 | 每 50 项让出一帧 | 大批选择时卡死主线程 |
 | 客户端实际默认并发 | 1 | 控制浏览器和网络压力 |
 
-`upload/manager.ts` 支持外部注入最多 8 并发，但当前页面数据没有传入后端并发配置，因此实际走默认单并发。不要把“代码允许最大 8”误写成“页面自动并发 8 个”。
+当前 Rust 浏览器队列采用默认单并发，与原产品页面一致。历史 JS manager 单测可注入的最多 8 并发属于归档基线内部参数，不是当前页面设置。
 
 前端还会：
 
@@ -567,7 +565,7 @@ XHR abort 只停止浏览器继续等待或发送，不能撤销服务器已经�
 
 例如收到 `204` 但 `X-Xczs-Upload-Id` 变成另一个 UUID，可能表示代理、服务器 bug 或响应错配。前端不能仅看 2xx 就把任务标绿。
 
-[upload/protocol.ts](../../web/modules/upload/protocol.ts) 会联合验证：
+[protocol.rs](../../web/leptos/src/protocol.rs) 会联合验证：
 
 - 当前请求是 fresh、resume 还是 checkpoint；
 - HTTP status；
@@ -576,7 +574,7 @@ XHR abort 只停止浏览器继续等待或发送，不能撤销服务器已经�
 - length；
 - offset。
 
-该模块还提供 revision/replaceable 的严格解析器；它们与 `awaiting-confirmation` 等状态的组合关系由 `upload/manager.ts` 的目标变化和 checkpoint 处理继续验证。两层合在一起，才构成完整响应校验。
+该模块还提供 revision/replaceable 的严格解析器；它们与 `awaiting-confirmation` 等状态的组合关系由 `upload.rs` 的目标变化和 checkpoint 处理继续验证。两层合在一起，才构成完整响应校验。
 
 Problem Details 只在正确 `Content-Type` 下按有界大小解析。正文 `status` 与真实 HTTP 状态冲突会视为协议错误；若 Problem Details 的 operation/upload extension 与已验证协议头冲突，当前实现以响应头为权威并覆盖正文 extension，而不是把两者不一致本身判成失败。安全决策仍不能从英文 detail 推断。
 
@@ -677,6 +675,6 @@ npm run test:frontend:unit
 - [src/server/upload/protocol.rs](../../src/server/upload/protocol.rs)：服务端上传头、revision 和覆盖策略解析单测；
 - [tests/http.rs](../../tests/http.rs) 与 [tests/browser_api.rs](../../tests/browser_api.rs)：真实 HTTP 上传与 preflight/discard 边界；
 - [tests/frontend/upload.spec.js](../../tests/frontend/upload.spec.js)：用户实际看到的选择、进度、冲突、重试和 unknown；
-- [tests/frontend/unit/upload_protocol.test.mjs](../../tests/frontend/unit/upload_protocol.test.mjs)：前端 status/header 状态矩阵。
+- [浏览器 Rust 协议测试](../../web/leptos/src/protocol.rs)：前端 status/header 状态矩阵。
 
 下一章会介绍如何把这些测试组合成日常修改工作流。

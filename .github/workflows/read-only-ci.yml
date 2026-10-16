@@ -61,7 +61,7 @@ jobs:
               scripts/check-deployment.sh|scripts/check-formal-release-e2e.sh|\
               scripts/check-release.sh|scripts/check-release-runtime.sh|\
               scripts/package-release.sh|scripts/*installed*|scripts/*inventory-tools.py|config/xssi.lock|\
-              Cargo.toml|Cargo.lock|build.rs|package.json|package-lock.json)
+              Cargo.toml|Cargo.lock|web/leptos/Cargo.toml|web/leptos/Cargo.lock|web/leptos/vendor/*|build.rs|package.json|package-lock.json)
                 release_sensitive=true
                 break
                 ;;
@@ -72,7 +72,7 @@ jobs:
   static:
     name: Static sources and docs
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 60
     steps:
       - name: Check out the source without credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -108,13 +108,14 @@ jobs:
           git --version
           bash --version | sed -n '1p'
           shellcheck --version
+      - name: Install the fixed Leptos browser compiler
+        run: bash scripts/install-leptos-tools.sh
       - name: Install and record locked JavaScript tools
         shell: bash
         run: |
           set -euo pipefail
           npm ci --ignore-scripts --no-audit --no-fund
           npm ls --depth=0
-          ./node_modules/.bin/tsc --version
           npm run build:platform
       - name: Check Shell sources
         shell: bash
@@ -127,6 +128,7 @@ jobs:
           node --test scripts/check-ci-parallelism.test.mjs
           npm run check:js
           npm run check:types
+          python3 -B scripts/test-leptos-build.py
           npm run check:docs
           npm run check:independence
           npm run test:frontend:unit
@@ -140,7 +142,7 @@ jobs:
   rust:
     name: Rust format, lint, and tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 75
     steps:
       - name: Check out the source without credentials
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -169,7 +171,9 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
-      - name: Build embedded React platform assets
+      - name: Install the fixed Leptos browser compiler
+        run: bash scripts/install-leptos-tools.sh
+      - name: Build embedded Leptos platform assets
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
           npm run build:platform
@@ -183,12 +187,30 @@ jobs:
           cargo +"$RUST_TOOLCHAIN" clippy --locked --target "$SERVER_TARGET" --all-targets --all-features -- -D warnings
           cargo +"$RUST_TOOLCHAIN" test --locked --target "$SERVER_TARGET" --all-targets --all-features
 
+  browser_rust:
+    name: Leptos Rust format, lint, and contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - name: Check out the source without credentials
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the fixed Rust browser toolchain
+        run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt --component clippy --target wasm32-unknown-unknown
+      - name: Check the independent browser workspace
+        run: |
+          cargo +"$RUST_TOOLCHAIN" fmt --manifest-path web/leptos/Cargo.toml --all --check
+          cargo +"$RUST_TOOLCHAIN" clippy --manifest-path web/leptos/Cargo.toml --locked --target wasm32-unknown-unknown --all-targets --no-deps -- -D warnings
+          cargo +"$RUST_TOOLCHAIN" test --manifest-path web/leptos/Cargo.toml --locked --lib
+          python3 -B scripts/test-leptos-build.py
+
   coverage:
     name: Coverage
     needs: classify
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.classify.outputs.release_sensitive == 'true') }}
     runs-on: ubuntu-26.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - name: Check out the source without credentials
         id: quality_source
@@ -226,6 +248,9 @@ jobs:
           tar --no-same-owner -xzf "$archive" -C "$cargo_bin" cargo-llvm-cov
           chmod 0755 "$cargo_bin/cargo-llvm-cov"
           cargo llvm-cov --version
+      - name: Install the fixed Leptos browser compiler
+        if: ${{ !cancelled() && steps.quality_source.outcome == 'success' && steps.quality_rust.outcome == 'success' && steps.coverage_tool.outcome == 'success' }}
+        run: bash scripts/install-leptos-tools.sh
       - name: Run coverage checks
         if: ${{ !cancelled() && steps.quality_source.outcome == 'success' && steps.quality_rust.outcome == 'success' && steps.coverage_tool.outcome == 'success' }}
         shell: bash
@@ -245,7 +270,7 @@ jobs:
     needs: classify
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || needs.classify.outputs.release_sensitive == 'true') }}
     runs-on: ubuntu-26.04
-    timeout-minutes: 60
+    timeout-minutes: 90
     steps:
       - name: Check out the source without credentials
         id: quality_source
@@ -294,7 +319,7 @@ jobs:
           # No prefix fallback: profile, flags, installer pin and build contract
           # changes invalidate this lane. GitHub scopes PR reads to their base;
           # only a successful main push may populate this cache below.
-          key: xczs-release-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN }}-${{ env.SERVER_TARGET }}-debug-release-${{ steps.release_rust_environment.outputs.fingerprint }}-${{ hashFiles('Cargo.lock', '**/Cargo.toml', '**/build.rs', '.cargo/**', 'config/xssi.lock', 'package.json', 'package-lock.json', 'xcss-web-build.json', '.github/workflows/read-only-ci.yml') }}
+          key: xczs-release-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN }}-${{ env.SERVER_TARGET }}-debug-release-${{ steps.release_rust_environment.outputs.fingerprint }}-${{ hashFiles('Cargo.lock', 'web/leptos/Cargo.lock', '**/Cargo.toml', '**/build.rs', '.cargo/**', 'config/xssi.lock', 'package.json', 'package-lock.json', 'xcss-web-build.json', '.github/workflows/read-only-ci.yml') }}
       - name: Discard cached candidate products before real compilation
         env:
           RUSTUP_TOOLCHAIN: ${{ env.RUST_TOOLCHAIN }}
@@ -334,7 +359,9 @@ jobs:
         with:
           path: ${{ runner.temp }}/inventory-tools
           key: ${{ steps.inventory_tools.outputs.cache-primary-key }}
-      - name: Build embedded React platform assets
+      - name: Install the fixed Leptos browser compiler
+        run: bash scripts/install-leptos-tools.sh
+      - name: Build embedded Leptos platform assets
         if: ${{ !cancelled() && steps.quality_source.outcome == 'success' && steps.quality_node.outcome == 'success' }}
         id: release_assets
         env:
@@ -438,7 +465,7 @@ jobs:
   browser_tests:
     name: Browser tests (${{ matrix.browser }}, ${{ matrix.shard }}/${{ matrix.shards }})
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 75
     strategy:
       fail-fast: false
       matrix:
@@ -478,6 +505,8 @@ jobs:
           npm --version
           rustc +"$RUST_TOOLCHAIN" --version
           cargo +"$RUST_TOOLCHAIN" --version
+      - name: Install the fixed Leptos browser compiler
+        run: bash scripts/install-leptos-tools.sh
       - name: Install locked JavaScript tools and browser
         shell: bash
         env:

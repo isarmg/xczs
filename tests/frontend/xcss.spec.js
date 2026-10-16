@@ -1,8 +1,9 @@
 const { readFileSync } = require("node:fs");
+const { createHash } = require("node:crypto");
 const AxeBuilder = require("@axe-core/playwright").default;
 const { test, expect, pageData, login, selectFiles } = require("./fixtures.js");
 
-test("React Profile uses embedded fonts, licenses, and session recovery supplied by xcss", async ({ appPage: page }) => {
+test("Leptos frontend uses embedded fonts, licenses, and session recovery supplied by xcss", async ({ appPage: page }) => {
   await pageData(page);
   const platformCss = page.locator('link[rel="stylesheet"][href$="/dist/platform.css"]');
   const prefix = new URL("./", await platformCss.evaluate(link => link.href));
@@ -53,11 +54,38 @@ test("React Profile uses embedded fonts, licenses, and session recovery supplied
   const script = await page.context().request.get(new URL("platform.js", prefix).href);
   expect((await script.body()).byteLength).toBeLessThanOrEqual(512 * 1024);
   expect(await script.text()).not.toMatch(/sourceMappingURL/u);
-  await expect(page.locator('#xczs-root[data-xczs-renderer="react"] > header')).toHaveCount(1);
-  expect(await page.locator("#xczs-root").evaluate(root => Object.keys(root).some(key => key.startsWith("__reactContainer$")))).toBe(true);
+  await expect(page.locator('#xczs-root[data-xczs-renderer="leptos"] > header')).toHaveCount(1);
+  expect(await page.locator("#xczs-root").evaluate(root => Object.keys(root).some(key => key.startsWith("__reactContainer$")))).toBe(false);
+  await expect(page.locator("html")).toHaveAttribute("data-xcss-runtime", "leptos");
+  expect(await page.evaluate(() => performance.getEntriesByType("resource").some(entry => new URL(entry.name).pathname.endsWith(".wasm")))).toBe(true);
+  const metadataResponse = await page.context().request.get(new URL("../assets/leptos-build.json", prefix).href);
+  expect(metadataResponse.status()).toBe(200);
+  const metadata = await metadataResponse.json();
+  expect(metadata.package).toBe("xczs_web");
+  expect(metadata.profile).toBe("release");
+  expect(Object.keys(metadata.browser_inputs)).toEqual(expect.arrayContaining([
+    "Cargo.toml", "Cargo.lock", "src/lib.rs", "src/http.rs", "src/model.rs",
+    "src/operations.rs", "src/protocol.rs", "src/tags.rs", "src/upload.rs", "src/workspace.rs",
+  ]));
+  expect(Object.keys(metadata.shared_inputs)).toEqual(expect.arrayContaining([
+    "Cargo.toml", "SOURCE.json", "src/lib.rs", "src/api.rs", "src/theme.rs",
+  ]));
+  const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
+  for (const [name, digest] of Object.entries(metadata.browser_inputs)) {
+    expect(sha256(readFileSync(require("node:path").join(__dirname, "../../web/leptos", name))), name).toBe(digest);
+  }
+  for (const [name, digest] of Object.entries(metadata.shared_inputs)) {
+    expect(sha256(readFileSync(require("node:path").join(__dirname, "../../web/leptos/vendor/xcss-web", name))), name).toBe(digest);
+  }
+  expect(sha256(readFileSync(require("node:path").join(__dirname, "../../scripts/build-leptos.py")))).toBe(metadata.builder_sha256);
+  const wasmUrl = await page.evaluate(() => performance.getEntriesByType("resource").find(entry => new URL(entry.name).pathname.endsWith(".wasm")).name);
+  const wasmResponse = await page.context().request.get(wasmUrl);
+  expect(wasmResponse.status()).toBe(200);
+  expect(wasmResponse.headers()["content-type"]).toContain("application/wasm");
+  expect(sha256(await wasmResponse.body())).toBe(metadata.files["xczs_web_bg.wasm"]);
 });
 
-test("React Profile mobile light and dark themes pass WCAG AA", async ({ axePage: page }) => {
+test("Leptos frontend mobile light and dark themes pass WCAG AA", async ({ axePage: page }) => {
   await login(page);
   await page.setViewportSize({ width: 390, height: 844 });
   for (const colorScheme of ["light", "dark"]) {
@@ -128,7 +156,7 @@ test("The xcss appearance unifies the top product name, equal-height icons, and 
   await page.screenshot({ path: testInfo.outputPath("react-xcss-desktop.png") });
 });
 
-test("React theme updates neither rebuild the upload queue nor resend uploads", async ({ appPage: page }) => {
+test("Leptos theme updates neither rebuild the upload queue nor resend uploads", async ({ appPage: page }) => {
   let releaseUpload;
   let reachedUpload;
   const gate = new Promise(resolve => { releaseUpload = resolve; });

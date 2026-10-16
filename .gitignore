@@ -12,6 +12,15 @@
 target/**
 
 /web/runtime-dist/
+/web/pkg/
+/web/leptos/target/
 
 # Keep hidden runtime data directories out of source control.
 /.*-data/
+
+# Python build helper caches are generated.
+/scripts/__pycache__/
+
+/web/tests/fixtures/react-baseline/node_modules/
+
+/web/tests/fixtures/react-baseline/web/dist/

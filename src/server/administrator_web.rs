@@ -13,6 +13,10 @@ const LOGIN_HTML: &str = include_str!("../../web/login.html");
 impl Server {
     pub(super) fn send_login_page_for_get(&self, res: &mut Response) -> Result<()> {
         let output = LOGIN_HTML
+            .replace(
+                "__WASM_PRELOAD__",
+                &super::assets::wasm_preload(&self.content.assets_prefix),
+            )
             .replace("__ASSETS_PREFIX__", &self.content.assets_prefix)
             .replace(
                 "__MIN_PASSWORD_BYTES__",
@@ -95,7 +99,7 @@ impl Server {
             ),
             (
                 "content-security-policy",
-                "default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' blob:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+                "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; font-src 'self'; img-src 'self' blob:; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
             ),
         ] {
             res.headers_mut()

@@ -339,28 +339,22 @@ HTTP URI path
 
 原子 rename 不自动保证掉电持久，HTTP `PUT` 的名字也不自动让一段自定义上传协议具备业务幂等性。
 
-## 3.16 浏览器端的 ES Modules 和类型
+## 3.16 浏览器端的 Rust、WASM 和 ES Modules
 
-前端以 ES modules 启动 React 页面及文件业务控制器：
-
-```ts
-import { start } from "./modules/app.ts";
-start();
-```
-
-React 19.3.0、xcss UI、文件操作与上传控制器统一由 Vite 编译。浏览器源码使用 `.ts`/`.tsx`，继承 xcss 的严格 TypeScript 配置；登录、文件页与标签页都在构建前接受类型检查：
+生产界面位于 `web/leptos/src`，Leptos 使用 CSR 编译为浏览器 WASM。薄 ES module 加载 wasm-bindgen 绑定与静态资源；Axum 仍负责 HTTP、认证和持久化。
 
 ```sh
 npm run check:types
+npm run build:platform
 ```
 
-静态类型只能检查开发者已经声明的关系。网络 JSON、DOM dataset、HTTP header 仍属于不可信运行时输入，必须先以 `unknown` 接收，再通过守卫验证。`as` 式断言或把值写成 `any` 只是让检查器闭嘴，并没有验证现实数据。
+保留的 `check:types` 命令现在编译检查独立 Rust/WASM crate。Rust 类型和所有权不验证外部事实：JSON、DOM 属性和 HTTP 头仍须在运行时验证字段、上限、身份和协议状态；反序列化后也要完成业务绑定检查。
 
 ## 3.17 本章阅读练习
 
 1. 在 [src/main.rs](../../src/main.rs) 中搜索 `Arc::new`、`Semaphore`、`TaskTracker` 和 `CancellationToken`，分别说明它们管理什么资源。
 2. 在 [src/server/protocol.rs](../../src/server/protocol.rs) 中找类型化协议状态，观察它们在哪里才转成字符串。
-3. 在 [web/modules/http/client.ts](../../web/modules/http/client.ts) 中搜索 `unknown` 或类型守卫，找出网络响应从“不可信值”变成可用对象的位置。
+3. 在 [web/leptos/src/http.rs](../../web/leptos/src/http.rs) 中查看响应验证和错误分类，找出网络响应从“不可信值”变成可用对象的位置。
 4. 思考：如果上传正文已经写完，但浏览器在等待提交响应时断网，为什么页面不能直接显示“上传失败”？
 
 下一章会把这些概念放进真实的后端请求链。

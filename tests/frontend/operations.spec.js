@@ -1698,7 +1698,7 @@ test("Job queries reject contradictory headers and invalid success status codes"
     const entrypoint =
       document.querySelector('script[type="module"]').src;
     const { queryJob } = await import(
-      new URL("modules/http/client.js", entrypoint).href
+      new URL("dist/platform.js", entrypoint).href
     );
     return [
       await queryJob("00000000-0000-4000-8000-000000000010"),

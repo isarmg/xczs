@@ -4,7 +4,7 @@
 
 Xczs 是一个只运行在 Linux AMD64 GNU（`x86_64-unknown-linux-gnu`）上的浏览器文件管理器：服务端把某个目录设为“共享根”，认证后的管理员可以通过网页浏览、搜索、上传、下载、移动、重命名、新建和删除其中的文件。构建与运行环境按这个目标校验。
 
-它采用“一体化二进制”部署：Rust 程序既处理 API，也返回构建时嵌入的 React、xcss CSS 和文件业务 ES modules。React 负责登录及页面结构，认证协议始终复用 xcss。生产环境通常在它前面放置 HTTPS 网关，负责 TLS 和公网边界。
+它采用“一体化二进制”部署：Axum 程序既处理 API，也返回构建时嵌入的 Leptos WASM、浏览器绑定和 xcss CSS。浏览器 Rust 实现负责登录、页面和业务状态，认证合同继续复用 xcss。生产环境通常在它前面放置 HTTPS 网关，负责 TLS 和公网边界。
 
 ## 1.2 用户看到什么
 
@@ -33,7 +33,7 @@ Xczs 是一个只运行在 Linux AMD64 GNU（`x86_64-unknown-linux-gnu`）上的
 
 ```mermaid
 flowchart TB
-    P[展示层<br/>HTML / CSS / JavaScript]
+    P[展示层<br/>Leptos / WASM / HTML / CSS]
     H[HTTP 层<br/>连接、路由、认证、响应]
     D[领域协调层<br/>列表、上传、移动、删除]
     I[基础设施层<br/>RootedFs、SQLite、日志、任务与磁盘]
@@ -89,7 +89,7 @@ Xczs 同时使用两个目录，不能混在一起：
 ```mermaid
 sequenceDiagram
     participant U as 用户
-    participant J as listing/controller.ts / operations/file_operations.ts
+    participant J as workspace.rs / operations.rs
     participant R as Router
     participant A as browser_api.rs
     participant S as StateStore
@@ -115,8 +115,8 @@ sequenceDiagram
 
 ```text
 xczs/
-├── web/                 浏览器页面、样式和原生 ES modules
-│   └── modules/                  列表、操作、上传、API 等前端模块
+├── web/                 浏览器 Rust、WASM 绑定和样式
+│   └── leptos/src/               列表、操作、上传、API 等 Rust 模块
 ├── config/                       唯一当前源码配置样例
 ├── systemd/                      普通账号服务单元
 ├── libexec/                      安装器内部实现
@@ -154,19 +154,16 @@ xczs/
 - [server/rooted_fs.rs](../../src/server/rooted_fs.rs)：锚定共享根的安全文件系统操作；
 - [server/state_store.rs](../../src/server/state_store.rs)：SQLite actor 的外部接口。
 
-### `web/modules/` 的重点
+### `web/leptos/src/` 的重点
 
-- [app.ts](../../web/modules/app.ts)：页面启动和模块组装；
-- [http/client.ts](../../web/modules/http/client.ts)：`fetch`、错误解码、超时和 Operation 查询；
-- [http/headers.ts](../../web/modules/http/headers.ts)：严格解析规范的非负整数响应头；
-- [listing/controller.ts](../../web/modules/listing/controller.ts)：列表、分页、搜索、操作目标选择和行内重命名；
-- [operations/file_operations.ts](../../web/modules/operations/file_operations.ts)：新建、移动、重命名、删除、注销；
-- [operations/dialogs.ts](../../web/modules/operations/dialogs.ts)：应用内对话框和焦点恢复；
-- [upload/manager.ts](../../web/modules/upload/manager.ts)：上传编排和任务状态机；
-- [upload/selection.ts](../../web/modules/upload/selection.ts)：批量选择、路径预算和重复目标校验；
-- [upload/protocol.ts](../../web/modules/upload/protocol.ts)：严格解析上传响应头；
-- [upload/queue.ts](../../web/modules/upload/queue.ts)：有界任务队列和终态历史；
-- [upload/view.ts](../../web/modules/upload/view.ts)：进度、速度、剩余时间和操作按钮。
+- [lib.rs](../../web/leptos/src/lib.rs)：启动、会话与登录；
+- [http.rs](../../web/leptos/src/http.rs)：Fetch/XHR、超时、预算和 Operation/job 查询；
+- [model.rs](../../web/leptos/src/model.rs)：工作区、列表、筛选和上传数据；
+- [workspace.rs](../../web/leptos/src/workspace.rs)：列表、分页、搜索、行内编辑和焦点；
+- [operations.rs](../../web/leptos/src/operations.rs)：新建、移动、重命名、删除和确认；
+- [protocol.rs](../../web/leptos/src/protocol.rs)：严格上传响应矩阵及绑定验证；
+- [upload.rs](../../web/leptos/src/upload.rs)：预检、选择、队列、正文、恢复、取消与终态历史；
+- [tags.rs](../../web/leptos/src/tags.rs)：标签、关联、筛选、索引与扫描。
 
 ## 1.9 主要技术为什么合适
 
@@ -178,9 +175,9 @@ xczs/
 
 Tokio 提供异步任务、网络、信号和同步原语；Axum 组织路由及请求/响应适配，xcss Runtime 在底层管理 Hyper HTTP/1.1 连接、正文流、超时和停机。
 
-### React 与原生 ES Modules
+### Rust / Leptos 与浏览器 WASM
 
-页面没有客户端路由，但并非纯原生 DOM 应用。React 与 xcss UI 负责登录、导航和页面骨架；列表、文件操作及上传状态机继续由原生 ES modules 管理各自的 DOM 区域。Vite 在构建阶段编译所有 TypeScript/TSX 页面和业务模块，生产仍不需要 Node.js 服务。这样的混合结构复用了统一组件和认证客户端，也要求开发者明确维护 React 与业务控制器之间的 DOM 所有权，并用严格 TypeScript 约束模块接口。
+Leptos CSR 在浏览器内渲染登录、导航、列表、标签和上传界面，使用信号和生命周期清理保存状态及释放资源。Vite 收集 wasm-bindgen 绑定、WASM、CSS、字体和许可；生产不需要 Node 服务。主要代价是增加 WASM 编译工具链、调试与 JavaScript 互操作成本，收益是否体现为体积或速度需要实际测量。
 
 ### SQLite
 
@@ -213,14 +210,14 @@ Tokio 提供异步任务、网络、信号和同步原语；Axum 组织路由及
 在仓库根目录执行：
 
 ```sh
-rg --files src/server web/modules tests/frontend | sort
+rg --files src/server web/leptos/src tests/frontend | sort
 rg "MKDIR_API_PATH|MOVE_API_PATH|RENAME_API_PATH" src
-rg "class .*Error|@typedef" web/modules
+rg "struct .*Error|enum .*State" web/leptos/src
 ```
 
 尝试回答：
 
-1. 为什么 `web/index.ts` 很短，而页面逻辑仍然完整？
+1. 浏览器启动、工作区、HTTP 和上传状态分别由哪个 Rust 模块负责？
 2. 为什么状态目录不能放在共享根里面？
 3. 如果删除请求显示“请求超时”，你会先用原 Operation ID 查询，还是立即生成新 ID 再删一次？为什么？
 

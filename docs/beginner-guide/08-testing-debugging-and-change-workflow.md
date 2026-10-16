@@ -26,7 +26,7 @@
 | Playwright 测试 | 用户在真实浏览器里的完整流程是否正确 | 中到长 | 是，并经过测试 HTTPS 网关 |
 | 覆盖率、部署和完整门禁 | 工程级约束是否全部满足 | 长 | 是，多种方式 |
 
-这不是“越靠下越好”的排名。一个 TypeScript 类型错误应该先由类型检查指出，而不是等 Playwright 在页面初始化时失败；一个真实浏览器焦点问题也不可能只靠 Rust 单元测试证明。
+这不是“越靠下越好”的排名。一个 Rust 浏览器类型错误应该先由类型检查指出，而不是等 Playwright 在页面初始化时失败；一个真实浏览器焦点问题也不可能只靠 Rust 单元测试证明。
 
 可以把日常反馈环想成一个漏斗：
 
@@ -79,7 +79,7 @@ cargo install cargo-llvm-cov --version 0.8.6 --locked
 
 首次安装 Rust/npm 依赖和 Playwright 浏览器通常需要网络；Cargo 审计还需要 RustSec，并须先取得锁图所需的 crates.io 索引项，`npm audit` 要访问 npm registry。正式发布只允许 cargo-audit 0.22.2。宿主 RustSec DB 只有在 canonical origin、`HEAD=FETCH_HEAD`、实体 FETCH_HEAD 不得比当前时间早超过 7 天或晚超过 300 秒，并通过物理/Git/内容完整性检查后才能复用；alternates、不安全元数据、symlink/submodule/特殊项、untracked 路径和 tracked 内容/mode 漂移都会拒绝。合格数据库以无硬链接私有 clone 封存 revision、fetch epoch、index/config 校验和；不合格、过期或缺失时，在运行任何项目或依赖代码前用 dummy lockfile 在私有数据库联网刷新，断网即失败关闭。发布入口先执行 `cargo audit --db ... --no-fetch --no-yanked` sealed advisory pre-audit，再用私有 Cargo home 执行 `cargo fetch --locked` 取得完整锁图所需的 crates.io 索引项，并以 `--deny yanked` 拒绝已撤回依赖；空索引不能作为成功审计。随后 `XCZS_QUALITY_AUDIT_DB` 把同一封存交给 `scripts/check.sh`。封存时校验 seal 与新鲜度，pre-audit 和 yanked 检查后重验 seal；完整门后重验 seal 与新鲜度，随后销毁质量树和该 RustSec 数据库。普通本地检查若要离线执行，必须预热或提供相应缓存/镜像并预先安装相容的 Chromium、Firefox；正式 yanked 检查使用每次全新创建的私有 Cargo home，当前仍要求 registry 网络可达，宿主缓存不能替代这一步；不能把“命令已经安装”误解为所有审计和浏览器门禁一定能离线运行。
 
-所有 npm 脚本及锁定版本都可以在 [package.json](../../package.json) 和 [package-lock.json](../../package-lock.json) 中找到。生产前端没有 Node 打包步骤；这里安装的是检查和测试工具，不是服务器运行依赖。
+所有 npm 脚本及锁定版本都可以在 [package.json](../../package.json) 和 [package-lock.json](../../package-lock.json) 中找到。Node/Vite 参与构建静态资源，但不是服务器运行依赖。WASM 工具准备见 Leptos 浏览器维护文档。
 
 ## 8.3 最短反馈环
 
@@ -98,7 +98,7 @@ cargo check --locked
 
 如果改动只涉及一个小模块，接下来应运行该模块的单元测试或最相关的集成测试，而不是立即跑全部浏览器测试。
 
-### JavaScript、HTML 或 CSS 改动
+### 浏览器 Rust、JavaScript、HTML 或 CSS 改动
 
 先运行：
 
@@ -213,32 +213,16 @@ cargo test --locked --test args -- --list
 
 测试账号和固定密码只属于测试环境。不要把 [fixtures.rs](../../tests/support/fixtures.rs) 中的固定密码或 Cookie 处理复制到生产环境。
 
-## 8.5 Node 前端单元测试
+## 8.5 浏览器合同与工具单元测试
 
-Node 单元测试按模块位于 `tests/frontend/unit/*.test.mjs`，例如 [upload_protocol.test.mjs](../../tests/frontend/unit/upload_protocol.test.mjs) 和 [http_client.test.mjs](../../tests/frontend/unit/http_client.test.mjs)。它们不启动浏览器，主要直接导入纯 JavaScript 模块，验证：
-
-- 上传响应状态矩阵；
-- preflight 与 revision 解析；
-- 上传队列和历史上限；
-- mutation 失效分类；
-- Problem Details 和响应头权威性；
-- unknown 结果不会触发自动写重试。
-
-运行全部 Node 单元测试：
+当前业务协议单测在 `web/leptos/src` 的 Rust 测试中，覆盖上传 status/header 矩阵、身份/长度/offset 绑定、preflight、路径、页数据与任务历史等边界。Node 活跃单测继续验证 ESLint、Shell、发行版本及 workflow 工具。
 
 ```sh
 npm run test:frontend:unit
+npm run test:rust
 ```
 
-只运行名称匹配的用例：
-
-```sh
-node --test \
-  --test-name-pattern='upload preflight' \
-  tests/frontend/unit/upload_protocol.test.mjs
-```
-
-适合放入 Node 单测的代码通常具有这些特征：输入是普通对象、字符串或数字，输出是分类结果或新对象，不依赖真实 DOM、网络和文件选择器。需要检查焦点、表格、对话框或浏览器 API 时，应使用 Playwright。
+原 TypeScript 业务源码和 17 份单测完整保存在[迁移基线](../../web/tests/fixtures/react-baseline/README.md)，用于合同对照和独立重现旧实现；它们通过不代表当前 WASM 运行时通过。焦点、表格、对话框、上传和浏览器 API 继续由原真实 Axum/Playwright 验收覆盖。
 
 ## 8.6 JavaScript 类型、安全与文档检查
 
@@ -258,15 +242,7 @@ npm run check:js
 npm run check:types
 ```
 
-该脚本使用 TypeScript 的：
-
-```text
-strict + noEmit + isolatedModules + verbatimModuleSyntax
-```
-
-检查 [web/index.ts](../../web/index.ts)、[web/login.ts](../../web/login.ts) 、[web/react](../../web/react) 和 [web/modules](../../web/modules) 下的生产 TypeScript/TSX。它不会生成任何文件。外部数据应该先保持为 `unknown`，经类型守卫验证后再使用；用 `any` 绕开问题会破坏这一层的意义。
-
-类型通过只证明静态模型一致，不证明服务器实际按该协议返回。协议关键路径还需要 Node 单测、Rust测试和浏览器测试交叉覆盖。
+该命令保留原名称，现在执行 `python3 scripts/build-leptos.py check`，针对 `wasm32-unknown-unknown` 编译检查生产浏览器 crate。它不会替代运行时不可信响应验证、Rust 协议测试或真实浏览器验收。
 
 ### `check:docs`
 
@@ -446,8 +422,8 @@ Network 重点看：
 | 测试提示端口占用 | 手工服务占端口，或残留进程 | 普通 fixture 应用动态端口；检查是否硬编码了 5000 |
 | data_dir 权限错误 | 手写测试目录不是当前用户所有或不是 0700 | 优先复用 fixture，不要在测试中共享固定 data_dir |
 | `npm ci` 报 lockfile 不一致 | `package.json` 与 `package-lock.json` 漂移 | 有意识更新并审查 lockfile，不要直接删除它 |
-| `check:types` 大量连锁错误 | 某个 TypeScript 类型或守卫首先失效 | 从第一处 `unknown` 未收窄或返回类型变化开始 |
-| `check:js` 报危险入口 | 使用了项目禁止的 DOM、网络或模态 API | 使用现有 `shared/dom.ts`、`http/client.ts` 或批准的 transport 边界 |
+| `check:types` 编译失败 | Rust 类型或浏览器 API feature 不匹配 | 从第一处编译错误及 web-sys feature 开始 |
+| `check:js` 报危险入口 | 使用了项目禁止的 DOM、网络或模态 API | 使用 Leptos 转义文本、现有 Rust HTTP/上传边界或薄 JS 构建入口 |
 | `check:docs` 报链接不存在 | 文件改名、相对层级错误或目标章节尚未创建 | 从报错文档所在目录重新计算相对路径 |
 | Playwright 找不到浏览器 | 浏览器二进制尚未安装 | `npm run test:frontend:install` |
 | Playwright 启动即失败 | 缺系统库、测试 HTTPS 端口失败或 debug 二进制未构建 | 查看 webServer 输出，再单独运行相关准备命令 |

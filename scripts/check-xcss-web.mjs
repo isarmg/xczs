@@ -10,15 +10,27 @@ const read = path => readFileSync(resolve(root, path));
 const manifest = JSON.parse(read("package.json"));
 const lock = JSON.parse(read("package-lock.json"));
 
-for (const [name, version] of Object.entries({ react: "19.3.0", "react-dom": "19.3.0" })) {
-  assert.equal(manifest.dependencies[name], version);
-  assert.equal(lock.packages[`node_modules/${name}`].version, version);
-  assert.match(lock.packages[`node_modules/${name}`].integrity, /^sha512-/u);
+for (const name of ["react", "react-dom"]) {
+  assert.equal(manifest.dependencies[name], undefined);
+  assert.equal(lock.packages[`node_modules/${name}`], undefined);
 }
-for (const [name, version] of Object.entries({ "@types/react": "19.3.0", "@types/react-dom": "19.3.0", "@vitejs/plugin-react": "6.1.2" })) {
-  assert.equal(manifest.devDependencies[name], version);
-  assert.equal(lock.packages[`node_modules/${name}`].version, version);
+for (const name of ["@types/react", "@types/react-dom", "@vitejs/plugin-react"]) {
+  assert.equal(manifest.devDependencies[name], undefined);
+  assert.equal(lock.packages[`node_modules/${name}`], undefined);
 }
+for (const [name, entry] of Object.entries(lock.packages)) {
+  if (!name) continue;
+  assert.match(entry.resolved, /^https:\/\//u, name);
+  assert.match(entry.integrity, /^sha512-/u, name);
+}
+assert.match(manifest.scripts["check:types"], /build-leptos\.py check/u);
+assert.match(read("web/leptos/Cargo.toml").toString(), /leptos = .*csr/u);
+for (const name of ["index", "login"]) {
+  assert.match(read(`web/leptos-${name}.js`).toString(), /pkg\/xczs_web\.js/u);
+}
+const vite = read("vite.platform.config.mjs").toString();
+assert.doesNotMatch(vite, /createXcssReactViteConfig|web\/index\.ts|web\/login\.ts/u);
+assert.match(vite, /leptosStaticAssets/u);
 for (const packageName of ["@xcss/web"]) {
   const url = "https://github.com/isarmg/xcss/releases/download/v1.0.0/xcss-web-1.0.0.tgz";
   assert.equal(manifest.dependencies[packageName], url);
@@ -40,7 +52,7 @@ for (const page of ["index.html", "login.html"]) {
   assert.match(read(`web/${page}`).toString(), /data-xcss-appearance="content-blocks"/u);
 }
 assert.match(read("xcss-product.toml").toString(), /web_profile = "web-react-admin"/u);
-console.log("xcss 1.0.0 immutable React Web and complete font startup verified");
+console.log("xcss 1.0.0 immutable static resources, Leptos runtime and complete font startup verified");
 
 assert.equal(typeof prepareApplicationFonts, "function");
 assert.equal(typeof startAfterFonts, "function");

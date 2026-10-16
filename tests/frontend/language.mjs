@@ -11,13 +11,21 @@ const authored = [file.path, file.name, tag.name, '中文目录', '/文件根目
 const base = 'http://xczs-language.test';
 const root = resolve(import.meta.dirname, '../..');
 const html = (await readFile(resolve(root, 'web/index.html'), 'utf8'))
+  .replace('__WASM_PRELOAD__', '')
   .replaceAll('__ASSETS_PREFIX__', '/__xczs__/')
   .replace('__INDEX_DATA__', Buffer.from(JSON.stringify({ href: '/', dir_exists: true })).toString('base64'));
+const loginHtml = (await readFile(resolve(root, 'web/login.html'), 'utf8'))
+  .replace('__WASM_PRELOAD__', '')
+  .replaceAll('__ASSETS_PREFIX__', '__xczs__/')
+  .replace('__MIN_PASSWORD_BYTES__', '12')
+  .replace('__MAX_PASSWORD_BYTES__', '1024');
 
-async function fixture(page) {
+async function fixture(page, { allowLogin = false } = {}) {
   await page.route(base + '/**', async route => {
     const path = new URL(route.request().url()).pathname;
+    if (path === '/__xczs__/login') return route.fulfill({contentType:'text/html',body:loginHtml});
     if (path.startsWith('/api/v1/')) {
+      if (allowLogin && path === '/api/v1/auth/login') return route.fulfill({json:session});
       if (route.request().method() !== 'GET') return route.fulfill({ status: 409, json: { code: 'capacity_exhausted', message: '内部 SECRET', retryable: false, request_id: 'capacity-409' } });
       const payload = path === '/api/v1/auth/session' ? session
         : path.endsWith('/tags') ? tagPage
@@ -30,7 +38,7 @@ async function fixture(page) {
     if (path === '/__xczs__/api/list') return route.fulfill({ json: { paths: [{ path_type: 'File', name: file.name, mtime: 1791446400000, size: 2048, revision: 'a'.repeat(64) }], next_cursor: null, file_tags: [{ file_id: 1, tags: [tag], tags_has_more: false }] } });
     if (path.startsWith('/__xczs__/')) {
       const name = path.slice('/__xczs__/'.length);
-      const type = name.endsWith('.js') ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : name.endsWith('.woff2') ? 'font/woff2' : 'image/svg+xml';
+      const type = name.endsWith('.js') ? 'text/javascript' : name.endsWith('.css') ? 'text/css' : name.endsWith('.woff2') ? 'font/woff2' : name.endsWith('.wasm') ? 'application/wasm' : name.endsWith('.json') ? 'application/json' : 'image/svg+xml';
       return route.fulfill({ contentType: type, body: await readFile(resolve(root, 'web/runtime-dist', name)) });
     }
     return route.fulfill({ contentType: 'text/html', body: html });
@@ -53,7 +61,10 @@ for (const engine of [chromium, firefox]) {
       const page = await context.newPage(), errors = [];
       page.on('pageerror', error => errors.push(error.message));
       await fixture(page);
+      const wasm = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('.wasm') && response.status() === 200);
       await page.goto(base + '/?lang=zh-CN#files');
+      await wasm;
+      await expect(page.locator('html')).toHaveAttribute('data-xcss-runtime', 'leptos', { timeout: 30_000 });
       await expect(page.getByRole('table', { name: '文件列表', exact: true })).toBeVisible();
       await page.getByRole('button', { name: '切换为英文', exact: true }).click();
       await expect(page.getByRole('table', { name: 'File list', exact: true })).toBeVisible();
@@ -86,6 +97,21 @@ for (const engine of [chromium, firefox]) {
       assert.deepEqual(errors, []);
       await context.close();
     }
+    const loginContext = await browser.newContext({ locale:'en-US', viewport:{width:360,height:900} });
+    const loginPage = await loginContext.newPage();
+    await loginPage.addInitScript(() => {
+      Storage.prototype.getItem = () => { throw new Error('storage blocked'); };
+      Storage.prototype.setItem = () => { throw new Error('storage blocked'); };
+    });
+    await fixture(loginPage,{allowLogin:true});
+    await loginPage.goto(base+'/__xczs__/login?lang=zh-CN');
+    await expect(loginPage.locator('html')).toHaveAttribute('data-xcss-runtime','leptos');
+    await loginPage.getByLabel('用户名',{exact:true}).fill('admin');
+    await loginPage.getByLabel('密码',{exact:true}).fill('valid-test-password');
+    await loginPage.getByRole('button',{name:'登录',exact:true}).click();
+    await expect(loginPage).toHaveURL(base+'/?lang=zh-CN');
+    await expect(loginPage.getByRole('table',{name:'文件列表',exact:true})).toBeVisible();
+    await loginContext.close();
     console.log(`${engine.name()}: bilingual tags, dialogs, capacity errors, authored names and mobile layout passed`);
   } finally { await browser.close(); }
 }

@@ -23,11 +23,11 @@ function axe(page) {
   return new AxeBuilder({ page }).withTags(axeTags);
 }
 
-function walkJavaScript(root) {
+function walkJavaScript(root, extension = /\.tsx?$/u) {
   return readdirSync(root, { withFileTypes: true }).flatMap(entry => {
     const path = join(root, entry.name);
-    if (entry.isDirectory()) return walkJavaScript(path);
-    return entry.isFile() && /\.tsx?$/u.test(entry.name) ? [path] : [];
+    if (entry.isDirectory()) return walkJavaScript(path, extension);
+    return entry.isFile() && extension.test(entry.name) ? [path] : [];
   });
 }
 
@@ -319,20 +319,23 @@ test("File pages, inline editors, and operation dialogs pass the axe WCAG A/AA s
 });
 
 test("Production frontend source has no dynamic HTML injection or native browser modal calls", async () => {
-  const modulesDir = resolve(__dirname, "../../web/modules");
   const files = [
-    resolve(__dirname, "../../web/index.ts"),
-    resolve(__dirname, "../../web/login.ts"),
-    resolve(__dirname, "../../web/platform.ts"),
-    ...walkJavaScript(resolve(__dirname, "../../web/react")),
-    ...walkJavaScript(modulesDir),
+    resolve(__dirname, "../../web/leptos-index.js"),
+    resolve(__dirname, "../../web/leptos-login.js"),
+    resolve(__dirname, "../../web/leptos-platform.js"),
+    ...walkJavaScript(resolve(__dirname, "../../web/leptos/src"), /\.rs$/u),
+    ...walkJavaScript(resolve(__dirname, "../../web/leptos/vendor/xcss-web/src"), /\.rs$/u),
   ];
   const forbidden = /\b(?:innerHTML|outerHTML|insertAdjacentHTML|document\.write|DOMParser)\b/;
   const nativeModal = /(?<![.\w])(?:alert|confirm|prompt)\s*\(|\b(?:globalThis|self|window)\s*\.\s*(?:alert|confirm|prompt)\s*\(/u;
   for (const file of files) {
     const source = readFileSync(file, "utf8");
     expect(source, file).not.toMatch(forbidden);
-    expect(source, file).not.toMatch(nativeModal);
+    if (file.endsWith(".rs")) {
+      expect(source, file).not.toMatch(/\b(?:set_inner_html|set_outer_html|insert_adjacent_html|write_with_str|alert_with_message|confirm_with_message|prompt_with_message)\b/u);
+    } else {
+      expect(source, file).not.toMatch(nativeModal);
+    }
   }
 });
 

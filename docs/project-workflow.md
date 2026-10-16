@@ -12,7 +12,7 @@
 - 唯一角色是 `admin`；每个有效管理员拥有整个共享目录的浏览和文件管理能力；
 - 服务只通过内网 HTTP/TCP 地址监听，HTTPS 统一由网关终止；
 - TCP 接收错误使用分类日志和有界退避；SIGINT/SIGTERM 触发分阶段优雅停机；
-- 目录页使用编译进程序的 React 页面、xcss CSS、Vite 编译的 TypeScript 文件业务模块、Maple 字体和图标；采用 xcss React Vite Profile；
+- 目录页使用编译进程序的 Leptos WASM、xcss CSS、Maple 字体和图标；Vite 负责静态资源收集；
 - 浏览器通过 HTTPS 网关使用会话 Cookie 进行下载、持久化上传、删除和同源 JSON POST 操作；
 
 ## 1. 总体流程树
@@ -128,7 +128,7 @@ CSRF Token 与会话一起在服务端内存中创建和保存。除尚未建立
 
 ```mermaid
 flowchart LR
-    SOURCE["仓库 web/login.html、index.html<br/>login.css、index.css、index.js、modules/ 下全部 .js、favicon"] --> COMPILE["include_str!/include_bytes!"]
+    SOURCE["仓库 web/login.html、index.html<br/>login.css、index.css、浏览器绑定、WASM、字体及favicon"] --> COMPILE["include_str!/include_bytes!"]
     COMPILE --> BINARY["编译进 xczs 可执行文件"]
     BINARY --> HASH["启动时按名称、MIME、内容计算<br/>内置 JS、CSS、图标 SHA-256 摘要"]
     HASH --> URL["GET/HEAD /__xczs_assets_&lt;64个十六进制字符&gt;/资源"]
@@ -137,7 +137,9 @@ flowchart LR
     KNOWN -- 否 --> MISS["404 + private, no-store"]
 ```
 
-Xczs 使用 xcss React Profile：`platform.js` 公开 React 挂载入口和共享 Admin Client/合同，`react/application.js` 使用共享 React UI 和工作区配置。先执行 `npm ci`、`npm run build:platform`，再编译 Rust。构建输出同源 ESM、CSS、正体非连字字体和许可证，单资源 512 KiB 硬预算、禁止 source map；声明文件只用于开发，不进入运行时资源。文件工作区由共享 React 入口挂载。文件/上传控制器在 React 首次渲染之后初始化，其表格行、对话框和编辑器是独占区域，主题局部更新不重建它们。资源按名称、MIME 和内容摘要后嵌入；登录 CSP 只允许同源脚本、样式、字体和构建 SVG，不允许内联脚本、eval 或 data:。运行时没有资源覆盖，也不需要 Node 服务。
+Xczs 使用 Rust/Leptos CSR。`leptos-index.js`、`leptos-login.js` 初始化同一 WASM，`leptos-platform.js` 导入静态样式、字体许可和现有 corner 绘制适配器。先准备固定 Rust WASM target、wasm-bindgen 与 Node 工具，执行 `npm ci`、`npm run build:platform`，再编译 Axum。浏览器业务状态及请求编排位于 `web/leptos/src`，原 React/TypeScript 源码和单测留在迁移基线目录。
+
+产物包含同源 ESM、WASM、CSS、正体非连字字体、许可和 `assets/leptos-build.json`，禁止 source map。常规资源预算为 512 KiB，WASM 单独为 4 MiB，字体和总量为 16 MiB。资源按名称、MIME 和内容摘要嵌入；CSP 为 WASM 编译提供精确许可，仍禁止内联脚本和一般 JavaScript eval。正式程序仍不需要 Node 服务，保留 Axum 与原有 API 合同。细节见[Leptos 浏览器维护](leptos-browser.md)。
 
 ## 5. 公共路由
 
@@ -805,7 +807,7 @@ flowchart TD
     TEST["./scripts/check.sh（日常开发门）"] --> TOOLCHAIN["rustc --version / cargo --version<br/>确认固定的 1.99.0 工具链"]
     TOOLCHAIN --> RUST["cargo fmt --all --check<br/>cargo clippy -D warnings + 全 targets/features 测试"]
     RELEASE["./scripts/check-release.sh（干净提交发行门）"] --> QUALITY["总行覆盖率、依赖审计、部署、浏览器与打包自测"]
-    TEST --> STATIC["ESLint 浏览器安全规则 + TypeScript strict<br/>Bash 语法/可用时 ShellCheck + Markdown 链接<br/>生产解析器 JSON + systemd/安装器 + 发布来源/树自测"]
+    TEST --> STATIC["ESLint 浏览器边界规则 + Rust/WASM 编译检查<br/>Bash 语法/可用时 ShellCheck + Markdown 链接<br/>生产解析器 JSON + systemd/安装器 + 发布来源/树自测"]
     STATIC --> FRONT["npm run test:frontend"]
     RUST --> ROUTES["HTTP/1、Argon2id 计算容量、会话、CSRF、health/ready、遍历复核、Range 与上传"]
     ROUTES --> MAINTENANCE["过期 upload DB 行/orphan 扫描、purge outbox/切片、元数据保留<br/>operation 重放/冲突/未知结果回归测试"]
@@ -822,9 +824,9 @@ flowchart TD
 
 `build.rs` 在 Cargo 构建脚本阶段同时要求目标架构 `x86_64`、操作系统 `linux`、环境 `gnu` 和 64 位指针；只有精确 `x86_64-unknown-linux-gnu` 进入应用编译。它还把构建所对应的 Git SHA 写入 `xczs --version`；正式发布脚本显式传入完整 commit SHA，普通源码目录构建则读取当前仓库引用，无法确定时显示 `unknown`。`rust-toolchain.toml` 让 rustup 在仓库目录中自动选择 Rust/rustc/Cargo 1.99.0，并提供 Clippy 与 Rustfmt；`Cargo.toml` 用 `edition = "2024"` 和 `rust-version = "1.99"` 声明源码 edition 与最低 Rust 版本。项目不提供内置 TLS，唯一 Rust 服务端构建与网关后的 HTTP 后端部署一致。
 
-JavaScript 安全门固定使用 ESLint 10.11.0 的核心规则和 `eslint-plugin-no-unsanitized` 4.1.5，检查 authored TypeScript/TSX 编译后的 JavaScript 语法、基础格式、常见动态 HTML 注入、动态执行、原生模态框以及 `fetch`/XHR 模块边界；少量策略单测同时验证常见误用会失败、合法传输模块会通过。规则服务于正常维护中的误用预防，不尝试重建完整跨过程别名和字符串求值器。TypeScript 7.0.2 另以 `strict + noEmit + isolatedModules + verbatimModuleSyntax` 检查 `web/index.ts`、`web/login.ts` 和全部生产模块；外部/解析输入保持为 `unknown` 并经守卫收窄，生产源码不保留显式或隐式 `any`。这不等价于运行时守卫或完整污点证明。统一 Shell 入口在 Git 工作区自动发现 `scripts/` 与 `tests/` 中未忽略的 `.sh` 文件，在已验证且不含 Git 元数据的发行归档中扫描同一目录，并逐个执行 `bash -n`；策略单测覆盖无 Git 元数据的成功与失败路径。本地存在 ShellCheck 时运行 warning 门，缺失时明确跳过且不联网，远程 CI 则固定安装并强制使用 0.11.0。部署门禁验证安装器纯函数、所选配置与 systemd 单元；不安装或启动主机服务。
+JavaScript 安全门使用固定 ESLint 与 `no-unsanitized` 检查薄浏览器入口、测试和工具，保留动态 HTML、动态执行及网络原语边界的策略单测。生产浏览器类型检查由独立 Rust/WASM crate 的 Cargo check、Rustfmt 和 Clippy 执行，外部响应仍需运行时验证；旧 TS/TSX 处理器只用于保留的工具策略样例和历史基线。这些门禁不等价于完整污点证明。统一 Shell 入口在 Git 工作区自动发现 `scripts/` 与 `tests/` 中未忽略的 `.sh` 文件，在已验证且不含 Git 元数据的发行归档中扫描同一目录，并逐个执行 `bash -n`；策略单测覆盖无 Git 元数据的成功与失败路径。本地存在 ShellCheck 时运行 warning 门，缺失时明确跳过且不联网，远程 CI 则固定安装并强制使用 0.11.0。部署门禁验证安装器纯函数、所选配置与 systemd 单元；不安装或启动主机服务。
 
-远程反馈由 `.github/workflows/read-only-ci.yml` 分层执行：静态层运行 Bash/ShellCheck、ESLint、TypeScript 和文档门，Rust 层运行 Rustfmt、Clippy 与全 targets/features 测试，浏览器层分别运行 Chromium 和 Firefox；质量层另跑覆盖率、部署行为、release self-test 与 release binary smoke。主分支推送总是执行质量层；PR 先以完整 base/head 对比分类，普通业务修改保持轻量，部署、打包、工作流或依赖边界变更则执行质量层。质量层的四项检查使用各自的明确前置条件；除运行被取消或自身前置失败外，一项检查失败不会跳过其他独立项。浏览器入口从 Cargo 的结构化构建输出解析本次候选路径，不依赖默认 `target/` 或陈旧二进制。`.github/workflows/dependency-audit.yml` 在依赖清单变更及每周计划任务上运行 RustSec/npm audit，并把 yanked crate 作为失败；`.github/workflows/performance.yml` 仅在人工触发时用 release 构建扫描十万真实目录项，并对首屏 30 秒宽松基线失败关闭；标签工作流先核对精确源码，再由只读任务审计依赖、构建并校验二进制，最后仅由写权限任务复核并发布同次构建的 artifact。`.github/workflows/formal-release-e2e.yml` 可人工触发，执行完整 SHA-256 校验包入口并独立复核；便捷标签发行不等待该扩展验收。这些工作流除最终发布 job 外只有只读权限，checkout 不保留凭据，Action 固定完整 commit SHA；结构化 JSON 策略逐 job 检查权限、依赖和 artifact 来源。所有 Node 任务只接受 26.7.0，仓库的两个权威入口也会在运行时精确验证 `.node-version` 与 `node --version`。Rust 1.99.0、ShellCheck 0.11.0 及下载工具归档摘要也均固定。静态、Rust、浏览器、依赖审计、性能和 release binary 继续使用托管 `ubuntu-24.04`；质量 job 与正式包 E2E 使用 x64 `ubuntu-26.04`。GitHub 当前把 26.04 标为 preview，调度或镜像回归必须阻断门禁而不能触发旧语法 fallback。各 job 都把实际 `ImageVersion` 和工具版本写入日志。正式包 E2E 只在隔离 clone 中创建临时本地 tag，且不能替代发布者对最终远端 tag 的批准。
+远程反馈由 `.github/workflows/read-only-ci.yml` 分层执行：静态层运行 Bash/ShellCheck、ESLint、Rust/WASM 编译检查和文档门，Rust 层运行 Rustfmt、Clippy 与全 targets/features 测试，浏览器层分别运行 Chromium 和 Firefox；质量层另跑覆盖率、部署行为、release self-test 与 release binary smoke。主分支推送总是执行质量层；PR 先以完整 base/head 对比分类，普通业务修改保持轻量，部署、打包、工作流或依赖边界变更则执行质量层。质量层的四项检查使用各自的明确前置条件；除运行被取消或自身前置失败外，一项检查失败不会跳过其他独立项。浏览器入口从 Cargo 的结构化构建输出解析本次候选路径，不依赖默认 `target/` 或陈旧二进制。`.github/workflows/dependency-audit.yml` 在依赖清单变更及每周计划任务上运行 RustSec/npm audit，并把 yanked crate 作为失败；`.github/workflows/performance.yml` 仅在人工触发时用 release 构建扫描十万真实目录项，并对首屏 30 秒宽松基线失败关闭；标签工作流先核对精确源码，再由只读任务审计依赖、构建并校验二进制，最后仅由写权限任务复核并发布同次构建的 artifact。`.github/workflows/formal-release-e2e.yml` 可人工触发，执行完整 SHA-256 校验包入口并独立复核；便捷标签发行不等待该扩展验收。这些工作流除最终发布 job 外只有只读权限，checkout 不保留凭据，Action 固定完整 commit SHA；结构化 JSON 策略逐 job 检查权限、依赖和 artifact 来源。所有 Node 任务只接受 26.7.0，仓库的两个权威入口也会在运行时精确验证 `.node-version` 与 `node --version`。Rust 1.99.0、ShellCheck 0.11.0 及下载工具归档摘要也均固定。静态、Rust、浏览器、依赖审计、性能和 release binary 继续使用托管 `ubuntu-24.04`；质量 job 与正式包 E2E 使用 x64 `ubuntu-26.04`。GitHub 当前把 26.04 标为 preview，调度或镜像回归必须阻断门禁而不能触发旧语法 fallback。各 job 都把实际 `ImageVersion` 和工具版本写入日志。正式包 E2E 只在隔离 clone 中创建临时本地 tag，且不能替代发布者对最终远端 tag 的批准。
 
 正式发布脚本只接受干净且由匹配 Cargo 版本的 annotated tag 精确指向的 HEAD。它从目标 Git 对象生成私有源码快照，逐 blob 验证内容和模式，再填入该快照自己的 Git 元数据与索引。原工作区和私有副本在构建完成后均必须保持相同身份与干净状态，已有发行资产不会被覆盖。独立 xssi 固定完整 Git 提交，服务程序和辅助程序使用同一当前产品源码编译。固定 cargo-audit 检查锁图，固定 cargo-cyclonedx 生成实际依赖 SBOM；这些安全工具不可由缺失工具或缺少文件校验的结果替代。
 

@@ -16,6 +16,9 @@ assertWebOutput(root, root, defaultRuntimeOutput, runtimeOutput);
 const scratch = mkdtempSync("/tmp/xczs-platform-build-");
 
 try {
+  const build = spawnSync("python3", ["scripts/build-leptos.py", "build", ...(process.env.XCZS_LEPTOS_DEBUG === "1" ? ["--debug"] : []), ...(process.env.CARGO_NET_OFFLINE === "true" ? ["--offline"] : [])], { cwd: root, env: process.env, stdio: "inherit" });
+  if (build.error) throw build.error;
+  if (build.status !== 0) throw new Error("Leptos/WASM compilation failed");
   for (const directory of ["web", "node_modules"]) {
     const metadata = lstatSync(join(root, directory));
     if (!metadata.isDirectory() || metadata.isSymbolicLink()) {
@@ -24,17 +27,12 @@ try {
   }
   cpSync(join(root, "web"), join(scratch, "web"), {
     recursive: true,
-    filter: source => !["dist", "runtime-dist", "types"].includes(relative(join(root, "web"), source).split("/")[0]),
+    filter: source => !["dist", "runtime-dist", "types", "tests"].includes(relative(join(root, "web"), source).split("/")[0]),
   });
   cpSync(join(root, "node_modules"), join(scratch, "node_modules"), { recursive: true });
   for (const file of ["package.json", "vite.platform.config.mjs"]) {
     cpSync(join(root, file), join(scratch, file));
   }
-  const types = spawnSync(process.execPath, [
-    join(scratch, "node_modules/typescript/bin/tsc"), "-p", "web/tsconfig.json",
-  ], { cwd: scratch, env: process.env, stdio: "inherit" });
-  if (types.error) throw types.error;
-  if (types.status !== 0) throw new Error("TypeScript frontend check failed");
   const result = spawnSync(process.execPath, [
     join(scratch, "node_modules/vite/bin/vite.js"),
     "build", "--config", "vite.platform.config.mjs",

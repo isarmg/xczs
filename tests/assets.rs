@@ -260,3 +260,117 @@ fn shared_asset_prefix(paths: [&str; 3]) -> Result<String, Error> {
 
     Ok(shared_prefix.to_string())
 }
+
+#[rstest]
+fn wasm_variants_keep_mime_cache_head_and_conditional_get_contracts(
+    server: TestServer,
+) -> Result<(), Error> {
+    use reqwest::header::{ACCEPT_ENCODING, CONTENT_ENCODING, VARY};
+    let page = server.get(server.url())?.error_for_status()?.text()?;
+    let index_js = extract_asset_url(&page, "src", "index.js")?;
+    let prefix = index_js
+        .strip_suffix("index.js")
+        .ok_or("Missing asset prefix")?;
+    let inventory: xcss::web_assets::AssetManifest =
+        serde_json::from_str(xczs::server::web_assets_manifest()?)?;
+    let wasm = inventory
+        .files
+        .iter()
+        .find(|asset| asset.path.ends_with(".wasm"))
+        .ok_or("The production inventory must contain WASM")?;
+    let compressed = inventory
+        .files
+        .iter()
+        .find(|asset| asset.path == format!("{}.gz", wasm.path))
+        .ok_or("The production inventory must contain precompressed WASM")?;
+    let path = format!("{prefix}{}", wasm.path);
+    let url = server.url().join(&path)?;
+    assert!(page.contains(&format!(
+        "href=\"{path}\" as=\"fetch\" type=\"application/wasm\""
+    )));
+    let login = reqwest::blocking::Client::new()
+        .get(server.url().join("/__xczs__/login")?)
+        .send()?
+        .error_for_status()?
+        .text()?;
+    assert!(login.contains(&format!(
+        "href=\"{path}\" as=\"fetch\" type=\"application/wasm\""
+    )));
+    let raw = server
+        .request(Method::GET, url.clone())
+        .header(ACCEPT_ENCODING, "identity")
+        .send()?;
+    assert_eq!(raw.status(), StatusCode::OK);
+    assert_eq!(raw.headers()[CONTENT_TYPE], "application/wasm");
+    assert_eq!(raw.headers()[VARY], "Accept-Encoding");
+    assert_eq!(raw.headers()[CACHE_CONTROL], LONG_LIVED_CACHE_CONTROL);
+    assert!(!raw.headers().contains_key(CONTENT_ENCODING));
+    let raw_etag = raw.headers()[ETAG].clone();
+    let raw = raw.bytes()?;
+    assert!(raw.starts_with(b"\0asm"));
+    assert_eq!(raw.len() as u64, wasm.size);
+    assert_eq!(encode_hex(Sha256::digest(&raw)), wasm.sha256);
+    let gzip = server
+        .request(Method::GET, url.clone())
+        .header(ACCEPT_ENCODING, "br, gzip;q=0.5")
+        .send()?;
+    assert_eq!(gzip.status(), StatusCode::OK);
+    assert_eq!(gzip.headers()[CONTENT_TYPE], "application/wasm");
+    assert_eq!(gzip.headers()[CONTENT_ENCODING], "gzip");
+    assert_eq!(gzip.headers()[VARY], "Accept-Encoding");
+    assert_eq!(gzip.headers()[CACHE_CONTROL], LONG_LIVED_CACHE_CONTROL);
+    assert_eq!(gzip.headers()["x-content-type-options"], "nosniff");
+    let gzip_etag = gzip.headers()[ETAG].clone();
+    assert_ne!(gzip_etag, raw_etag);
+    let gzip = gzip.bytes()?;
+    assert!(gzip.starts_with(&[0x1f, 0x8b]));
+    assert_eq!(gzip.len() as u64, compressed.size);
+    assert_eq!(encode_hex(Sha256::digest(&gzip)), compressed.sha256);
+    assert!(gzip.len() < raw.len());
+    let head = server
+        .request(Method::HEAD, url.clone())
+        .header(ACCEPT_ENCODING, "gzip")
+        .send()?;
+    assert_eq!(head.status(), StatusCode::OK);
+    assert_eq!(head.headers()[CONTENT_LENGTH], compressed.size.to_string());
+    assert_eq!(head.headers()[CONTENT_ENCODING], "gzip");
+    assert_eq!(head.headers()[ETAG], gzip_etag);
+    assert!(head.bytes()?.is_empty());
+    for method in [Method::GET, Method::HEAD] {
+        let cached = server
+            .request(method, url.clone())
+            .header(ACCEPT_ENCODING, "gzip")
+            .header(IF_NONE_MATCH, gzip_etag.clone())
+            .send()?;
+        assert_eq!(cached.status(), StatusCode::NOT_MODIFIED);
+        assert_eq!(cached.headers()[ETAG], gzip_etag);
+        assert_eq!(cached.headers()[CONTENT_ENCODING], "gzip");
+        assert_eq!(cached.headers()[VARY], "Accept-Encoding");
+        assert_eq!(cached.headers()[CACHE_CONTROL], LONG_LIVED_CACHE_CONTROL);
+        assert!(cached.bytes()?.is_empty());
+    }
+    let excluded = server
+        .request(Method::GET, url.clone())
+        .header(ACCEPT_ENCODING, "*;q=1, gzip;q=0")
+        .send()?;
+    assert_eq!(excluded.status(), StatusCode::OK);
+    assert_eq!(excluded.headers()[ETAG], raw_etag);
+    assert!(!excluded.headers().contains_key(CONTENT_ENCODING));
+    assert_eq!(excluded.bytes()?, raw);
+    let mismatch = server
+        .request(Method::GET, url)
+        .header(ACCEPT_ENCODING, "gzip")
+        .header(IF_NONE_MATCH, raw_etag)
+        .send()?;
+    assert_eq!(mismatch.status(), StatusCode::OK);
+    let missing = server
+        .request(
+            Method::GET,
+            server.url().join(&format!("{prefix}missing.wasm"))?,
+        )
+        .header(ACCEPT_ENCODING, "gzip")
+        .send()?;
+    assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+    assert!(!missing.headers().contains_key(CONTENT_ENCODING));
+    Ok(())
+}
