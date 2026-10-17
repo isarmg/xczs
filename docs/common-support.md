@@ -1,43 +1,29 @@
 # xczs 的公共依赖
 
-本服务通过一个 Rust 包 `xcss` 使用公共配置、日志、SQLite、认证和生命周期模块；管理 Web 通过一个 `@xcss/web` 包使用组件、字体和工具链。
+服务端通过 `xcss` 使用配置、日志、SQLite、认证和生命周期机制；浏览器通过 `xcss-web` 使用 Rust CSR 组件与函数式视图。产品保留业务协议、权限、数据模型和页面状态。
 
-| 依赖 | 用途 | 平台 |
+| 输入 | 实际用途 | 来源与锁定位置 |
 |---|---|---|
-| `xcss` | Rust Server 公共模块 | Linux AMD64 GNU，`x86_64-unknown-linux-gnu` |
-| `@xcss/web` | 构建管理页面和内嵌资源 | 当前 Linux x64/glibc 构建工具链，输出供浏览器使用 |
+| `xcss` | Linux x86_64 GNU 原生服务端公共模块 | 根 `Cargo.toml` 的官方 Git URL、完整 revision 和精确版本；根 `Cargo.lock` |
+| `xcss-web` | `wasm32-unknown-unknown` 浏览器 CSR | `web/xcss-web/vendor/xcss-web/SOURCE.json` 绑定官方修订与逐文件摘要；前端 `Cargo.lock` |
+| `@xcss/web` | 当前使用的 CSS、字体与必要 DOM 适配 | `web/package.json` 的不可变发行 URL 和 `package-lock.json` 的真实完整性摘要 |
 
-## 固定输入
+`xcss-product.toml` 声明 Axum、`web-csr-admin` 和实际公共能力，其原生依赖身份与根 Cargo 声明一致。浏览器内部核心和过程宏由公共入口引入，产品不直接依赖它们。源码快照不能手改；更新时从公共来源同步并重新核验摘要与原始许可证。
 
-Cargo manifest 指定官方 Git URL、完整 revision `b34b3861e15edd2b1348e7d03b9c9a93e97d6521` 和精确 `=1.0.0`，Cargo.lock 固定依赖解析结果。
-Web 的 package.json 依赖条目如下，合并到项目自身的 dependencies 中：
+## 构建与检查
 
-```json
-{
-  "dependencies": {
-    "@xcss/web": "https://github.com/isarmg/xcss/releases/download/v1.0.0/xcss-web-1.0.0.tgz"
-  }
-}
-```
-
-Rust 依赖固定已发布的源码提交；Web 使用对应正式发行归档和实际 SHA-512 integrity，构建时校验锁文件。
-
-认证、HTTP、Shell、UI、字体和构建工具通过同包的 `contracts`、`http-client`、`admin-web`、`admin-shell`、`admin-ui`、`design-tokens`、`web-fonts`、`web-toolchain` 子路径导入，共享版本和锁文件完整性摘要。
-
-## 构建和检查
-
-准备项目固定的 Rust、Node 工具链后，在仓库根目录执行：
+在产品根目录执行：
 
 ```sh
-npm ci --ignore-scripts --no-audit --no-fund
-npm run build:server -- --no-install
+cargo metadata --locked --no-deps --format-version 1
 cargo tree --locked -e normal
+cargo +1.99.0 run --locked --manifest-path tools/web-build/Cargo.toml -- check --product-root .
+cargo +1.99.0 run --locked --manifest-path tools/web-build/Cargo.toml -- test --product-root .
+cargo +1.99.0 run --locked --manifest-path tools/web-build/Cargo.toml -- build --product-root .
 ```
 
-`npm ci` 校验并安装锁定输入。共同构建器先生成 Web，再构建 Server，最后比较实际程序中的资源清单和刚生成的资源。
-`cargo tree` 用于核对真实运行依赖。生产运行使用内嵌资源，公共包属于编译输入。
+生产 Web 构建使用仓库内的 Rust 工具，不要求安装 npm 依赖。Node/Playwright 用于真实浏览器验收；按需运行 `npm ci --prefix web` 准备测试工具。Rust 版本、wasm-bindgen 与浏览器测试命令见 [Rust 原生 Web 构建](rust-native-web.md)。
 
-## 更新依赖
+Axum 使用经摘要校验的内嵌资源。构建工具记录实际 WASM、锁文件、来源和资源摘要；正式发行还需通过产品自己的离线初始化材料、依赖物料和资源清单校验。编译通过不等于发行或平台验收完成。
 
-同时更新源码 revision、manifest、锁文件、调用代码和测试；Web 还需核对 tarball URL 与真实 SHA-512 integrity，并重新生成内嵌资源。
-遇到找不到模块或完整性错误，先对照同一版本的来源和锁文件，再按项目开发文档构建验证。最终源码、目标平台和实际发行物分别记录验收结果。
+更新公共依赖时同步清单、完整修订、锁文件、调用代码与相应测试；CSS/字体归档来源与浏览器 Rust 来源分别核验。公共库无需单独部署后台服务，安装维护由 xssi、升级恢复由 xssc 完成。

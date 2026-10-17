@@ -51,7 +51,7 @@ assert.equal(provenance.assets["NORMAL-LICENSE.txt"], provenance.assets["OFL.txt
 for (const page of ["index.html", "login.html"]) {
   assert.match(read(`web/${page}`).toString(), /data-xcss-appearance="content-blocks"/u);
 }
-assert.match(read("xcss-product.toml").toString(), /web_profile = "web-react-admin"/u);
+assert.match(read("xcss-product.toml").toString(), /web_profile = "web-csr-admin"/u);
 console.log("xcss 1.0.0 immutable static resources, xcss-web runtime and complete font startup verified");
 
 assert.equal(typeof prepareApplicationFonts, "function");
