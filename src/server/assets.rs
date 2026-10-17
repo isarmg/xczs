@@ -1,5 +1,3 @@
-#[path = "../xcss_web_assets.rs"]
-mod xcss_web_assets;
 use super::{Response, Server, status_not_found};
 use http::{
     HeaderMap, Method,
@@ -48,7 +46,7 @@ impl Server {
             status_not_found(res);
             return true;
         }
-        *res = xcss_web_assets::response(name, method, headers, |path, method, headers| {
+        *res = xcss::web_assets::wasm::response(name, method, headers, |path, method, headers| {
             xcss::web_assets::response(ASSETS, path, method, headers)
         })
         .map(axum::body::Body::from);
