@@ -4,7 +4,7 @@
 
 Xczs 是一个只运行在 Linux AMD64 GNU（`x86_64-unknown-linux-gnu`）上的浏览器文件管理器：服务端把某个目录设为“共享根”，认证后的管理员可以通过网页浏览、搜索、上传、下载、移动、重命名、新建和删除其中的文件。构建与运行环境按这个目标校验。
 
-它采用“一体化二进制”部署：Axum 程序既处理 API，也返回构建时嵌入的 Leptos WASM、浏览器绑定和 xcss CSS。浏览器 Rust 实现负责登录、页面和业务状态，认证合同继续复用 xcss。生产环境通常在它前面放置 HTTPS 网关，负责 TLS 和公网边界。
+它采用“一体化二进制”部署：Axum 程序既处理 API，也返回构建时嵌入的 xcss-web WASM、浏览器绑定和 xcss CSS。浏览器 Rust 实现负责登录、页面和业务状态，认证合同继续复用 xcss。生产环境通常在它前面放置 HTTPS 网关，负责 TLS 和公网边界。
 
 ## 1.2 用户看到什么
 
@@ -33,7 +33,7 @@ Xczs 是一个只运行在 Linux AMD64 GNU（`x86_64-unknown-linux-gnu`）上的
 
 ```mermaid
 flowchart TB
-    P[展示层<br/>Leptos / WASM / HTML / CSS]
+    P[展示层<br/>xcss-web / WASM / HTML / CSS]
     H[HTTP 层<br/>连接、路由、认证、响应]
     D[领域协调层<br/>列表、上传、移动、删除]
     I[基础设施层<br/>RootedFs、SQLite、日志、任务与磁盘]
@@ -116,7 +116,7 @@ sequenceDiagram
 ```text
 xczs/
 ├── web/                 浏览器 Rust、WASM 绑定和样式
-│   └── leptos/src/               列表、操作、上传、API 等 Rust 模块
+│   └── xcss-web/src/               列表、操作、上传、API 等 Rust 模块
 ├── config/                       唯一当前源码配置样例
 ├── systemd/                      普通账号服务单元
 ├── libexec/                      安装器内部实现
@@ -154,16 +154,16 @@ xczs/
 - [server/rooted_fs.rs](../../src/server/rooted_fs.rs)：锚定共享根的安全文件系统操作；
 - [server/state_store.rs](../../src/server/state_store.rs)：SQLite actor 的外部接口。
 
-### `web/leptos/src/` 的重点
+### `web/xcss-web/src/` 的重点
 
-- [lib.rs](../../web/leptos/src/lib.rs)：启动、会话与登录；
-- [http.rs](../../web/leptos/src/http.rs)：Fetch/XHR、超时、预算和 Operation/job 查询；
-- [model.rs](../../web/leptos/src/model.rs)：工作区、列表、筛选和上传数据；
-- [workspace.rs](../../web/leptos/src/workspace.rs)：列表、分页、搜索、行内编辑和焦点；
-- [operations.rs](../../web/leptos/src/operations.rs)：新建、移动、重命名、删除和确认；
-- [protocol.rs](../../web/leptos/src/protocol.rs)：严格上传响应矩阵及绑定验证；
-- [upload.rs](../../web/leptos/src/upload.rs)：预检、选择、队列、正文、恢复、取消与终态历史；
-- [tags.rs](../../web/leptos/src/tags.rs)：标签、关联、筛选、索引与扫描。
+- [lib.rs](../../web/xcss-web/src/lib.rs)：启动、会话与登录；
+- [http.rs](../../web/xcss-web/src/http.rs)：Fetch/XHR、超时、预算和 Operation/job 查询；
+- [model.rs](../../web/xcss-web/src/model.rs)：工作区、列表、筛选和上传数据；
+- [workspace.rs](../../web/xcss-web/src/workspace.rs)：列表、分页、搜索、行内编辑和焦点；
+- [operations.rs](../../web/xcss-web/src/operations.rs)：新建、移动、重命名、删除和确认；
+- [protocol.rs](../../web/xcss-web/src/protocol.rs)：严格上传响应矩阵及绑定验证；
+- [upload.rs](../../web/xcss-web/src/upload.rs)：预检、选择、队列、正文、恢复、取消与终态历史；
+- [tags.rs](../../web/xcss-web/src/tags.rs)：标签、关联、筛选、索引与扫描。
 
 ## 1.9 主要技术为什么合适
 
@@ -175,9 +175,9 @@ xczs/
 
 Tokio 提供异步任务、网络、信号和同步原语；Axum 组织路由及请求/响应适配，xcss Runtime 在底层管理 Hyper HTTP/1.1 连接、正文流、超时和停机。
 
-### Rust / Leptos 与浏览器 WASM
+### Rust / xcss-web 与浏览器 WASM
 
-Leptos CSR 在浏览器内渲染登录、导航、列表、标签和上传界面，使用信号和生命周期清理保存状态及释放资源。Vite 收集 wasm-bindgen 绑定、WASM、CSS、字体和许可；生产不需要 Node 服务。主要代价是增加 WASM 编译工具链、调试与 JavaScript 互操作成本，收益是否体现为体积或速度需要实际测量。
+xcss-web CSR 在浏览器内渲染登录、导航、列表、标签和上传界面，使用信号和生命周期清理保存状态及释放资源。Vite 收集 wasm-bindgen 绑定、WASM、CSS、字体和许可；生产不需要 Node 服务。主要代价是增加 WASM 编译工具链、调试与 JavaScript 互操作成本，收益是否体现为体积或速度需要实际测量。
 
 ### SQLite
 
@@ -210,9 +210,9 @@ Leptos CSR 在浏览器内渲染登录、导航、列表、标签和上传界面
 在仓库根目录执行：
 
 ```sh
-rg --files src/server web/leptos/src tests/frontend | sort
+rg --files src/server web/xcss-web/src tests/frontend | sort
 rg "MKDIR_API_PATH|MOVE_API_PATH|RENAME_API_PATH" src
-rg "struct .*Error|enum .*State" web/leptos/src
+rg "struct .*Error|enum .*State" web/xcss-web/src
 ```
 
 尝试回答：

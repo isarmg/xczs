@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import {fileURLToPath,pathToFileURL} from "node:url";
 import {join} from "node:path";
 import { defineConfig } from "vite";
-import { leptosStaticAssets } from "./web/leptos-assets.mjs";
+import { xcssWebStaticAssets } from "./web/xcss-web-assets.mjs";
 
 const config = defineConfig({ base: "./", plugins: [] });
 // A blocking same-origin stylesheet hides the body before first paint under CSP.
@@ -21,18 +21,18 @@ config.build = {
   outDir: "web/dist", assetsInlineLimit: 0, cssCodeSplit: false, sourcemap: false,
   rollupOptions: {
     input: {
-      index: "web/leptos-index.js",
-      login: "web/leptos-login.js",
-      "dist/platform": "web/leptos-platform.js",
+      index: "web/xcss-web-index.js",
+      login: "web/xcss-web-login.js",
+      "dist/platform": "web/xcss-web-platform.js",
     }, preserveEntrySignatures: "strict",
     output: { format: "es", entryFileNames: "[name].js", chunkFileNames: "dist/[hash].js",
       assetFileNames: asset => asset.names.some(name => name.endsWith(".css")) ? "dist/platform.css" : "dist/[name][extname]" },
   },
 };
-config.plugins.push(leptosStaticAssets(), {
-  name: "xczs-leptos-provenance-and-budget",
+config.plugins.push(xcssWebStaticAssets(), {
+  name: "xczs-xcss-web-provenance-and-budget",
   generateBundle: { order: "post", handler(_options, bundle) {
-    this.emitFile({ type: "asset", fileName: "assets/leptos-build.json", source: readFileSync(new URL("./web/pkg/leptos-build.json", import.meta.url)) });
+    this.emitFile({ type: "asset", fileName: "assets/xcss-web-build.json", source: readFileSync(new URL("./web/pkg/xcss-web-build.json", import.meta.url)) });
     let total = 0;
     for (const [name, asset] of Object.entries(bundle)) {
       const size = asset.type === "chunk" ? Buffer.byteLength(asset.code) : typeof asset.source === "string" ? Buffer.byteLength(asset.source) : asset.source.byteLength;

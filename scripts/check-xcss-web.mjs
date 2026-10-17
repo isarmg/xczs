@@ -24,13 +24,13 @@ for (const [name, entry] of Object.entries(lock.packages)) {
   assert.match(entry.integrity, /^sha512-/u, name);
 }
 assert.match(manifest.scripts["check:types"], /web-build\/Cargo\.toml -- check/u);
-assert.match(read("web/leptos/Cargo.toml").toString(), /leptos = .*csr/u);
+assert.match(read("web/xcss-web/Cargo.toml").toString(), /xcss-web = .*csr/u);
 for (const name of ["index", "login"]) {
-  assert.match(read(`web/leptos-${name}.js`).toString(), /pkg\/xczs_web\.js/u);
+  assert.match(read(`web/xcss-web-${name}.js`).toString(), /pkg\/xczs_web\.js/u);
 }
 const vite = read("vite.platform.config.mjs").toString();
 assert.doesNotMatch(vite, /createXcssReactViteConfig|web\/index\.ts|web\/login\.ts/u);
-assert.match(vite, /leptosStaticAssets/u);
+assert.match(vite, /xcssWebStaticAssets/u);
 for (const packageName of ["@xcss/web"]) {
   const url = "https://github.com/isarmg/xcss/releases/download/v1.0.0/xcss-web-1.0.0.tgz";
   assert.equal(manifest.devDependencies[packageName], url);
@@ -52,7 +52,7 @@ for (const page of ["index.html", "login.html"]) {
   assert.match(read(`web/${page}`).toString(), /data-xcss-appearance="content-blocks"/u);
 }
 assert.match(read("xcss-product.toml").toString(), /web_profile = "web-react-admin"/u);
-console.log("xcss 1.0.0 immutable static resources, Leptos runtime and complete font startup verified");
+console.log("xcss 1.0.0 immutable static resources, xcss-web runtime and complete font startup verified");
 
 assert.equal(typeof prepareApplicationFonts, "function");
 assert.equal(typeof startAfterFonts, "function");

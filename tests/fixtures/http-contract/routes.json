@@ -15,7 +15,7 @@
       "location",
       "www-authenticate"
     ],
-    "body_contains": "data-xczs-renderer=\"leptos\"",
+    "body_contains": "data-xczs-renderer=\"xcss-web\"",
     "response_fields": {},
     "file_changes": {},
     "operation_state": null

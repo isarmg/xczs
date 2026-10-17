@@ -36,8 +36,8 @@ jobs:
         with:
           node-version-file: .node-version
           package-manager-cache: false
-      - name: Install the fixed Leptos browser compiler
-        run: bash scripts/install-leptos-tools.sh
+      - name: Install the fixed xcss-web browser compiler
+        run: bash scripts/install-xcss-web-tools.sh
       - name: Install locked Web dependencies and build platform assets
         run: |
           npm ci --ignore-scripts --no-audit --no-fund

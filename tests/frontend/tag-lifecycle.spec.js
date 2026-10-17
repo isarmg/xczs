@@ -14,7 +14,7 @@ async function openPicker(page) {
 // queue. They replace the old React-hook scheduling fixtures with DOM and
 // network assertions at the same lifecycle boundaries.
 test("Tag drafts retain selected off-page IDs and expose deleted IDs after mutations",async({appPage:page})=>{
-  await expect(page.locator("html")).toHaveAttribute("data-xcss-runtime","leptos");
+  await expect(page.locator("html")).toHaveAttribute("data-xcss-runtime","xcss-web");
   let changed=false;
   await page.route("**/api/v1/file-tags/tags*",route=>{
     if(route.request().method()==="POST") {

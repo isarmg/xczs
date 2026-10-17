@@ -1,10 +1,10 @@
 # xczs 界面、操作反馈与开发
 
-后端保留 Rust 2024 / Tokio / Axum 和 SQLx / SQLite；前端使用 Rust/Leptos CSR，编译为浏览器 WASM，复用随产品提供的 xcss Rust 认证、UI、主题和语言快照，以及现有设计令牌、字体和许可。Vite 收集浏览器绑定与静态资源，Axum 内嵌最终产物，并可按 WASM 加载和缓存需要适配优化。构建与验证详见[Leptos 浏览器维护](leptos-browser.md)。
+后端保留 Rust 2024 / Tokio / Axum 和 SQLx / SQLite；前端使用 Rust / xcss-web CSR，编译为浏览器 WASM，复用随产品提供的 xcss Rust 认证、UI、主题和语言快照，以及现有设计令牌、字体和许可。Vite 收集浏览器绑定与静态资源，Axum 内嵌最终产物，并可按 WASM 加载和缓存需要适配优化。构建与验证详见[xcss-web 浏览器维护](xcss-web-browser.md)。
 
 ## 界面操作与标签
 
-操作步骤见[文件和标签指南](usage.md)。三个菜单共用 Leptos 工作区，使用 `#files`、`#tags`、`#status`；筛选使用 `q`、`all`、`any`、`exclude` 查询条件。导航和浏览器历史保持目录、输入和上传任务。
+操作步骤见[文件和标签指南](usage.md)。三个菜单共用 xcss-web 工作区，使用 `#files`、`#tags`、`#status`；筛选使用 `q`、`all`、`any`、`exclude` 查询条件。导航和浏览器历史保持目录、输入和上传任务。
 索引及人工标签位于 `data_dir/tags.db`；扫描和文件身份确认见[运行参考](runtime-reference.md)，服务与权限见[运维](operations.md)。
 
 标签管理提供索引目录浏览和分页入口，可进入目录查看原文件；没有已索引文件的空目录不在这份索引中。打开未索引文件的标签栏只读取状态，不自动扫描；点击明确的“扫描整个文件库”后才开始完整扫描。扫描请求单独允许 90 秒，包括最多 30 秒的目录收集及随后数据库提交，普通标签读取仍为 5 秒。结果未能确认时先查看状态页的上次完整扫描时间和错误信息，扫描写入不会自动重试。切换视图会取消已发出的读取并释放前端串行队列。

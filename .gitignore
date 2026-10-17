@@ -13,7 +13,7 @@ target/**
 
 /web/runtime-dist/
 /web/pkg/
-/web/leptos/target/
+/web/xcss-web/target/
 
 # Keep hidden runtime data directories out of source control.
 /.*-data/

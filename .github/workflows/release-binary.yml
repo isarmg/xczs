@@ -129,13 +129,13 @@ jobs:
           set -euo pipefail
           cargo fetch --locked
           cargo audit --deny yanked
-          cargo fetch --manifest-path web/leptos/Cargo.toml --locked
-          cargo audit --file web/leptos/Cargo.lock --deny yanked
+          cargo fetch --manifest-path web/xcss-web/Cargo.toml --locked
+          cargo audit --file web/xcss-web/Cargo.lock --deny yanked
           npm ci --ignore-scripts --no-audit --no-fund
           npm audit --audit-level=high
 
-      - name: Install the fixed Leptos browser compiler
-        run: bash scripts/install-leptos-tools.sh
+      - name: Install the fixed xcss-web browser compiler
+        run: bash scripts/install-xcss-web-tools.sh
       - name: Build and verify the complete release package and SHA-256 inventory
         id: prepare_release_inputs
         shell: bash

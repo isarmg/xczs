@@ -22,7 +22,7 @@ export default [
       "web/runtime-dist/**",
       "web/pkg/**",
       "web/tests/fixtures/**",
-      "web/leptos/vendor/xcss-web/vendor/leptos-csr/**",
+      "web/xcss-web/vendor/xcss-web/vendor/xcss-web-core/**",
     ],
   },
   {

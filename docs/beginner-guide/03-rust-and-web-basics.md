@@ -341,7 +341,7 @@ HTTP URI path
 
 ## 3.16 浏览器端的 Rust、WASM 和 ES Modules
 
-生产界面位于 `web/leptos/src`，Leptos 使用 CSR 编译为浏览器 WASM。薄 ES module 加载 wasm-bindgen 绑定与静态资源；Axum 仍负责 HTTP、认证和持久化。
+生产界面位于 `web/xcss-web/src`，xcss-web 使用 CSR 编译为浏览器 WASM。薄 ES module 加载 wasm-bindgen 绑定与静态资源；Axum 仍负责 HTTP、认证和持久化。
 
 ```sh
 npm run check:types
@@ -354,7 +354,7 @@ npm run build:platform
 
 1. 在 [src/main.rs](../../src/main.rs) 中搜索 `Arc::new`、`Semaphore`、`TaskTracker` 和 `CancellationToken`，分别说明它们管理什么资源。
 2. 在 [src/server/protocol.rs](../../src/server/protocol.rs) 中找类型化协议状态，观察它们在哪里才转成字符串。
-3. 在 [web/leptos/src/http.rs](../../web/leptos/src/http.rs) 中查看响应验证和错误分类，找出网络响应从“不可信值”变成可用对象的位置。
+3. 在 [web/xcss-web/src/http.rs](../../web/xcss-web/src/http.rs) 中查看响应验证和错误分类，找出网络响应从“不可信值”变成可用对象的位置。
 4. 思考：如果上传正文已经写完，但浏览器在等待提交响应时断网，为什么页面不能直接显示“上传失败”？
 
 下一章会把这些概念放进真实的后端请求链。

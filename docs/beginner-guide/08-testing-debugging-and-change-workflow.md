@@ -79,7 +79,7 @@ cargo install cargo-llvm-cov --version 0.8.6 --locked
 
 首次安装 Rust/npm 依赖和 Playwright 浏览器通常需要网络；Cargo 审计还需要 RustSec，并须先取得锁图所需的 crates.io 索引项，`npm audit` 要访问 npm registry。正式发布只允许 cargo-audit 0.22.2。宿主 RustSec DB 只有在 canonical origin、`HEAD=FETCH_HEAD`、实体 FETCH_HEAD 不得比当前时间早超过 7 天或晚超过 300 秒，并通过物理/Git/内容完整性检查后才能复用；alternates、不安全元数据、symlink/submodule/特殊项、untracked 路径和 tracked 内容/mode 漂移都会拒绝。合格数据库以无硬链接私有 clone 封存 revision、fetch epoch、index/config 校验和；不合格、过期或缺失时，在运行任何项目或依赖代码前用 dummy lockfile 在私有数据库联网刷新，断网即失败关闭。发布入口先执行 `cargo audit --db ... --no-fetch --no-yanked` sealed advisory pre-audit，再用私有 Cargo home 执行 `cargo fetch --locked` 取得完整锁图所需的 crates.io 索引项，并以 `--deny yanked` 拒绝已撤回依赖；空索引不能作为成功审计。随后 `XCZS_QUALITY_AUDIT_DB` 把同一封存交给 `scripts/check.sh`。封存时校验 seal 与新鲜度，pre-audit 和 yanked 检查后重验 seal；完整门后重验 seal 与新鲜度，随后销毁质量树和该 RustSec 数据库。普通本地检查若要离线执行，必须预热或提供相应缓存/镜像并预先安装相容的 Chromium、Firefox；正式 yanked 检查使用每次全新创建的私有 Cargo home，当前仍要求 registry 网络可达，宿主缓存不能替代这一步；不能把“命令已经安装”误解为所有审计和浏览器门禁一定能离线运行。
 
-所有 npm 脚本及锁定版本都可以在 [package.json](../../package.json) 和 [package-lock.json](../../package-lock.json) 中找到。Node/Vite 参与构建静态资源，但不是服务器运行依赖。WASM 工具准备见 Leptos 浏览器维护文档。
+所有 npm 脚本及锁定版本都可以在 [package.json](../../package.json) 和 [package-lock.json](../../package-lock.json) 中找到。Node/Vite 参与构建静态资源，但不是服务器运行依赖。WASM 工具准备见 xcss-web 浏览器维护文档。
 
 ## 8.3 最短反馈环
 
@@ -215,7 +215,7 @@ cargo test --locked --test args -- --list
 
 ## 8.5 浏览器合同与工具单元测试
 
-当前业务协议单测在 `web/leptos/src` 的 Rust 测试中，覆盖上传 status/header 矩阵、身份/长度/offset 绑定、preflight、路径、页数据与任务历史等边界。Node 活跃单测继续验证 ESLint、Shell、发行版本及 workflow 工具。
+当前业务协议单测在 `web/xcss-web/src` 的 Rust 测试中，覆盖上传 status/header 矩阵、身份/长度/offset 绑定、preflight、路径、页数据与任务历史等边界。Node 活跃单测继续验证 ESLint、Shell、发行版本及 workflow 工具。
 
 ```sh
 npm run test:frontend:unit
@@ -242,7 +242,7 @@ npm run check:js
 npm run check:types
 ```
 
-该命令保留原名称，现在执行 `python3 scripts/build-leptos.py check`，针对 `wasm32-unknown-unknown` 编译检查生产浏览器 crate。它不会替代运行时不可信响应验证、Rust 协议测试或真实浏览器验收。
+该命令保留原名称，现在执行 `python3 scripts/build-xcss-web.py check`，针对 `wasm32-unknown-unknown` 编译检查生产浏览器 crate。它不会替代运行时不可信响应验证、Rust 协议测试或真实浏览器验收。
 
 ### `check:docs`
 
@@ -423,7 +423,7 @@ Network 重点看：
 | data_dir 权限错误 | 手写测试目录不是当前用户所有或不是 0700 | 优先复用 fixture，不要在测试中共享固定 data_dir |
 | `npm ci` 报 lockfile 不一致 | `package.json` 与 `package-lock.json` 漂移 | 有意识更新并审查 lockfile，不要直接删除它 |
 | `check:types` 编译失败 | Rust 类型或浏览器 API feature 不匹配 | 从第一处编译错误及 web-sys feature 开始 |
-| `check:js` 报危险入口 | 使用了项目禁止的 DOM、网络或模态 API | 使用 Leptos 转义文本、现有 Rust HTTP/上传边界或薄 JS 构建入口 |
+| `check:js` 报危险入口 | 使用了项目禁止的 DOM、网络或模态 API | 使用 xcss-web 转义文本、现有 Rust HTTP/上传边界或薄 JS 构建入口 |
 | `check:docs` 报链接不存在 | 文件改名、相对层级错误或目标章节尚未创建 | 从报错文档所在目录重新计算相对路径 |
 | Playwright 找不到浏览器 | 浏览器二进制尚未安装 | `npm run test:frontend:install` |
 | Playwright 启动即失败 | 缺系统库、测试 HTTPS 端口失败或 debug 二进制未构建 | 查看 webServer 输出，再单独运行相关准备命令 |

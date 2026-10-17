@@ -1,6 +1,6 @@
 # Rust 原生 Web 构建与测试
 
-生产前端编译、资源整理、gzip、清单、预算/许可证检查和后端集成使用本仓库 `tools/web-build`，不需要 `npm ci`、Node 或 Vite。后端仍为 Axum。前端只使用裁剪的 Leptos CSR；框架源码与公共组件由 xcss 统一维护与同步。
+生产前端编译、资源整理、gzip、清单、预算/许可证检查和后端集成使用本仓库 `tools/web-build`，不需要 `npm ci`、Node 或 Vite。后端仍为 Axum。前端只使用裁剪的 xcss-web CSR；框架源码与公共组件由 xcss 统一维护与同步。
 
 在产品根目录执行：
 

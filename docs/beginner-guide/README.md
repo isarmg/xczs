@@ -7,7 +7,7 @@
 3. 为什么项目需要 SQLite、路径租约、对象身份和“结果未知”状态？
 4. 修改代码后，怎样证明功能、安全边界和故障语义没有被破坏？
 
-教程对应当前源码和 Leptos 浏览器实现。想直接管理文件，请先看[安装](../getting-started.md)和[使用](../usage.md)。
+教程对应当前源码和 xcss-web 浏览器实现。想直接管理文件，请先看[安装](../getting-started.md)和[使用](../usage.md)。
 
 ## 适合谁阅读
 
@@ -72,7 +72,7 @@ flowchart LR
     A --> L[访问日志]
 ```
 
-开发测试会使用一个 Node.js HTTPS 代理模拟网关；生产运行不需要 Node.js。Leptos WASM、浏览器绑定、xcss CSS 和字体在构建时嵌入 Axum 二进制，由同一个服务返回。浏览器使用随产品提供的 xcss Rust 认证与 UI 快照；Vite 负责静态资源收集。
+开发测试会使用一个 Node.js HTTPS 代理模拟网关；生产运行不需要 Node.js。xcss-web WASM、浏览器绑定、xcss CSS 和字体在构建时嵌入 Axum 二进制，由同一个服务返回。浏览器使用随产品提供的 xcss Rust 认证与 UI 快照；Vite 负责静态资源收集。
 
 ## 阅读源码的约定
 
@@ -80,7 +80,7 @@ flowchart LR
 
 - [程序入口](../../src/main.rs)
 - [服务组装](../../src/server.rs)
-- [前端入口](../../web/leptos/src/lib.rs)
+- [前端入口](../../web/xcss-web/src/lib.rs)
 - [Rust 集成测试](../../tests/browser_api.rs)
 - [浏览器端到端测试](../../tests/frontend/operations.spec.js)
 

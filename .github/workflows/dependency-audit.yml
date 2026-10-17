@@ -7,9 +7,9 @@ on:
     paths:
       - Cargo.lock
       - Cargo.toml
-      - web/leptos/Cargo.lock
-      - web/leptos/Cargo.toml
-      - web/leptos/vendor/xcss-web/**
+      - web/xcss-web/Cargo.lock
+      - web/xcss-web/Cargo.toml
+      - web/xcss-web/vendor/xcss-web/**
       - package-lock.json
       - package.json
       - .github/workflows/dependency-audit.yml
@@ -17,9 +17,9 @@ on:
     paths:
       - Cargo.lock
       - Cargo.toml
-      - web/leptos/Cargo.lock
-      - web/leptos/Cargo.toml
-      - web/leptos/vendor/xcss-web/**
+      - web/xcss-web/Cargo.lock
+      - web/xcss-web/Cargo.toml
+      - web/xcss-web/vendor/xcss-web/**
       - package-lock.json
       - package.json
       - .github/workflows/dependency-audit.yml
@@ -66,8 +66,8 @@ jobs:
           set -euo pipefail
           cargo fetch --locked
           cargo audit --deny yanked
-          cargo fetch --manifest-path web/leptos/Cargo.toml --locked
-          cargo audit --file web/leptos/Cargo.lock --deny yanked
+          cargo fetch --manifest-path web/xcss-web/Cargo.toml --locked
+          cargo audit --file web/xcss-web/Cargo.lock --deny yanked
       - name: Use the fixed Node.js release
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:

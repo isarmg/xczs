@@ -21,4 +21,4 @@ bash scripts/package-release.sh --output-dir "$output"
 
 formal-release-e2e.yml 可手动执行完整制品验收：独立源码 clone、完整发行包构建、归档及清单 SHA-256 校验、逐文件权限/哈希核对及真实运行故障恢复测试。正式发布前必须完成仓库质量检查，目标 systemd 的安装与升级验收由 xssi/XSSC 的工具测试负责。
 
-前端额外需要 Rust `wasm32-unknown-unknown` target 与 wasm-bindgen-cli 0.2.129，可执行 `bash scripts/install-leptos-tools.sh` 准备。`assets/leptos-build.json` 记录浏览器/共享源码、Cargo 包来源和 JS/WASM 摘要；构建生成的 WASM gzip 变体同样进入静态资源清单。构建和真实运行时验收说明见 [Leptos 浏览器维护](leptos-browser.md)。
+前端额外需要 Rust `wasm32-unknown-unknown` target 与 wasm-bindgen-cli 0.2.129，可执行 `bash scripts/install-xcss-web-tools.sh` 准备。`assets/xcss-web-build.json` 记录浏览器/共享源码、Cargo 包来源和 JS/WASM 摘要；构建生成的 WASM gzip 变体同样进入静态资源清单。构建和真实运行时验收说明见 [xcss-web 浏览器维护](xcss-web-browser.md)。

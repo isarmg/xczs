@@ -14,7 +14,7 @@
 
 ## 开发与参考
 
-- [Leptos 浏览器迁移与构建](leptos-browser.md)。
+- [xcss-web 浏览器迁移与构建](xcss-web-browser.md)。
 - [界面与开发验证](ui-and-development.md)、[从零读懂 xczs](beginner-guide/README.md)。
 - [请求与上传流程](project-workflow.md)、[HTTP 参考](http-runtime-contract.md)、[持久状态参考](runtime-reference.md)。
 - [构建与发行验证](releasing.md)、[完整运行包说明](runtime-package.md)。

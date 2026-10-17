@@ -4,7 +4,7 @@
 
 ## 10.1 不推荐从最大的文件开始硬读
 
-直接打开 [upload.rs](../../src/server/upload.rs) 或 [浏览器 upload.rs](../../web/leptos/src/upload.rs) 从第一行读到最后，通常会同时遇到路径、状态、协议、DOM、取消和恢复，难以建立主线。
+直接打开 [upload.rs](../../src/server/upload.rs) 或 [浏览器 upload.rs](../../web/xcss-web/src/upload.rs) 从第一行读到最后，通常会同时遇到路径、状态、协议、DOM、取消和恢复，难以建立主线。
 
 更有效的方法是：
 
@@ -58,9 +58,9 @@
 
 - [src/auth.rs](../../src/auth.rs)；
 - [src/server/administrator_web.rs](../../src/server/administrator_web.rs)：xcss HTTP 响应与产品页面的适配；
-- [web/leptos/vendor/xcss-web/src/api.rs](../../web/leptos/vendor/xcss-web/src/api.rs)：每文档唯一的 xcss 浏览器客户端；
+- [web/xcss-web/vendor/xcss-web/src/api.rs](../../web/xcss-web/vendor/xcss-web/src/api.rs)：每文档唯一的 xcss 浏览器客户端；
 - [web/login.html](../../web/login.html)；
-- [web/leptos/src/lib.rs](../../web/leptos/src/lib.rs)；
+- [web/xcss-web/src/lib.rs](../../web/xcss-web/src/lib.rs)；
 - [tests/auth.rs](../../tests/auth.rs) 与 [tests/frontend/auth.spec.js](../../tests/frontend/auth.spec.js)。
 
 回答：
@@ -78,8 +78,8 @@
 - [src/server/listing/snapshot.rs](../../src/server/listing/snapshot.rs)；
 - [src/server/listing/walk.rs](../../src/server/listing/walk.rs)；
 - [web/index.html](../../web/index.html)；
-- [web/leptos/src/lib.rs](../../web/leptos/src/lib.rs)；
-- [web/leptos/src/workspace.rs](../../web/leptos/src/workspace.rs)。
+- [web/xcss-web/src/lib.rs](../../web/xcss-web/src/lib.rs)；
+- [web/xcss-web/src/workspace.rs](../../web/xcss-web/src/workspace.rs)。
 
 回答：
 
@@ -129,8 +129,8 @@ URI → RoutePath → RootedPath → 根 FD 相对打开 → fstat identity
 
 推荐先读重命名：
 
-- [web/leptos/src/operations.rs](../../web/leptos/src/operations.rs)；
-- [web/leptos/src/http.rs](../../web/leptos/src/http.rs)；
+- [web/xcss-web/src/operations.rs](../../web/xcss-web/src/operations.rs)；
+- [web/xcss-web/src/http.rs](../../web/xcss-web/src/http.rs)；
 - [src/server/browser_api.rs](../../src/server/browser_api.rs)；
 - [src/server/operation_registry.rs](../../src/server/operation_registry.rs)；
 - [src/server/problem.rs](../../src/server/problem.rs)；
@@ -448,7 +448,7 @@ Rust 中表示将来可能完成的异步计算。丢弃 Future 不会撤销已�
 ### J
 
 **JavaScript 编译产物**
-Rust/Leptos 源码编译为浏览器 WASM；wasm-bindgen 和 Vite 提供绑定与静态资源。编译期类型不能代替网络输入运行时校验。
+Rust / xcss-web 源码编译为浏览器 WASM；wasm-bindgen 和 Vite 提供绑定与静态资源。编译期类型不能代替网络输入运行时校验。
 
 ### L
 
@@ -567,9 +567,9 @@ Extended Attribute，Linux 文件扩展属性。覆盖重放时必须限制特�
 
 修改平台或业务资源后，重新执行 npm run build:platform、Cargo 构建、重启并取得新页面。全部注册 JS（包括 login.js）、CSS、图标、字体和许可证参与资源摘要；HTML 模板本身不参与该资源摘要，修改模板时直接核对 document 与同源 CSP。
 
-### Xczs 如何使用 Leptos 和 Vite？
+### Xczs 如何使用 xcss-web 和 Vite？
 
-Xczs 使用随产品提供的 xcss Rust 共享快照，Leptos 负责登录、导航、文件和上传状态，Vite 收集浏览器绑定、WASM、CSS、字体和许可。生命周期需要保持进行中的上传、行内编辑、焦点和清理语义。产物内嵌 Axum 二进制，生产不需要 Node 服务，管理员身份继续使用 xcss current 合同。
+Xczs 使用随产品提供的 xcss Rust 共享快照，xcss-web 负责登录、导航、文件和上传状态，Vite 收集浏览器绑定、WASM、CSS、字体和许可。生命周期需要保持进行中的上传、行内编辑、焦点和清理语义。产物内嵌 Axum 二进制，生产不需要 Node 服务，管理员身份继续使用 xcss current 合同。
 
 ### SQLite 是文件索引数据库吗？
 

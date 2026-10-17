@@ -64,7 +64,7 @@ for (const engine of [chromium, firefox]) {
       const wasm = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('.wasm') && response.status() === 200);
       await page.goto(base + '/?lang=zh-CN#files');
       await wasm;
-      await expect(page.locator('html')).toHaveAttribute('data-xcss-runtime', 'leptos', { timeout: 30_000 });
+      await expect(page.locator('html')).toHaveAttribute('data-xcss-runtime', 'xcss-web', { timeout: 30_000 });
       await expect(page.getByRole('table', { name: '文件列表', exact: true })).toBeVisible();
       await page.getByRole('button', { name: '切换为英文', exact: true }).click();
       await expect(page.getByRole('table', { name: 'File list', exact: true })).toBeVisible();
@@ -105,7 +105,7 @@ for (const engine of [chromium, firefox]) {
     });
     await fixture(loginPage,{allowLogin:true});
     await loginPage.goto(base+'/__xczs__/login?lang=zh-CN');
-    await expect(loginPage.locator('html')).toHaveAttribute('data-xcss-runtime','leptos');
+    await expect(loginPage.locator('html')).toHaveAttribute('data-xcss-runtime','xcss-web');
     await loginPage.getByLabel('用户名',{exact:true}).fill('admin');
     await loginPage.getByLabel('密码',{exact:true}).fill('valid-test-password');
     await loginPage.getByRole('button',{name:'登录',exact:true}).click();

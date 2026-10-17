@@ -16,7 +16,7 @@ function problem(status, code) {
 }
 
 async function stagedSkip(page, { name, checkpoint, csrf = false }) {
-  await expect(page.locator("html")).toHaveAttribute("data-xcss-runtime", "leptos");
+  await expect(page.locator("html")).toHaveAttribute("data-xcss-runtime", "xcss-web");
   const contents = Buffer.from("staged upload cleanup contract");
   const methods = [], discards = [], preflights = [];
   let uploadId;
@@ -74,7 +74,7 @@ async function stagedSkip(page, { name, checkpoint, csrf = false }) {
 }
 
 for (const checkpoint of ["rejected", "not-seen"]) {
-  test(`Leptos untrusted staged discard reconciles ${checkpoint} with one HEAD before reporting skipped`, async ({ appPage: page }) => {
+  test(`xcss-web untrusted staged discard reconciles ${checkpoint} with one HEAD before reporting skipped`, async ({ appPage: page }) => {
     const name = `cleanup-${checkpoint}.txt`;
     const { methods, discards, preflights } = await stagedSkip(page, { name, checkpoint });
     await expect(page.locator(".upload-status")).toHaveAttribute("aria-label", `${name}: skipped because the destination exists`);
@@ -85,7 +85,7 @@ for (const checkpoint of ["rejected", "not-seen"]) {
   });
 }
 
-test("Leptos staged cleanup checkpoint committed reports completion rather than skipped", async ({ appPage: page }) => {
+test("xcss-web staged cleanup checkpoint committed reports completion rather than skipped", async ({ appPage: page }) => {
   const name = "cleanup-committed.txt";
   const { methods, discards, preflights } = await stagedSkip(page, { name, checkpoint: "committed" });
   await expect(page.locator(".upload-status")).toHaveAttribute("aria-label", `${name}: upload complete`);
@@ -95,7 +95,7 @@ test("Leptos staged cleanup checkpoint committed reports completion rather than 
   await expect(page.locator(".upload-status")).not.toContainText("Skipped");
 });
 
-test("Leptos staged discard CSRF failure pauses admission without reload or HEAD", async ({ appPage: page }) => {
+test("xcss-web staged discard CSRF failure pauses admission without reload or HEAD", async ({ appPage: page }) => {
   const name = "cleanup-csrf.txt";
   const identity = await page.evaluate(() => window.cleanupDocumentIdentity = crypto.randomUUID());
   const { methods, discards, preflights } = await stagedSkip(page, { name, csrf: true });

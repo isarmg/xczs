@@ -115,7 +115,7 @@ fn unauthenticated_html_navigation_redirects_to_login(
             })
     );
     let body = login_page.text()?;
-    assert!(body.contains("data-xczs-renderer=\"leptos\""));
+    assert!(body.contains("data-xczs-renderer=\"xcss-web\""));
     assert!(body.contains("/login.js"));
     assert!(body.contains("rel=\"stylesheet\""));
     assert!(body.contains("/__xczs_assets_"));
@@ -143,8 +143,8 @@ fn unauthenticated_html_navigation_redirects_to_login(
         Some("public, max-age=31536000, immutable")
     );
     assert!(body.contains("id=\"xczs-root\""));
-    assert!(body.contains("data-xczs-renderer=\"leptos\""));
-    assert!(!body.contains("<form")); // Leptos is the only login renderer.
+    assert!(body.contains("data-xczs-renderer=\"xcss-web\""));
+    assert!(!body.contains("<form")); // xcss-web is the only login renderer.
     assert!(body.contains("data-min-bytes=\"12\""));
     assert!(body.contains("data-max-bytes=\"1024\""));
     assert!(!body.contains("__MIN_PASSWORD_BYTES__"));

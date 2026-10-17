@@ -6,13 +6,13 @@ runtime_root = "product"
 css_output = "dist/platform.css"
 
 [web.entries]
-"index.js" = "leptos-index.js"
-"login.js" = "leptos-login.js"
-"dist/platform.js" = "leptos-platform.js"
+"index.js" = "xcss-web-index.js"
+"login.js" = "xcss-web-login.js"
+"dist/platform.js" = "xcss-web-platform.js"
 
 [web.copies]
-"assets/LICENSE-leptos-MIT.txt" = "leptos/vendor/xcss-web/vendor/leptos-csr/LICENSE"
-"assets/LICENSE-leptos-macro-MIT.txt" = "leptos/vendor/xcss-web/vendor/leptos-macro-csr/LICENSE"
+"assets/LICENSE-xcss-web-core-MIT.txt" = "xcss-web/vendor/xcss-web/vendor/xcss-web-core/LICENSE"
+"assets/LICENSE-xcss-web-macro-MIT.txt" = "xcss-web/vendor/xcss-web/vendor/xcss-web-macro/LICENSE"
 "assets/LICENSE-xcss-Apache-2.0.txt" = "vendor/xcss/LICENSE"
 "index.css" = "index.css"
 "login.css" = "login.css"

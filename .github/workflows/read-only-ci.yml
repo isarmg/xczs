@@ -61,7 +61,7 @@ jobs:
               scripts/check-deployment.sh|scripts/check-formal-release-e2e.sh|\
               scripts/check-release.sh|scripts/check-release-runtime.sh|\
               scripts/package-release.sh|scripts/*installed*|scripts/*inventory-tools.py|config/xssi.lock|\
-              tools/web-build/*|web/rust-web.toml|web/vendor/*|Cargo.toml|Cargo.lock|web/leptos/Cargo.toml|web/leptos/Cargo.lock|web/leptos/vendor/*|build.rs|package.json|package-lock.json)
+              tools/web-build/*|web/rust-web.toml|web/vendor/*|Cargo.toml|Cargo.lock|web/xcss-web/Cargo.toml|web/xcss-web/Cargo.lock|web/xcss-web/vendor/*|build.rs|package.json|package-lock.json)
                 release_sensitive=true
                 break
                 ;;
@@ -108,8 +108,8 @@ jobs:
           git --version
           bash --version | sed -n '1p'
           shellcheck --version
-      - name: Install the fixed Leptos browser compiler
-        run: bash scripts/install-leptos-tools.sh
+      - name: Install the fixed xcss-web browser compiler
+        run: bash scripts/install-xcss-web-tools.sh
       - name: Install and record locked JavaScript tools
         shell: bash
         run: |
@@ -128,7 +128,7 @@ jobs:
           node --test scripts/check-ci-parallelism.test.mjs
           npm run check:js
           npm run check:types
-          python3 -B scripts/test-leptos-build.py
+          python3 -B scripts/test-xcss-web-build.py
           npm run check:docs
           npm run check:independence
           npm run test:frontend:unit
@@ -171,9 +171,9 @@ jobs:
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version-file: .node-version
-      - name: Install the fixed Leptos browser compiler
-        run: bash scripts/install-leptos-tools.sh
-      - name: Build embedded Leptos platform assets
+      - name: Install the fixed xcss-web browser compiler
+        run: bash scripts/install-xcss-web-tools.sh
+      - name: Build embedded xcss-web platform assets
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
           cargo +1.99.0 run --quiet --locked --manifest-path tools/web-build/Cargo.toml -- build --product-root .
@@ -188,7 +188,7 @@ jobs:
           cargo +"$RUST_TOOLCHAIN" test --locked --target "$SERVER_TARGET" --all-targets --all-features
 
   browser_rust:
-    name: Leptos Rust format, lint, and contracts
+    name: xcss-web Rust format, lint, and contracts
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -202,10 +202,10 @@ jobs:
         run: |
           cargo +1.99.0 fmt --manifest-path tools/web-build/Cargo.toml -- --check
           cargo +1.99.0 clippy --manifest-path tools/web-build/Cargo.toml --locked --all-targets -- -D warnings
-          cargo +"$RUST_TOOLCHAIN" fmt --manifest-path web/leptos/Cargo.toml --all --check
-          cargo +"$RUST_TOOLCHAIN" clippy --manifest-path web/leptos/Cargo.toml --locked --target wasm32-unknown-unknown --all-targets --no-deps -- -D warnings
-          cargo +"$RUST_TOOLCHAIN" test --manifest-path web/leptos/Cargo.toml --locked --lib
-          python3 -B scripts/test-leptos-build.py
+          cargo +"$RUST_TOOLCHAIN" fmt --manifest-path web/xcss-web/Cargo.toml --all --check
+          cargo +"$RUST_TOOLCHAIN" clippy --manifest-path web/xcss-web/Cargo.toml --locked --target wasm32-unknown-unknown --all-targets --no-deps -- -D warnings
+          cargo +"$RUST_TOOLCHAIN" test --manifest-path web/xcss-web/Cargo.toml --locked --lib
+          python3 -B scripts/test-xcss-web-build.py
 
   coverage:
     name: Coverage
@@ -250,9 +250,9 @@ jobs:
           tar --no-same-owner -xzf "$archive" -C "$cargo_bin" cargo-llvm-cov
           chmod 0755 "$cargo_bin/cargo-llvm-cov"
           cargo llvm-cov --version
-      - name: Install the fixed Leptos browser compiler
+      - name: Install the fixed xcss-web browser compiler
         if: ${{ !cancelled() && steps.quality_source.outcome == 'success' && steps.quality_rust.outcome == 'success' && steps.coverage_tool.outcome == 'success' }}
-        run: bash scripts/install-leptos-tools.sh
+        run: bash scripts/install-xcss-web-tools.sh
       - name: Run coverage checks
         if: ${{ !cancelled() && steps.quality_source.outcome == 'success' && steps.quality_rust.outcome == 'success' && steps.coverage_tool.outcome == 'success' }}
         shell: bash
@@ -321,7 +321,7 @@ jobs:
           # No prefix fallback: profile, flags, installer pin and build contract
           # changes invalidate this lane. GitHub scopes PR reads to their base;
           # only a successful main push may populate this cache below.
-          key: xczs-release-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN }}-${{ env.SERVER_TARGET }}-debug-release-${{ steps.release_rust_environment.outputs.fingerprint }}-${{ hashFiles('Cargo.lock', 'tools/web-build/Cargo.lock', 'tools/web-build/src/**', 'web/rust-web.toml', 'web/vendor/**', 'web/leptos/vendor/**', 'web/leptos/Cargo.lock', '**/Cargo.toml', '**/build.rs', '.cargo/**', 'config/xssi.lock', 'package.json', 'package-lock.json', 'xcss-web-build.json', '.github/workflows/read-only-ci.yml') }}
+          key: xczs-release-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN }}-${{ env.SERVER_TARGET }}-debug-release-${{ steps.release_rust_environment.outputs.fingerprint }}-${{ hashFiles('Cargo.lock', 'tools/web-build/Cargo.lock', 'tools/web-build/src/**', 'web/rust-web.toml', 'web/vendor/**', 'web/xcss-web/vendor/**', 'web/xcss-web/Cargo.lock', '**/Cargo.toml', '**/build.rs', '.cargo/**', 'config/xssi.lock', 'package.json', 'package-lock.json', 'xcss-web-build.json', '.github/workflows/read-only-ci.yml') }}
       - name: Discard cached candidate products before real compilation
         env:
           RUSTUP_TOOLCHAIN: ${{ env.RUST_TOOLCHAIN }}
@@ -361,9 +361,9 @@ jobs:
         with:
           path: ${{ runner.temp }}/inventory-tools
           key: ${{ steps.inventory_tools.outputs.cache-primary-key }}
-      - name: Install the fixed Leptos browser compiler
-        run: bash scripts/install-leptos-tools.sh
-      - name: Build embedded Leptos platform assets
+      - name: Install the fixed xcss-web browser compiler
+        run: bash scripts/install-xcss-web-tools.sh
+      - name: Build embedded xcss-web platform assets
         if: ${{ !cancelled() && steps.quality_source.outcome == 'success' && steps.quality_node.outcome == 'success' }}
         id: release_assets
         env:
@@ -507,8 +507,8 @@ jobs:
           npm --version
           rustc +"$RUST_TOOLCHAIN" --version
           cargo +"$RUST_TOOLCHAIN" --version
-      - name: Install the fixed Leptos browser compiler
-        run: bash scripts/install-leptos-tools.sh
+      - name: Install the fixed xcss-web browser compiler
+        run: bash scripts/install-xcss-web-tools.sh
       - name: Install locked JavaScript tools and browser
         shell: bash
         env:

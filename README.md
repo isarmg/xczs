@@ -24,7 +24,7 @@ curl --fail http://127.0.0.1:5000/readyz
 
 ## 构建
 
-生产 Web 构建使用固定 Rust 1.99.0 和独立 Cargo 锁图；正式打包额外需要 Python 3.11+。浏览器前端使用 Rust/Leptos CSR，后端保留 Axum 并兼容既有 API，按 WASM 加载、缓存与传输需要适配优化。先执行 `bash scripts/install-leptos-tools.sh` 准备固定 WASM target、Rustfmt/Clippy 和 wasm-bindgen 0.2.129；开发与验收见 [Leptos 浏览器维护](docs/leptos-browser.md)。正式打包要求干净源码、同版本 annotated tag、固定已发布 xssi 提交。
+生产 Web 构建使用固定 Rust 1.99.0 和独立 Cargo 锁图；正式打包额外需要 Python 3.11+。浏览器前端使用 Rust / xcss-web CSR，后端保留 Axum 并兼容既有 API，按 WASM 加载、缓存与传输需要适配优化。先执行 `bash scripts/install-xcss-web-tools.sh` 准备固定 WASM target、Rustfmt/Clippy 和 wasm-bindgen 0.2.129；开发与验收见 [xcss-web 浏览器维护](docs/xcss-web-browser.md)。正式打包要求干净源码、同版本 annotated tag、固定已发布 xssi 提交。
 
 生产前端构建使用仓库内 Rust 工具，无需安装 npm 依赖。准备 Rust 1.99.0、wasm32-unknown-unknown target 和 wasm-bindgen-cli 0.2.129 后，在产品根目录执行：
 

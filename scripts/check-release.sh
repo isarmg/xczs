@@ -49,9 +49,9 @@ run npm run check:docs
 run npm run check:independence
 run cargo +1.99.0 run --quiet --locked --manifest-path tools/web-build/Cargo.toml -- build --product-root .
 run npm run check:types
-run cargo +1.99.0 fmt --manifest-path web/leptos/Cargo.toml --all --check
-run cargo +1.99.0 clippy --manifest-path web/leptos/Cargo.toml --locked --target wasm32-unknown-unknown --all-targets --no-deps -- -D warnings
-run python3 -B scripts/test-leptos-build.py
+run cargo +1.99.0 fmt --manifest-path web/xcss-web/Cargo.toml --all --check
+run cargo +1.99.0 clippy --manifest-path web/xcss-web/Cargo.toml --locked --target wasm32-unknown-unknown --all-targets --no-deps -- -D warnings
+run python3 -B scripts/test-xcss-web-build.py
 run npm run test:frontend:unit
 
 cargo_audit_version="$(cargo audit --version 2>/dev/null)" || {
@@ -76,7 +76,7 @@ if [[ "${XCZS_ISOLATED_QUALITY_GATE:-}" == "1" ]]; then
     --no-fetch \
     --no-yanked
   run cargo audit \
-    --file web/leptos/Cargo.lock \
+    --file web/xcss-web/Cargo.lock \
     --db "$XCZS_QUALITY_AUDIT_DB" \
     --no-fetch \
     --no-yanked
@@ -86,8 +86,8 @@ elif [[ -n "${XCZS_QUALITY_AUDIT_DB:-}" ]]; then
 else
   run cargo fetch --locked
   run cargo audit --deny yanked
-  run cargo fetch --manifest-path web/leptos/Cargo.toml --locked
-  run cargo audit --file web/leptos/Cargo.lock --deny yanked
+  run cargo fetch --manifest-path web/xcss-web/Cargo.toml --locked
+  run cargo audit --file web/xcss-web/Cargo.lock --deny yanked
 fi
 
 # The independent xssi repository tests signed packaging and installation.

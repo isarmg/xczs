@@ -1,32 +1,32 @@
-# 06. 前端页面与交互：Leptos 浏览器工作区
+# 06. 前端页面与交互：xcss-web 浏览器工作区
 
-本章介绍当前 Rust/Leptos 前端。HTTP、文件系统、会话和持久化仍由 Axum 服务处理；浏览器界面、状态和请求编排编译为 WASM，在用户浏览器运行。它采用 CSR，页面交互依然需要浏览器执行代码。
+本章介绍当前 Rust / xcss-web 前端。HTTP、文件系统、会话和持久化仍由 Axum 服务处理；浏览器界面、状态和请求编排编译为 WASM，在用户浏览器运行。它采用 CSR，页面交互依然需要浏览器执行代码。
 
-上传的协议与提交边界见[第 7 章](07-upload-protocol.md)，构建和迁移证据见[Leptos 浏览器维护](../leptos-browser.md)。
+上传的协议与提交边界见[第 7 章](07-upload-protocol.md)，构建和迁移证据见[xcss-web 浏览器维护](../xcss-web-browser.md)。
 
 ## 6.1 从 HTML 到工作区
 
 Axum 返回 `web/index.html` 或 `web/login.html`，引用同源 CSS、字体和外置 ES module。HTML 保留 `#xczs-root`、登录密码字节范围和 Base64 编码的业务元数据，不向页面注入管理员凭据。
 
-启动入口 [leptos-index.js](../../web/leptos-index.js) 和 [leptos-login.js](../../web/leptos-login.js) 加载同一个 WASM 模块；[leptos-platform.js](../../web/leptos-platform.js) 导入 xcss 样式、字体许可和现有 server-corners 绘制适配器。剩余手写 JavaScript 只负责这些浏览器边界与只读验收桥接，文件管理和上传状态保存在 Rust 中。
+启动入口 [xcss-web-index.js](../../web/xcss-web-index.js) 和 [xcss-web-login.js](../../web/xcss-web-login.js) 加载同一个 WASM 模块；[xcss-web-platform.js](../../web/xcss-web-platform.js) 导入 xcss 样式、字体许可和现有 server-corners 绘制适配器。剩余手写 JavaScript 只负责这些浏览器边界与只读验收桥接，文件管理和上传状态保存在 Rust 中。
 
-[lib.rs](../../web/leptos/src/lib.rs) 初始化共享字体、语言、主题和挂载根节点。文件页先经共享客户端恢复会话，再严格检查 `index-data` 的字段、路径和类型，最后创建工作区模型。登录页使用服务端提供的密码字节范围，保留必填错误、焦点、密码清空、请求锁定及中英文显示。
+[lib.rs](../../web/xcss-web/src/lib.rs) 初始化共享字体、语言、主题和挂载根节点。文件页先经共享客户端恢复会话，再严格检查 `index-data` 的字段、路径和类型，最后创建工作区模型。登录页使用服务端提供的密码字节范围，保留必填错误、焦点、密码清空、请求锁定及中英文显示。
 
-真实 Rust 运行时启动后才写入 `html[data-xcss-runtime="leptos"]`。浏览器验收还等待实际 WASM 请求，避免只看页面外观就误用旧实现。
+真实 Rust 运行时启动后才写入 `html[data-xcss-runtime="xcss-web"]`。浏览器验收还等待实际 WASM 请求，避免只看页面外观就误用旧实现。
 
 ## 6.2 源码地图
 
 | 文件 | 职责 |
 | --- | --- |
-| [lib.rs](../../web/leptos/src/lib.rs) | 页面启动、会话恢复、登录与只读诊断桥接 |
-| [model.rs](../../web/leptos/src/model.rs) | 工作区数据、筛选、目录页、操作模式、上传模型与边界校验 |
-| [workspace.rs](../../web/leptos/src/workspace.rs) | 导航、目录列表、搜索、分页、行内编辑、键盘与显示 |
-| [operations.rs](../../web/leptos/src/operations.rs) | 新建、重命名、移动、删除、确认对话框与列表失效 |
-| [http.rs](../../web/leptos/src/http.rs) | Fetch/XHR、响应预算、结构化错误、Operation/job 查询与路径 |
-| [protocol.rs](../../web/leptos/src/protocol.rs) | 上传 status/header 矩阵、身份、长度、offset、revision 与恢复判定 |
-| [upload.rs](../../web/leptos/src/upload.rs) | 选择、预检、有界队列、正文、冲突、取消、重试与终态历史 |
-| [tags.rs](../../web/leptos/src/tags.rs) | 标签库、分页、文件关联、筛选、索引状态与扫描 |
-| [vendor/xcss-web](../../web/leptos/vendor/xcss-web) | 本产品随附的共享认证、UI、主题、语言与合同快照 |
+| [lib.rs](../../web/xcss-web/src/lib.rs) | 页面启动、会话恢复、登录与只读诊断桥接 |
+| [model.rs](../../web/xcss-web/src/model.rs) | 工作区数据、筛选、目录页、操作模式、上传模型与边界校验 |
+| [workspace.rs](../../web/xcss-web/src/workspace.rs) | 导航、目录列表、搜索、分页、行内编辑、键盘与显示 |
+| [operations.rs](../../web/xcss-web/src/operations.rs) | 新建、重命名、移动、删除、确认对话框与列表失效 |
+| [http.rs](../../web/xcss-web/src/http.rs) | Fetch/XHR、响应预算、结构化错误、Operation/job 查询与路径 |
+| [protocol.rs](../../web/xcss-web/src/protocol.rs) | 上传 status/header 矩阵、身份、长度、offset、revision 与恢复判定 |
+| [upload.rs](../../web/xcss-web/src/upload.rs) | 选择、预检、有界队列、正文、冲突、取消、重试与终态历史 |
+| [tags.rs](../../web/xcss-web/src/tags.rs) | 标签库、分页、文件关联、筛选、索引状态与扫描 |
+| [vendor/xcss-web](../../web/xcss-web/vendor/xcss-web) | 本产品随附的共享认证、UI、主题、语言与合同快照 |
 
 旧 React/TypeScript 源码与业务单测保存在 [迁移基线](../../web/tests/fixtures/react-baseline/README.md)，便于核对历史合同；当前生产构建不从该目录生成界面。
 
@@ -40,7 +40,7 @@ Axum 返回 `web/index.html` 或 `web/login.html`，引用同源 CSS、字体和
 
 生产程序不会每次请求都读取仓库源码。未绑定源码的开发程序可显式启用开发资源目录；正式程序的目录覆盖边界仍按原规则校验。
 
-构建输入包括独立浏览器 `Cargo.lock` 和随产品提供的共享源码。`SOURCE.json` 及 `assets/leptos-build.json` 记录摘要，构建中输入发生变化会拒绝该次产物。运行资源需要匹配清单、MIME、大小及内容摘要。
+构建输入包括独立浏览器 `Cargo.lock` 和随产品提供的共享源码。`SOURCE.json` 及 `assets/xcss-web-build.json` 记录摘要，构建中输入发生变化会拒绝该次产物。运行资源需要匹配清单、MIME、大小及内容摘要。
 
 ## 6.4 目录、筛选和分页
 
@@ -74,8 +74,8 @@ Rust 编译器检查本地类型和所有权，无法保证服务器 JSON 或 HT
 
 ```sh
 npm run check:types
-cargo +1.99.0 fmt --manifest-path web/leptos/Cargo.toml --all --check
-cargo +1.99.0 clippy --manifest-path web/leptos/Cargo.toml --locked \
+cargo +1.99.0 fmt --manifest-path web/xcss-web/Cargo.toml --all --check
+cargo +1.99.0 clippy --manifest-path web/xcss-web/Cargo.toml --locked \
   --target wasm32-unknown-unknown --all-targets --no-deps -- -D warnings
 ```
 

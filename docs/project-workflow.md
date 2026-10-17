@@ -12,7 +12,7 @@
 - 唯一角色是 `admin`；每个有效管理员拥有整个共享目录的浏览和文件管理能力；
 - 服务只通过内网 HTTP/TCP 地址监听，HTTPS 统一由网关终止；
 - TCP 接收错误使用分类日志和有界退避；SIGINT/SIGTERM 触发分阶段优雅停机；
-- 目录页使用编译进程序的 Leptos WASM、xcss CSS、Maple 字体和图标；Vite 负责静态资源收集；
+- 目录页使用编译进程序的 xcss-web WASM、xcss CSS、Maple 字体和图标；Vite 负责静态资源收集；
 - 浏览器通过 HTTPS 网关使用会话 Cookie 进行下载、持久化上传、删除和同源 JSON POST 操作；
 
 ## 1. 总体流程树
@@ -137,9 +137,9 @@ flowchart LR
     KNOWN -- 否 --> MISS["404 + private, no-store"]
 ```
 
-Xczs 使用 Rust/Leptos CSR。`leptos-index.js`、`leptos-login.js` 初始化同一 WASM，`leptos-platform.js` 导入静态样式、字体许可和现有 corner 绘制适配器。先准备固定 Rust WASM target、wasm-bindgen 与 Node 工具，执行 `npm ci`、`npm run build:platform`，再编译 Axum。浏览器业务状态及请求编排位于 `web/leptos/src`，原 React/TypeScript 源码和单测留在迁移基线目录。
+Xczs 使用 Rust / xcss-web CSR。`xcss-web-index.js`、`xcss-web-login.js` 初始化同一 WASM，`xcss-web-platform.js` 导入静态样式、字体许可和现有 corner 绘制适配器。先准备固定 Rust WASM target、wasm-bindgen 与 Node 工具，执行 `npm ci`、`npm run build:platform`，再编译 Axum。浏览器业务状态及请求编排位于 `web/xcss-web/src`，原 React/TypeScript 源码和单测留在迁移基线目录。
 
-产物包含同源 ESM、WASM、CSS、正体非连字字体、许可和 `assets/leptos-build.json`，禁止 source map。常规资源预算为 512 KiB，WASM 单独为 4 MiB，字体和总量为 16 MiB。资源按名称、MIME 和内容摘要嵌入；CSP 为 WASM 编译提供精确许可，仍禁止内联脚本和一般 JavaScript eval。正式程序仍不需要 Node 服务，保留 Axum 与原有 API 合同。细节见[Leptos 浏览器维护](leptos-browser.md)。
+产物包含同源 ESM、WASM、CSS、正体非连字字体、许可和 `assets/xcss-web-build.json`，禁止 source map。常规资源预算为 512 KiB，WASM 单独为 4 MiB，字体和总量为 16 MiB。资源按名称、MIME 和内容摘要嵌入；CSP 为 WASM 编译提供精确许可，仍禁止内联脚本和一般 JavaScript eval。正式程序仍不需要 Node 服务，保留 Axum 与原有 API 合同。细节见[xcss-web 浏览器维护](xcss-web-browser.md)。
 
 ## 5. 公共路由
 

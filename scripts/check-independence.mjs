@@ -10,13 +10,13 @@ if (/\bpath\s*=\s*["']/u.test(cargo)) {
 }
 
 // The browser workspace may use its bundled shared snapshot, never siblings.
-const browser = resolve(root, "web/leptos");
+const browser = resolve(root, "web/xcss-web");
 const browserCargo = readFileSync(resolve(browser, "Cargo.toml"), "utf8");
 for (const match of browserCargo.matchAll(/\bpath\s*=\s*["']([^"']+)["']/gu)) {
   const dependency = realpathSync(resolve(browser, match[1]));
   const local = relative(browser, dependency);
   if (isAbsolute(local) || local === ".." || local.startsWith(`..${sep}`)) {
-    failures.push(`web/leptos/Cargo.toml: browser dependency escapes product: ${match[1]}`);
+    failures.push(`web/xcss-web/Cargo.toml: browser dependency escapes product: ${match[1]}`);
   }
 }
 

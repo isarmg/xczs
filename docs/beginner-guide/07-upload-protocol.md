@@ -49,10 +49,10 @@ Xczs 因此把控制面和数据面分开：
 
 | 文件 | 负责什么 |
 | --- | --- |
-| [upload.rs](../../web/leptos/src/upload.rs) | 文件选择、批量预算、预检、FIFO 队列、正文、冲突、取消、恢复、进度和有界终态历史 |
-| [protocol.rs](../../web/leptos/src/protocol.rs) | status/header 矩阵、Upload ID、长度、offset、revision 与恢复判定 |
-| [http.rs](../../web/leptos/src/http.rs) | Fetch/XHR、规范整数、响应预算、进度事件、abort、timeout 与错误分类 |
-| [model.rs](../../web/leptos/src/model.rs) | 上传数据、工作区状态和列表失效 |
+| [upload.rs](../../web/xcss-web/src/upload.rs) | 文件选择、批量预算、预检、FIFO 队列、正文、冲突、取消、恢复、进度和有界终态历史 |
+| [protocol.rs](../../web/xcss-web/src/protocol.rs) | status/header 矩阵、Upload ID、长度、offset、revision 与恢复判定 |
+| [http.rs](../../web/xcss-web/src/http.rs) | Fetch/XHR、规范整数、响应预算、进度事件、abort、timeout 与错误分类 |
+| [model.rs](../../web/xcss-web/src/model.rs) | 上传数据、工作区状态和列表失效 |
 
 旧 TypeScript 源码及测试完整保存在迁移基线目录，供核对历史合同；本章的协议状态和提交边界仍适用。
 
@@ -565,7 +565,7 @@ XHR abort 只停止浏览器继续等待或发送，不能撤销服务器已经�
 
 例如收到 `204` 但 `X-Xczs-Upload-Id` 变成另一个 UUID，可能表示代理、服务器 bug 或响应错配。前端不能仅看 2xx 就把任务标绿。
 
-[protocol.rs](../../web/leptos/src/protocol.rs) 会联合验证：
+[protocol.rs](../../web/xcss-web/src/protocol.rs) 会联合验证：
 
 - 当前请求是 fresh、resume 还是 checkpoint；
 - HTTP status；
@@ -675,6 +675,6 @@ npm run test:frontend:unit
 - [src/server/upload/protocol.rs](../../src/server/upload/protocol.rs)：服务端上传头、revision 和覆盖策略解析单测；
 - [tests/http.rs](../../tests/http.rs) 与 [tests/browser_api.rs](../../tests/browser_api.rs)：真实 HTTP 上传与 preflight/discard 边界；
 - [tests/frontend/upload.spec.js](../../tests/frontend/upload.spec.js)：用户实际看到的选择、进度、冲突、重试和 unknown；
-- [浏览器 Rust 协议测试](../../web/leptos/src/protocol.rs)：前端 status/header 状态矩阵。
+- [浏览器 Rust 协议测试](../../web/xcss-web/src/protocol.rs)：前端 status/header 状态矩阵。
 
 下一章会介绍如何把这些测试组合成日常修改工作流。

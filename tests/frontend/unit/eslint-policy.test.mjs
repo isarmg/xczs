@@ -6,14 +6,14 @@ import { ESLint } from "eslint";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const eslint = new ESLint({ cwd: root });
-const bootstraps = ["web/leptos-index.js", "web/leptos-login.js", "web/leptos-platform.js"];
+const bootstraps = ["web/xcss-web-index.js", "web/xcss-web-login.js", "web/xcss-web-platform.js"];
 
 async function ruleIds(source, filePath) {
   const [result] = await eslint.lintText(source, { filePath: resolve(root, filePath) });
   return result.messages.map(message => message.ruleId);
 }
 
-test("all Leptos bootstrap entries reject browser injection and dynamic code", async () => {
+test("all xcss-web bootstrap entries reject browser injection and dynamic code", async () => {
   const probes = [
     ["element.innerHTML = userInput;\n", "nounsanitized/property"],
     ["document.write(userInput);\n", "nounsanitized/method"],
@@ -33,7 +33,7 @@ test("all Leptos bootstrap entries reject browser injection and dynamic code", a
   }
 });
 
-test("Leptos bootstrap network requests remain owned by Rust", async () => {
+test("xcss-web bootstrap network requests remain owned by Rust", async () => {
   const probes = [
     ["fetch('/');\n", "no-restricted-globals"],
     ["new XMLHttpRequest();\n", "no-restricted-globals"],

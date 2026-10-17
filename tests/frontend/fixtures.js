@@ -230,7 +230,7 @@ async function pageData(page) {
   );
   const metadata = JSON.parse(Buffer.from(encoded, "base64").toString("utf8"));
   expect(Object.keys(metadata).sort()).toEqual(["dir_exists", "href"]);
-  await expect(page.locator("html")).toHaveAttribute("data-xcss-runtime", "leptos");
+  await expect(page.locator("html")).toHaveAttribute("data-xcss-runtime", "xcss-web");
   const session = await page.evaluate(async () => {
     const entry = document.querySelector('script[type="module"][src$="/index.js"]');
     const platform = await import(new URL("dist/platform.js", entry.src).href);

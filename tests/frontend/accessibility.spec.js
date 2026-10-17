@@ -320,11 +320,11 @@ test("File pages, inline editors, and operation dialogs pass the axe WCAG A/AA s
 
 test("Production frontend source has no dynamic HTML injection or native browser modal calls", async () => {
   const files = [
-    resolve(__dirname, "../../web/leptos-index.js"),
-    resolve(__dirname, "../../web/leptos-login.js"),
-    resolve(__dirname, "../../web/leptos-platform.js"),
-    ...walkJavaScript(resolve(__dirname, "../../web/leptos/src"), /\.rs$/u),
-    ...walkJavaScript(resolve(__dirname, "../../web/leptos/vendor/xcss-web/src"), /\.rs$/u),
+    resolve(__dirname, "../../web/xcss-web-index.js"),
+    resolve(__dirname, "../../web/xcss-web-login.js"),
+    resolve(__dirname, "../../web/xcss-web-platform.js"),
+    ...walkJavaScript(resolve(__dirname, "../../web/xcss-web/src"), /\.rs$/u),
+    ...walkJavaScript(resolve(__dirname, "../../web/xcss-web/vendor/xcss-web/src"), /\.rs$/u),
   ];
   const forbidden = /\b(?:innerHTML|outerHTML|insertAdjacentHTML|document\.write|DOMParser)\b/;
   const nativeModal = /(?<![.\w])(?:alert|confirm|prompt)\s*\(|\b(?:globalThis|self|window)\s*\.\s*(?:alert|confirm|prompt)\s*\(/u;
