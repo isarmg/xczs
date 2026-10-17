@@ -127,6 +127,7 @@ jobs:
           node scripts/check-release-workflow.mjs
           node --test scripts/check-ci-parallelism.test.mjs
           npm run check:js
+          npm run check:xcss
           npm run check:types
           cargo +1.99.0 test --locked --manifest-path tools/web-build/Cargo.toml
           npm run check:docs
@@ -202,7 +203,7 @@ jobs:
         run: |
           cargo +1.99.0 fmt --manifest-path tools/web-build/Cargo.toml -- --check
           cargo +1.99.0 clippy --manifest-path tools/web-build/Cargo.toml --locked --all-targets -- -D warnings
-          cargo +"$RUST_TOOLCHAIN" fmt --manifest-path web/xcss-web/Cargo.toml --all --check
+          cargo +"$RUST_TOOLCHAIN" fmt --manifest-path web/xcss-web/Cargo.toml -- --check
           cargo +"$RUST_TOOLCHAIN" clippy --manifest-path web/xcss-web/Cargo.toml --locked --target wasm32-unknown-unknown --all-targets --no-deps -- -D warnings
           cargo +"$RUST_TOOLCHAIN" test --manifest-path web/xcss-web/Cargo.toml --locked --lib
           cargo +1.99.0 test --locked --manifest-path tools/web-build/Cargo.toml
@@ -525,6 +526,11 @@ jobs:
           SHARDS: ${{ matrix.shards }}
           RUSTUP_TOOLCHAIN: ${{ env.RUST_TOOLCHAIN }}
         run: node scripts/build-frontend-candidate.mjs --project="$BROWSER" --shard="$SHARD/$SHARDS"
+      - name: Check bilingual WASM flows at mobile and desktop sizes
+        if: ${{ matrix.shard == 1 }}
+        env:
+          XCZS_LANGUAGE_TEST_BROWSER: ${{ matrix.browser }}
+        run: node tests/frontend/language.mjs
       - name: Preserve browser diagnostics on failure
         if: ${{ failure() }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

@@ -6,7 +6,7 @@ const authoredFiles = [
   "eslint.config.mjs",
   "playwright.config.js",
   "scripts/**/*.mjs",
-  "tests/frontend/**/*.mjs",
+  "tests/frontend/**/*.{js,mjs}",
   "web/**/*.{js,jsx,mjs}",
 ];
 
@@ -20,7 +20,6 @@ export default [
       "web/dist/**",
       "web/runtime-dist/**",
       "web/pkg/**",
-      "web/tests/fixtures/**",
       "web/xcss-web/vendor/xcss-web/vendor/xcss-web-core/**",
     ],
   },

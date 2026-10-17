@@ -24,13 +24,13 @@
     "build:server:release": "cargo +1.99.0 run --quiet --locked --manifest-path tools/web-build/Cargo.toml -- server --product-root . --config xcss-web-build.json --mode release",
     "test:rust": "cargo +1.99.0 run --quiet --locked --manifest-path tools/web-build/Cargo.toml -- test --product-root .",
     "dev": "cargo +1.99.0 run --quiet --locked --manifest-path tools/web-build/Cargo.toml -- serve --product-root . --debug --bind 127.0.0.1:5173",
-    "test:startup": "node scripts/build-frontend-candidate.mjs tests/frontend/startup.spec.js"
+    "test:startup": "node scripts/build-frontend-candidate.mjs tests/frontend/startup.spec.js",
+    "check:xcss": "node scripts/check-xcss-web.mjs"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
     "@eslint/js": "10.0.1",
     "@playwright/test": "1.63.0",
-    "@xcss/web": "https://github.com/isarmg/xcss/releases/download/v1.0.0/xcss-web-1.0.0.tgz",
     "eslint": "10.11.0",
     "eslint-plugin-no-unsanitized": "4.1.5",
     "globals": "17.12.0",

@@ -9,7 +9,7 @@ const results = await eslint.lintFiles([
   "eslint.config.mjs",
   "playwright.config.js",
   "scripts/**/*.mjs",
-  "tests/frontend/**/*.mjs",
+  "tests/frontend/**/*.{js,mjs}",
   "web/**/*.{js,mjs,jsx}",
 ]);
 const errors = results.reduce((total, result) => total + result.errorCount, 0);

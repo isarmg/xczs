@@ -32,7 +32,7 @@ Axum 返回 `web/index.html` 或 `web/login.html`，引用同源 CSS、字体和
 
 ## 6.3 修改源码为什么要重新构建
 
-浏览器 Rust 代码先编译为 WASM，wasm-bindgen 生成浏览器绑定，Vite 收集 JS、WASM、CSS、字体、图标和许可。`scripts/build-platform.mjs` 用私有、URL 安全的临时目录构建，再发布到 `web/dist` 和 `web/runtime-dist`。Axum 构建把运行资源及其清单嵌入可执行文件。
+浏览器 Rust 代码先编译为 WASM，wasm-bindgen 生成浏览器绑定，`tools/web-build` Rust CLI 收集 JS、WASM、CSS、字体、图标和许可。构建器在隔离目录完成编译和校验，再发布到 `web/pkg` 和 `web/runtime-dist`。Axum 构建把运行资源及其清单嵌入可执行文件。
 
 ```text
 修改 Rust/CSS → npm run build:platform → 编译 Axum → 启动新程序 → 浏览器重新载入
@@ -74,7 +74,7 @@ Rust 编译器检查本地类型和所有权，无法保证服务器 JSON 或 HT
 
 ```sh
 npm run check:types
-cargo +1.99.0 fmt --manifest-path web/xcss-web/Cargo.toml --all --check
+cargo +1.99.0 fmt --manifest-path web/xcss-web/Cargo.toml -- --check
 cargo +1.99.0 clippy --manifest-path web/xcss-web/Cargo.toml --locked \
   --target wasm32-unknown-unknown --all-targets --no-deps -- -D warnings
 ```

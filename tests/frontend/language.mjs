@@ -16,7 +16,7 @@ const html = (await readFile(resolve(root, 'web/index.html'), 'utf8'))
   .replace('__INDEX_DATA__', Buffer.from(JSON.stringify({ href: '/', dir_exists: true })).toString('base64'));
 const loginHtml = (await readFile(resolve(root, 'web/login.html'), 'utf8'))
   .replace('__WASM_PRELOAD__', '')
-  .replaceAll('__ASSETS_PREFIX__', '__xczs__/')
+  .replaceAll('__ASSETS_PREFIX__', '/__xczs__/')
   .replace('__MIN_PASSWORD_BYTES__', '12')
   .replace('__MAX_PASSWORD_BYTES__', '1024');
 
@@ -53,7 +53,12 @@ async function english(page) {
   assert.doesNotMatch(await page.locator('body').innerText(), /SECRET/);
 }
 
-for (const engine of [chromium, firefox]) {
+const selectedBrowser = process.env.XCZS_LANGUAGE_TEST_BROWSER;
+if (selectedBrowser && !["chromium", "firefox"].includes(selectedBrowser)) {
+  throw new Error(`Unsupported language test browser: ${selectedBrowser}`);
+}
+const engines = [chromium, firefox].filter(engine => !selectedBrowser || engine.name() === selectedBrowser);
+for (const engine of engines) {
   const browser = await engine.launch();
   try {
     for (const width of [360, 1280]) {

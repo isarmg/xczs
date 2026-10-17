@@ -12,18 +12,18 @@ test("xcss-web frontend uses embedded fonts, licenses, and session recovery supp
   await expect(boot).toHaveCount(1);
   const bootResponse = await page.context().request.get(await boot.evaluate(link => link.href));
   expect(bootResponse.status()).toBe(200);
-  expect(await bootResponse.body()).toEqual(readFileSync(require.resolve("@xcss/web/web-fonts/boot.css")));
+  expect(await bootResponse.body()).toEqual(readFileSync(join(__dirname, "../../web/vendor/xcss/web-fonts/boot.css")));
   expect(await page.locator("head").evaluate(head => head.querySelector("style") === null)).toBe(true);
   const licenses = await page.evaluate(async url => {
     const platform = await import(url);
     return { latin: platform.fontLicenseUrl, cjk: platform.cjkFontLicenseUrl };
   }, new URL("platform.js", prefix).href);
-  const provenance = require("../../node_modules/@xcss/web/dist/web-fonts/provenance.json");
-  const fontCss = readFileSync(require("node:path").join(__dirname, "../../node_modules/@xcss/web/dist/web-fonts/fonts.css"), "utf8");
+  const provenance = require("../../web/vendor/xcss/web-fonts/provenance.json");
+  const fontCss = readFileSync(require("node:path").join(__dirname, "../../web/vendor/xcss/web-fonts/fonts.css"), "utf8");
   expect(fontCss).toContain('font-family:"Sarmg Maple"');
   for (const source of Object.keys(provenance.assets).filter(name => (name.endsWith(".woff2") && fontCss.includes(`./${name}`)) || name.endsWith(".txt"))) {
     const name = source.split("/").at(-1);
-    // Vite may coalesce identical license bytes into a single emitted asset.
+    // The Rust asset builder deduplicates identical license bytes.
     const url = source === "CJK-LICENSE.txt" ? licenses.cjk
       : ["OFL.txt", "NORMAL-LICENSE.txt"].includes(source) ? licenses.latin
         : new URL(name, prefix).href;
@@ -32,7 +32,7 @@ test("xcss-web frontend uses embedded fonts, licenses, and session recovery supp
     expect(response.headers()["cache-control"]).toContain("immutable");
     expect(response.headers()["x-content-type-options"]).toBe("nosniff");
     expect(response.headers()["content-type"]).toContain(name.endsWith("woff2") ? "font/woff2" : "text/plain");
-    expect(await response.body()).toEqual(readFileSync(require("node:path").join(__dirname, "../../node_modules/@xcss/web/dist/web-fonts", source)));
+    expect(await response.body()).toEqual(readFileSync(require("node:path").join(__dirname, "../../web/vendor/xcss/web-fonts", source)));
   }
   await page.evaluate(() => document.fonts.ready);
   expect(await page.evaluate(() => document.fonts.check('16px "Sarmg Maple"'))).toBe(true);
@@ -177,7 +177,7 @@ test("The xcss appearance unifies the top product name, equal-height icons, and 
     expect(await icon.evaluate(svg => Math.abs(svg.getBoundingClientRect().height - Number.parseFloat(getComputedStyle(svg.parentElement).fontSize)))).toBeLessThan(1);
   }
   expect(await page.locator(".paths-table").evaluate(table => getComputedStyle(table).borderCollapse)).toBe("collapse");
-  await page.screenshot({ path: testInfo.outputPath("react-xcss-desktop.png") });
+  await page.screenshot({ path: testInfo.outputPath("wasm-xcss-desktop.png") });
 });
 
 test("xcss-web theme updates neither rebuild the upload queue nor resend uploads", async ({ appPage: page }) => {
@@ -186,7 +186,7 @@ test("xcss-web theme updates neither rebuild the upload queue nor resend uploads
   const gate = new Promise(resolve => { releaseUpload = resolve; });
   const reached = new Promise(resolve => { reachedUpload = resolve; });
   let requests = 0;
-  await page.route("**/react-theme-upload.txt", async route => {
+  await page.route("**/wasm-theme-upload.txt", async route => {
     if (route.request().method() === "PUT") {
       requests++;
       reachedUpload();
@@ -195,7 +195,7 @@ test("xcss-web theme updates neither rebuild the upload queue nor resend uploads
     await route.continue();
   });
   try {
-    await selectFiles(page, "#file", [{ name: "react-theme-upload.txt", mimeType: "text/plain", buffer: Buffer.from("React keeps the upload alive") }]);
+    await selectFiles(page, "#file", [{ name: "wasm-theme-upload.txt", mimeType: "text/plain", buffer: Buffer.from("WASM keeps the upload alive") }]);
     await reached;
     const row = await page.locator(".upload-status").elementHandle();
     expect(row).not.toBeNull();
@@ -212,6 +212,6 @@ test("xcss-web theme updates neither rebuild the upload queue nor resend uploads
     expect(await row.evaluate(element => element.isConnected && element === document.querySelector(".upload-status"))).toBe(true);
     expect(requests).toBe(1);
   } finally { releaseUpload(); }
-  await expect(page.locator(".upload-status")).toHaveAttribute("aria-label", "react-theme-upload.txt: upload complete");
+  await expect(page.locator(".upload-status")).toHaveAttribute("aria-label", "wasm-theme-upload.txt: upload complete");
   expect(requests).toBe(1);
 });

@@ -137,7 +137,7 @@ flowchart LR
     KNOWN -- 否 --> MISS["404 + private, no-store"]
 ```
 
-Xczs 使用 Rust / xcss-web CSR。`xcss-web-index.js`、`xcss-web-login.js` 初始化同一 WASM，`xcss-web-platform.js` 导入静态样式、字体许可和现有 corner 绘制适配器。先准备固定 Rust WASM target、wasm-bindgen 与 Node 工具，执行 `npm ci`、`npm run build:platform`，再编译 Axum。浏览器业务状态及请求编排位于 `web/xcss-web/src`，原 React/TypeScript 源码和单测留在迁移基线目录。
+Xczs 使用 Rust / xcss-web CSR。`xcss-web-index.js`、`xcss-web-login.js` 初始化同一 WASM，`xcss-web-platform.js` 导入静态样式、字体许可和现有 corner 绘制适配器。先准备固定 Rust WASM target 和 wasm-bindgen，执行 `cargo +1.99.0 run --quiet --locked --manifest-path tools/web-build/Cargo.toml -- server --product-root . --config xcss-web-build.json --mode development` 构建资源和 Axum；生产构建无需 Node 或 `npm ci`。浏览器业务状态及请求编排位于 `web/xcss-web/src`，原 React/TypeScript 源码和单测只在 Git 历史中保留。
 
 产物包含同源 ESM、WASM、CSS、正体非连字字体、许可和 `assets/xcss-web-build.json`，禁止 source map。常规资源预算为 512 KiB，WASM 单独为 4 MiB，字体和总量为 16 MiB。资源按名称、MIME 和内容摘要嵌入；CSP 为 WASM 编译提供精确许可，仍禁止内联脚本和一般 JavaScript eval。正式程序仍不需要 Node 服务，保留 Axum 与原有 API 合同。细节见[xcss-web 浏览器维护](xcss-web-browser.md)。
 

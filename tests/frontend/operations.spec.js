@@ -398,7 +398,7 @@ test("Default folder names increment only after trusted conflicts and each candi
     { path: `${root}/newfolder (3)` },
   ]);
   expect(requests.map(request => request.operationId))
-    .toEqual(requests.map(request => expect.stringMatching(UUID_V4_PATTERN)));
+    .toEqual(requests.map(() => expect.stringMatching(UUID_V4_PATTERN)));
   expect(new Set(requests.map(request => request.operationId)).size).toBe(3);
 });
 
@@ -540,7 +540,7 @@ test("An existing empty-file target increments immediately after a not-started c
   ]);
   expect(puts.every(request => request.overwrite === "false")).toBe(true);
   expect(puts.map(request => request.uploadId))
-    .toEqual(puts.map(request => expect.stringMatching(UUID_V4_PATTERN)));
+    .toEqual(puts.map(() => expect.stringMatching(UUID_V4_PATTERN)));
   expect(new Set(puts.map(request => request.uploadId)).size).toBe(3);
   expect(discards).toEqual([]);
 });
@@ -1336,7 +1336,6 @@ test("An expired destination revision after overwrite confirmation refreshes wit
 test("An unknown rename result must not use the body conflict code to initiate overwrite", async ({
   appPage: page,
 }) => {
-  const source = currentLogicalChild(page, "overwrite-source.txt");
   let renameRequests = 0;
   let statusQueries = 0;
   await page.route("**/__xczs__/api/rename", route => {

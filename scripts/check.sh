@@ -35,6 +35,7 @@ run ./scripts/check-shell.sh
 run cargo fmt --all --check
 run node scripts/check-release-workflow.mjs
 run npm run check:js
+run npm run check:xcss
 run npm run check:docs
 run npm run check:independence
 run git diff --check
@@ -42,7 +43,7 @@ run git diff --cached --check
 
 run cargo +1.99.0 run --quiet --locked --manifest-path tools/web-build/Cargo.toml -- build --product-root .
 run npm run check:types
-run cargo +1.99.0 fmt --manifest-path web/xcss-web/Cargo.toml --all --check
+run cargo +1.99.0 fmt --manifest-path web/xcss-web/Cargo.toml -- --check
 run cargo +1.99.0 clippy --manifest-path web/xcss-web/Cargo.toml --locked --target wasm32-unknown-unknown --all-targets --no-deps -- -D warnings
 run cargo +1.99.0 test --locked --manifest-path tools/web-build/Cargo.toml
 run npm run test:frontend:unit

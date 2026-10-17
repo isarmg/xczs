@@ -363,7 +363,7 @@ Xczs 的认证唯一所有者是 xcss：state.sqlite3 公共表由 xcss SqliteAd
 | E-02 | 内容摘要资源 URL | JS、WASM及其gzip变体、CSS、字体、许可和favicon由统一清单按路径、MIME、大小和SHA-256绑定完整资源前缀；HTML引用该前缀，WASM通过Vary/独立ETag协商编码版本 | 漏嵌或摘要漂移会造成缓存、404或CSP失败，必须通过真实静态资源验收 | 建议保留 |
 | E-03 | 静态资源长期缓存 | 只有精确命中的成功摘要资源使用一年 `immutable`；其他响应 no-store | 删除会增加重复资源传输，但不影响功能 | 可选 |
 | E-04 | Rust / xcss-web 前端 | 登录、导航、标签、列表和上传状态机编译为浏览器 WASM；静态资源统一嵌入 Axum | 需要固定 Rust/WASM 工具链，保留 CSP、资源预算及真实双浏览器验收 | 已实施 |
-| E-05 | 独立浏览器构建 | 独立 Cargo.lock、随产品提供的共享 Rust 快照、Vite 静态资源收集和来源清单 | 修改 Rust/CSS 后重建前端及服务端；历史 React 基线不能代替当前 WASM 验收 | 已实施 |
+| E-05 | 独立浏览器构建 | 独立 Cargo.lock、随产品提供的共享 Rust 快照、Rust 原生静态资源收集和来源清单 | 修改 Rust/CSS 后重建前端及服务端；历史 React 基线不能代替当前 WASM 验收 | 已实施 |
 | E-06 | 单地址 TCP | bind 同时包含 IP 与端口 | 监听结果报告实际地址，连接许可保持有界 | 保障 |
 | E-07 | IPv6 | JSON `bind` 显式包含 IPv6 地址与端口；IPv6 listener 强制 `IPV6_V6ONLY`，因此 `::` 不同时承接 IPv4，双栈必须分别配置 IPv4 与 IPv6 地址 | 仅使用 IPv4 网关时可删除，但代码收益有限 | 可选 |
 | E-08 | 严格分离的前端协议与响应边界 | 目录页 Fetch 统一经 `http/client.ts` 编排并使用 30 秒 deadline；登录页单独向 xcss `/api/v1/auth/login` 发送 JSON Fetch，原生导航和文件下载不在这两个边界内，上传正文另用专用 XHR。`http/response_buffer.ts` 先按严格 `Content-Length` 拒绝再逐块读取；错误响应最多 16 KiB、成功响应最多 16 MiB，超限取消 reader/body。Problem Details 只接受 current `application/problem+json` 平铺 snake_case 结构；xcss auth 则只接受 `AdministratorSession/ErrorEnvelope`。上传 XHR 在响应头、download progress 和最终 UTF-8 字节数三个阶段拒绝超过 16 KiB。operation 与 upload 解析都绑定规范 ID、状态、长度和 offset；异常 2xx、网络或协议结果只查询原 ID，不盲目重放 mutation | 删除会恢复无限等待/缓冲、两种错误合同混淆、协议词汇漂移和无法安全判断 mutation 是否可重试的问题；降低成功上限可能误拒合法大列表 | 保障 |

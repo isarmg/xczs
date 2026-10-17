@@ -45,11 +45,12 @@ run npm ci --ignore-scripts --no-audit --no-fund
 run npm audit --audit-level=high
 run node scripts/check-release-workflow.mjs
 run npm run check:js
+run npm run check:xcss
 run npm run check:docs
 run npm run check:independence
 run cargo +1.99.0 run --quiet --locked --manifest-path tools/web-build/Cargo.toml -- build --product-root .
 run npm run check:types
-run cargo +1.99.0 fmt --manifest-path web/xcss-web/Cargo.toml --all --check
+run cargo +1.99.0 fmt --manifest-path web/xcss-web/Cargo.toml -- --check
 run cargo +1.99.0 clippy --manifest-path web/xcss-web/Cargo.toml --locked --target wasm32-unknown-unknown --all-targets --no-deps -- -D warnings
 run cargo +1.99.0 test --locked --manifest-path tools/web-build/Cargo.toml
 run npm run test:frontend:unit
@@ -102,6 +103,7 @@ release_binary="${CARGO_TARGET_DIR:-$project_dir/target}/x86_64-unknown-linux-gn
 run bash scripts/check-release-runtime.sh "$release_binary"
 
 run env XCZS_FRONTEND_BINARY="$release_binary" npm run test:frontend:run
+run node tests/frontend/language.mjs
 if [[ "${XCZS_ISOLATED_QUALITY_GATE:-}" == "1" ]]; then
   printf '\n==> SKIP: The isolated release gate does not run an unpinned host Microsoft Edge; Chromium and Firefox are required matrix entries.\n'
 elif command -v microsoft-edge >/dev/null 2>&1 || command -v microsoft-edge-stable >/dev/null 2>&1; then

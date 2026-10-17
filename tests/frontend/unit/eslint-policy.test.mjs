@@ -57,3 +57,9 @@ test("the three actual production bootstrap files pass the same active rules", a
     assert.equal(result.warningCount, 0, JSON.stringify(result.messages));
   }
 });
+
+test("browser business specs and fixtures are covered by syntax and safety lint", async () => {
+  for (const filePath of ["tests/frontend/xcss.spec.js", "tests/frontend/fixtures.js"]) {
+    assert((await ruleIds("eval(userInput);\n", filePath)).includes("no-eval"), filePath);
+  }
+});

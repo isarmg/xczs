@@ -21,8 +21,4 @@ target/**
 # Python build helper caches are generated.
 /scripts/__pycache__/
 
-/web/tests/fixtures/react-baseline/node_modules/
-
-/web/tests/fixtures/react-baseline/web/dist/
-
 /tools/web-build/target/

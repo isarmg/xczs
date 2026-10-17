@@ -1,7 +1,7 @@
 import { startServerCorners } from "@xcss/web/admin-ui/server-corners";
 import { administrator_session_json, query_job_json } from "./pkg/xczs_web.js";
 // Browser business logic is compiled from web/xcss-web; this entry only supplies
-// immutable authored styles and license assets to the existing Vite pipeline.
+// immutable authored styles and license assets to the Rust asset builder.
 import "@xcss/web/design-tokens/tokens.css";
 import "@xcss/web/design-tokens/tokens.dark.css";
 import "@xcss/web/design-tokens/reset.css";
@@ -12,7 +12,7 @@ import "./tags.css";
 export { default as fontLicenseUrl } from "@xcss/web/web-fonts/OFL.txt?url";
 export { default as cjkFontLicenseUrl } from "@xcss/web/web-fonts/CJK-LICENSE.txt?url";
 
-// Non-React paint adapter tracks authored CSS corner geometry as nodes mount.
+// Paint adapter tracks authored CSS corner geometry as nodes mount.
 startServerCorners(document);
 
 // Read-only diagnostic bridge for browser contract tests. Credentials remain
