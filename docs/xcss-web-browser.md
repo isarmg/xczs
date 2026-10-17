@@ -6,7 +6,7 @@
 
 当前 `main` 已合并 xcss-web CSR 与 Rust 原生构建；直接在主分支构建和验收。下面的首次迁移流程与数字作为历史记录，正式发行和线上部署继续使用产品发布流程。
 
-默认构建只加载 Rust/WASM，直接执行原有构建命令即可。生产 NPM 依赖和锁文件不再包含 React；迁移前的 React/TypeScript 源码、17 份业务单测及 15 份浏览器合同文件完整保存在 `web/tests/fixtures/react-baseline`，由独立锁文件和 SHA-256 清单记录，不进入当前生产构建。
+默认构建只加载 Rust/WASM，直接执行原有构建命令即可。生产 NPM 依赖和锁文件不再包含 React。退役的 React/TypeScript 源码、模拟测试及独立锁文件已从工作树移除，原始迁移对照可通过 Git 历史查阅；当前验收保留 Rust 合同单测和真实 Axum 浏览器断言。
 
 ## 构建
 

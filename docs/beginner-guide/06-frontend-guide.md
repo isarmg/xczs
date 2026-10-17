@@ -28,7 +28,7 @@ Axum 返回 `web/index.html` 或 `web/login.html`，引用同源 CSS、字体和
 | [tags.rs](../../web/xcss-web/src/tags.rs) | 标签库、分页、文件关联、筛选、索引状态与扫描 |
 | [vendor/xcss-web](../../web/xcss-web/vendor/xcss-web) | 本产品随附的共享认证、UI、主题、语言与合同快照 |
 
-旧 React/TypeScript 源码与业务单测保存在 [迁移基线](../../web/tests/fixtures/react-baseline/README.md)，便于核对历史合同；当前生产构建不从该目录生成界面。
+当前工作树只维护 Rust/WASM 界面及其合同测试；退役的 React/TypeScript 对照源码、模拟测试和独立锁文件可通过 Git 历史查阅。
 
 ## 6.3 修改源码为什么要重新构建
 

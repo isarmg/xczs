@@ -1,9 +1,0 @@
-/* xcss owns the six-row login card, icons, palette and input styles.
- * Product CSS preserves the error row; shared controls live at the top right. */
-body { margin: 0; }
-.hidden { visibility: hidden; }
-.login-error { white-space: normal; overflow-wrap: anywhere; }
-@media (forced-colors: active) {
-  .xcss-auth-shell .xcss-auth-card .login-card > button { border: 1px solid ButtonText; }
-  .xcss-auth-shell .xcss-auth-card .xcss-input { border-bottom: 1px solid ButtonText; }
-}

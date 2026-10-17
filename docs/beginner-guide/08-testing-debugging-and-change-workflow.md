@@ -222,7 +222,7 @@ npm run test:frontend:unit
 npm run test:rust
 ```
 
-原 TypeScript 业务源码和 17 份单测完整保存在[迁移基线](../../web/tests/fixtures/react-baseline/README.md)，用于合同对照和独立重现旧实现；它们通过不代表当前 WASM 运行时通过。焦点、表格、对话框、上传和浏览器 API 继续由原真实 Axum/Playwright 验收覆盖。
+退役的 TypeScript 源码、模拟单测及独立锁文件已从工作树移除，历史对照可通过 Git 查阅。当前 Rust 合同单测继续验证业务边界；焦点、表格、对话框、上传和浏览器 API 由真实 Axum/Playwright 验收覆盖。
 
 ## 8.6 JavaScript 类型、安全与文档检查
 
