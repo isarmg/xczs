@@ -10,7 +10,7 @@
 
 ## 构建
 
-先执行 `bash scripts/install-xcss-web-tools.sh` 准备浏览器编译工具。所需版本由 `scripts/build-xcss-web.py` 固定：Rust 1.99.0、`wasm32-unknown-unknown` target，以及 wasm-bindgen-cli 0.2.129。Node/Vite 继续负责收集现有 CSS、字体、许可、SVG 遮罩和发布清单，不承载文件管理或上传状态机。
+先执行 `bash scripts/install-xcss-web-tools.sh` 准备浏览器编译工具。所需版本由 `tools/web-build` Rust CLI 固定：Rust 1.99.0、`wasm32-unknown-unknown` target，以及 wasm-bindgen-cli 0.2.129。Rust 资源构建器负责收集 CSS、字体、许可、SVG 遮罩和发布清单；Node/Playwright 用于浏览器验证。
 
 ```sh
 npm run build:platform

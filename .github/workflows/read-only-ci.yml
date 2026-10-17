@@ -128,7 +128,7 @@ jobs:
           node --test scripts/check-ci-parallelism.test.mjs
           npm run check:js
           npm run check:types
-          python3 -B scripts/test-xcss-web-build.py
+          cargo +1.99.0 test --locked --manifest-path tools/web-build/Cargo.toml
           npm run check:docs
           npm run check:independence
           npm run test:frontend:unit
@@ -205,7 +205,7 @@ jobs:
           cargo +"$RUST_TOOLCHAIN" fmt --manifest-path web/xcss-web/Cargo.toml --all --check
           cargo +"$RUST_TOOLCHAIN" clippy --manifest-path web/xcss-web/Cargo.toml --locked --target wasm32-unknown-unknown --all-targets --no-deps -- -D warnings
           cargo +"$RUST_TOOLCHAIN" test --manifest-path web/xcss-web/Cargo.toml --locked --lib
-          python3 -B scripts/test-xcss-web-build.py
+          cargo +1.99.0 test --locked --manifest-path tools/web-build/Cargo.toml
 
   coverage:
     name: Coverage

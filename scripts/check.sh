@@ -44,7 +44,7 @@ run cargo +1.99.0 run --quiet --locked --manifest-path tools/web-build/Cargo.tom
 run npm run check:types
 run cargo +1.99.0 fmt --manifest-path web/xcss-web/Cargo.toml --all --check
 run cargo +1.99.0 clippy --manifest-path web/xcss-web/Cargo.toml --locked --target wasm32-unknown-unknown --all-targets --no-deps -- -D warnings
-run python3 -B scripts/test-xcss-web-build.py
+run cargo +1.99.0 test --locked --manifest-path tools/web-build/Cargo.toml
 run npm run test:frontend:unit
 run cargo clippy --locked --target x86_64-unknown-linux-gnu --all-targets --all-features -- -D warnings
 run cargo test --locked --target x86_64-unknown-linux-gnu --all-targets --all-features

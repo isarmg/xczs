@@ -242,7 +242,7 @@ npm run check:js
 npm run check:types
 ```
 
-该命令保留原名称，现在执行 `python3 scripts/build-xcss-web.py check`，针对 `wasm32-unknown-unknown` 编译检查生产浏览器 crate。它不会替代运行时不可信响应验证、Rust 协议测试或真实浏览器验收。
+该命令通过 `cargo +1.99.0 run --locked --manifest-path tools/web-build/Cargo.toml -- check --product-root .` 执行 Rust 构建器，针对 `wasm32-unknown-unknown` 编译检查生产浏览器 crate。它不会替代运行时不可信响应验证、Rust 协议测试或真实浏览器验收。
 
 ### `check:docs`
 
