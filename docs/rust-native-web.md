@@ -23,3 +23,5 @@ CI 与正式打包脚本的生产 build/server 直接调用 Cargo，保留原 so
 语言验收 `npm run test:language` 默认覆盖 Chromium/Firefox 的移动和桌面布局；CI 在每个引擎的第一个 shard 复用已生成资源执行，发布质量门同样运行。可用 `XCZS_LANGUAGE_TEST_BROWSER=chromium` 或 `firefox` 单独诊断。浏览器版本由 Playwright 锁定依赖决定。
 
 浏览器格式检查使用 `cargo +1.99.0 fmt --manifest-path web/xcss-web/Cargo.toml -- --check`，覆盖产品自身 Rust 源码；不要加 `--all` 遍历上游原样随附的 core/macro。共享源码来源由摘要验证，公共源码规范由 xcss 自身质量门负责。
+
+浏览器入口先复用已验证的候选 Server，再在 Playwright 启动前编译 `offline_fixture`；通过 Cargo JSON artifact 获取实际路径，支持自定义 `CARGO_TARGET_DIR`。已有 `XCZS_FRONTEND_FIXTURE_BINARY` 时直接复用。`webServer` 只初始化临时状态并启动实际候选，禁止在 120 秒启动预算内执行 Cargo 冷编译；测试用例超时不变。

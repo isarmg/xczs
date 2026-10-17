@@ -1,5 +1,7 @@
 import { accessSync, constants, realpathSync } from "node:fs";
 import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { prepareFrontendFixture } from "./prepare-frontend-fixture.mjs";
 
 const configured = process.env.XCZS_FRONTEND_BINARY;
 if (!configured) {
@@ -16,4 +18,8 @@ if (version.status !== 0 || !version.stdout.startsWith("xczs ")) {
 }
 process.env.XCZS_FRONTEND_BINARY = binary;
 process.stdout.write(`Browser candidate: ${binary}\n${version.stdout}`);
+process.env.XCZS_FRONTEND_FIXTURE_BINARY = prepareFrontendFixture(
+  fileURLToPath(new URL("../", import.meta.url)),
+);
+process.stdout.write(`Browser fixture: ${process.env.XCZS_FRONTEND_FIXTURE_BINARY}\n`);
 await import("../tests/frontend/run.mjs");

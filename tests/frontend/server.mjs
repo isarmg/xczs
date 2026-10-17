@@ -19,6 +19,11 @@ if (process.platform !== "linux") {
   process.exit(1);
 }
 
+const preparedFixture = process.env.XCZS_FRONTEND_FIXTURE_BINARY;
+if (!preparedFixture) {
+  throw new Error("Use scripts/run-frontend-prepared.mjs to prepare XCZS_FRONTEND_FIXTURE_BINARY before Playwright");
+}
+
 const currentDir = dirname(fileURLToPath(import.meta.url));
 const projectRoot = resolve(currentDir, "..", "..");
 const shareRoot = mkdtempSync(join(tmpdir(), "xczs-frontend-test-"));
@@ -68,12 +73,8 @@ writeFileSync(join(shareRoot, "overwrite-source.txt"), "replacement content");
 writeFileSync(join(shareRoot, "overwrite-target.txt"), "original content");
 writeFileSync(join(shareRoot, "delete-me.txt"), "delete target");
 
-const preparedFixture = process.env.XCZS_FRONTEND_FIXTURE_BINARY;
 const fixtureArguments = ["--root", authRoot, "--username", "frontend-test-0"];
-const initialization = spawnSync(preparedFixture || "cargo", preparedFixture ? fixtureArguments : [
-  "run", "--locked", "--target", "x86_64-unknown-linux-gnu", "--example", "offline_fixture", "--",
-  ...fixtureArguments,
-], {
+const initialization = spawnSync(preparedFixture, fixtureArguments, {
   cwd: projectRoot,
   env: { ...process.env, XCZS_SOURCE_REVISION: "unbound" },
   input: "test-password\n",
