@@ -8,7 +8,6 @@ const eslint = new ESLint({ cwd: projectRoot });
 const results = await eslint.lintFiles([
   "eslint.config.mjs",
   "playwright.config.js",
-  "vite.platform.config.mjs",
   "scripts/**/*.mjs",
   "tests/frontend/**/*.mjs",
   "web/**/*.{js,mjs,jsx}",

@@ -5,7 +5,6 @@ import globals from "globals";
 const authoredFiles = [
   "eslint.config.mjs",
   "playwright.config.js",
-  "vite.platform.config.mjs",
   "scripts/**/*.mjs",
   "tests/frontend/**/*.mjs",
   "web/**/*.{js,jsx,mjs}",

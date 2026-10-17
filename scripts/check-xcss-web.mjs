@@ -28,9 +28,11 @@ assert.match(read("web/xcss-web/Cargo.toml").toString(), /xcss-web = .*csr/u);
 for (const name of ["index", "login"]) {
   assert.match(read(`web/xcss-web-${name}.js`).toString(), /pkg\/xczs_web\.js/u);
 }
-const vite = read("vite.platform.config.mjs").toString();
-assert.doesNotMatch(vite, /createXcssReactViteConfig|web\/index\.ts|web\/login\.ts/u);
-assert.match(vite, /xcssWebStaticAssets/u);
+const webConfig = read("web/rust-web.toml").toString();
+assert.match(webConfig, /^kind = "embedded"$/mu);
+assert.match(webConfig, /^relative_urls = true$/mu);
+assert.match(webConfig, /"index\.js" = "xcss-web-index\.js"/u);
+assert.match(webConfig, /"login\.js" = "xcss-web-login\.js"/u);
 for (const packageName of ["@xcss/web"]) {
   const url = "https://github.com/isarmg/xcss/releases/download/v1.0.0/xcss-web-1.0.0.tgz";
   assert.equal(manifest.devDependencies[packageName], url);
