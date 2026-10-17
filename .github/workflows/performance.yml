@@ -41,7 +41,7 @@ jobs:
       - name: Install locked Web dependencies and build platform assets
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
-          npm run build:platform
+          cargo +1.99.0 run --quiet --locked --manifest-path tools/web-build/Cargo.toml -- build --product-root .
       - name: Record the benchmark environment
         shell: bash
         run: |

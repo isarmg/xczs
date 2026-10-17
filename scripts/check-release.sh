@@ -47,7 +47,7 @@ run node scripts/check-release-workflow.mjs
 run npm run check:js
 run npm run check:docs
 run npm run check:independence
-run npm run build:platform
+run cargo +1.99.0 run --quiet --locked --manifest-path tools/web-build/Cargo.toml -- build --product-root .
 run npm run check:types
 run cargo +1.99.0 fmt --manifest-path web/leptos/Cargo.toml --all --check
 run cargo +1.99.0 clippy --manifest-path web/leptos/Cargo.toml --locked --target wasm32-unknown-unknown --all-targets --no-deps -- -D warnings

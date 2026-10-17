@@ -61,7 +61,7 @@ jobs:
               scripts/check-deployment.sh|scripts/check-formal-release-e2e.sh|\
               scripts/check-release.sh|scripts/check-release-runtime.sh|\
               scripts/package-release.sh|scripts/*installed*|scripts/*inventory-tools.py|config/xssi.lock|\
-              Cargo.toml|Cargo.lock|web/leptos/Cargo.toml|web/leptos/Cargo.lock|web/leptos/vendor/*|build.rs|package.json|package-lock.json)
+              tools/web-build/*|web/rust-web.toml|web/vendor/*|Cargo.toml|Cargo.lock|web/leptos/Cargo.toml|web/leptos/Cargo.lock|web/leptos/vendor/*|build.rs|package.json|package-lock.json)
                 release_sensitive=true
                 break
                 ;;
@@ -116,7 +116,7 @@ jobs:
           set -euo pipefail
           npm ci --ignore-scripts --no-audit --no-fund
           npm ls --depth=0
-          npm run build:platform
+          cargo +1.99.0 run --quiet --locked --manifest-path tools/web-build/Cargo.toml -- build --product-root .
       - name: Check Shell sources
         shell: bash
         run: |
@@ -176,7 +176,7 @@ jobs:
       - name: Build embedded Leptos platform assets
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
-          npm run build:platform
+          cargo +1.99.0 run --quiet --locked --manifest-path tools/web-build/Cargo.toml -- build --product-root .
       - name: Run Rust gates
         shell: bash
         env:
@@ -200,6 +200,8 @@ jobs:
         run: rustup toolchain install "$RUST_TOOLCHAIN" --profile minimal --component rustfmt --component clippy --target wasm32-unknown-unknown
       - name: Check the independent browser workspace
         run: |
+          cargo +1.99.0 fmt --manifest-path tools/web-build/Cargo.toml -- --check
+          cargo +1.99.0 clippy --manifest-path tools/web-build/Cargo.toml --locked --all-targets -- -D warnings
           cargo +"$RUST_TOOLCHAIN" fmt --manifest-path web/leptos/Cargo.toml --all --check
           cargo +"$RUST_TOOLCHAIN" clippy --manifest-path web/leptos/Cargo.toml --locked --target wasm32-unknown-unknown --all-targets --no-deps -- -D warnings
           cargo +"$RUST_TOOLCHAIN" test --manifest-path web/leptos/Cargo.toml --locked --lib
@@ -260,7 +262,7 @@ jobs:
         run: |
           set -euo pipefail
           npm ci --ignore-scripts --no-audit --no-fund
-          npm run build:platform
+          cargo +1.99.0 run --quiet --locked --manifest-path tools/web-build/Cargo.toml -- build --product-root .
           ./scripts/check-coverage.sh
 
   release_smoke:
@@ -319,7 +321,7 @@ jobs:
           # No prefix fallback: profile, flags, installer pin and build contract
           # changes invalidate this lane. GitHub scopes PR reads to their base;
           # only a successful main push may populate this cache below.
-          key: xczs-release-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN }}-${{ env.SERVER_TARGET }}-debug-release-${{ steps.release_rust_environment.outputs.fingerprint }}-${{ hashFiles('Cargo.lock', 'web/leptos/Cargo.lock', '**/Cargo.toml', '**/build.rs', '.cargo/**', 'config/xssi.lock', 'package.json', 'package-lock.json', 'xcss-web-build.json', '.github/workflows/read-only-ci.yml') }}
+          key: xczs-release-rust-v1-${{ runner.os }}-${{ runner.arch }}-${{ env.RUST_TOOLCHAIN }}-${{ env.SERVER_TARGET }}-debug-release-${{ steps.release_rust_environment.outputs.fingerprint }}-${{ hashFiles('Cargo.lock', 'tools/web-build/Cargo.lock', 'tools/web-build/src/**', 'web/rust-web.toml', 'web/vendor/**', 'web/leptos/vendor/**', 'web/leptos/Cargo.lock', '**/Cargo.toml', '**/build.rs', '.cargo/**', 'config/xssi.lock', 'package.json', 'package-lock.json', 'xcss-web-build.json', '.github/workflows/read-only-ci.yml') }}
       - name: Discard cached candidate products before real compilation
         env:
           RUSTUP_TOOLCHAIN: ${{ env.RUST_TOOLCHAIN }}
@@ -369,7 +371,7 @@ jobs:
           XSSI_FRONTEND_METADATA_FILE: ${{ runner.temp }}/install-metadata/frontend.json
         run: |
           npm ci --ignore-scripts --no-audit --no-fund
-          npm run build:platform
+          cargo +1.99.0 run --quiet --locked --manifest-path tools/web-build/Cargo.toml -- build --product-root .
       - name: Install deployment validator when absent
         id: deployment_validator
         if: ${{ !cancelled() && steps.quality_source.outcome == 'success' && steps.quality_node.outcome == 'success' && steps.quality_rust.outcome == 'success' }}
@@ -395,7 +397,7 @@ jobs:
           RUSTUP_TOOLCHAIN: ${{ env.RUST_TOOLCHAIN }}
         run: |
           set -euo pipefail
-          XSSI_BUILD_METADATA_DIR="$RUNNER_TEMP/install-metadata" npm run build:server:release -- --no-install --rust-only
+          XSSI_BUILD_METADATA_DIR="$RUNNER_TEMP/install-metadata" cargo +1.99.0 run --quiet --locked --manifest-path tools/web-build/Cargo.toml -- server --product-root . --config xcss-web-build.json --mode release --rust-only
           "./target/$SERVER_TARGET/release/xczs" --version | grep -F "xczs "
           bash scripts/check-release-runtime.sh "$GITHUB_WORKSPACE/target/$SERVER_TARGET/release/xczs"
 

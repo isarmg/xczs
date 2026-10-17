@@ -23,9 +23,9 @@ test("quality work runs in parallel with the same scope and required check name"
   assert.match(coverage, /\.\/scripts\/check-coverage\.sh/u);
   assert.doesNotMatch(coverage, /check-deployment|check-release-runtime/u);
   assert.match(release, /npm ci --ignore-scripts --no-audit --no-fund/u);
-  assert.match(release, /npm run build:platform/u);
+  assert.match(release, /tools\/web-build\/Cargo\.toml -- build --product-root \./u);
   assert.match(release, /\.\/scripts\/check-deployment\.sh/u);
-  assert.match(release, /npm run build:server:release -- --no-install --rust-only/u);
+  assert.match(release, /tools\/web-build\/Cargo\.toml -- server --product-root \. --config xcss-web-build\.json --mode release --rust-only/u);
   assert.match(release, /bash scripts\/check-release-runtime\.sh/u);
   assert.equal(gate.env.COVERAGE_RESULT, "${{ needs.coverage.result }}");
   assert.equal(gate.env.RELEASE_RESULT, "${{ needs.release_smoke.result }}");
@@ -154,9 +154,9 @@ test("push release smoke reuses its candidate for real installation with exact c
   assert.deepEqual(workflow.on.push.branches, ["main"]);
   const steps = jobs.release_smoke.steps;
   const commands = steps.map(step => step.run ?? "").join("\n");
-  assert.equal((commands.match(/npm run build:server:release/g) ?? []).length, 1);
+  assert.equal((commands.match(/tools\/web-build\/Cargo\.toml -- server --product-root \. --config xcss-web-build\.json --mode release/g) ?? []).length, 1);
   assert.doesNotMatch(commands, /check-formal-release-e2e|scripts\/package-release\.sh|gh release|git tag/u);
-  assert.match(commands, /XSSI_BUILD_METADATA_DIR=.*npm run build:server:release/u);
+  assert.match(commands, /XSSI_BUILD_METADATA_DIR=.*tools\/web-build\/Cargo\.toml -- server/u);
   const candidate = steps.findIndex(step => step.run?.includes("bash scripts/package-installed-candidate.sh"));
   const runtime = steps.findIndex(step => step.run?.includes("bash scripts/check-release-runtime.sh"));
   assert.ok(candidate > runtime && runtime >= 0);
@@ -211,7 +211,7 @@ test("release Rust cache reuses only exact dependencies and always rebuilds the 
   assert.match(clean.run, /cargo clean --package xczs --release --target "\$SERVER_TARGET"/u);
   assert.equal(clean.if, undefined, "candidate cleanup cannot depend on cache hit");
   assert.doesNotMatch(runtime.if, /cache/u, "a cache hit must never bypass the real build");
-  assert.match(runtime.run, /npm run build:server:release -- --no-install --rust-only/u);
+  assert.match(runtime.run, /tools\/web-build\/Cargo\.toml -- server --product-root \. --config xcss-web-build\.json --mode release --rust-only/u);
   assert.match(runtime.run, /bash scripts\/check-release-runtime\.sh/u);
   assert.equal(save.if, "${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.release_rust_cache.outputs.cache-hit != 'true' && steps.release_binary.outcome == 'success' }}");
   assert.equal(save.with.key, "${{ steps.release_rust_cache.outputs.cache-primary-key }}");

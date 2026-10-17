@@ -758,12 +758,160 @@ pub fn ActionDialog(model: Model) -> impl IntoView {
             }
         }
     });
-    view! {<dialog node_ref=node class="action-dialog xcss-dialog" aria-labelledby="action-dialog-title" aria-describedby="action-dialog-message" on:cancel=move|e:web_sys::Event|{e.prevent_default();answer(model,"cancel");}>
-    <form class="action-dialog-form" method="dialog" on:submit=move|e|{e.prevent_default();answer(model,"confirm");}>
-        <h2 id="action-dialog-title">{move||model.dialog.get().title}</h2><p id="action-dialog-message">{move||model.dialog.get().message}</p>
-        <div class="action-dialog-input-group" hidden=move||model.dialog.get().label.is_empty()><label for="action-dialog-input">{move||model.dialog.get().label}</label><input id="action-dialog-input" type="text" autocomplete="off" prop:value=move||model.dialog.get().value on:input=move|e|model.dialog.update(|d|d.value=event_target_value(&e))/></div>
-        <label hidden=move||model.dialog.get().color.is_empty()>{t("颜色","Color")}<input type="color" prop:value=move||model.dialog.get().color on:input=move|e|model.dialog.update(|d|d.color=event_target_value(&e))/></label><div class="action-dialog-actions"><button type="button" class="action-dialog-cancel xcss-button" hidden=move||model.dialog.get().confirm==t("关闭","Close") on:click=move|_|answer(model,"cancel")>{move||{let label=model.dialog.get().cancel;if label.is_empty(){t("取消","Cancel")}else{label}}}</button>
-        <button type="button" class="action-dialog-alternate xcss-button" hidden=move||model.dialog.get().alternate.is_empty() on:click=move|_|answer(model,"alternate")>{move||model.dialog.get().alternate}</button>
-        <button type="submit" class="action-dialog-confirm xcss-button" class:xcss-danger=move||model.dialog.get().danger>{move||model.dialog.get().confirm}</button></div>
-    </form></dialog>}
+    View::new(
+    leptos::html::dialog()
+        .child(
+            #[allow(unused_braces)]
+            {
+                leptos::html::form()
+                    .child((
+                        leptos::html::h2()
+                            .child(
+                                #[allow(unused_braces)]
+                                {
+                                    IntoRender::into_render({
+                                        move || model.dialog.get().title
+                                    })
+                                },
+                            )
+                            .id("action-dialog-title"),
+                        leptos::html::p()
+                            .child(
+                                #[allow(unused_braces)]
+                                {
+                                    IntoRender::into_render({
+                                        move || model.dialog.get().message
+                                    })
+                                },
+                            )
+                            .id("action-dialog-message"),
+                        leptos::html::div()
+                            .child((
+                                leptos::html::label()
+                                    .child(
+                                        #[allow(unused_braces)]
+                                        {
+                                            IntoRender::into_render({
+                                                move || model.dialog.get().label
+                                            })
+                                        },
+                                    )
+                                    .r#for("action-dialog-input"),
+                                leptos::html::input()
+                                    .id("action-dialog-input")
+                                    .r#type("text")
+                                    .autocomplete("off")
+                                    .prop("value", move || model.dialog.get().value)
+                                    .on(
+                                        leptos::ev::input,
+                                        move |e| {
+                                            model.dialog.update(|d| d.value = event_target_value(&e))
+                                        },
+                                    ),
+                            ))
+                            .class("action-dialog-input-group")
+                            .hidden(
+                                ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                model.dialog.get().label.is_empty()),
+                            ),
+                        leptos::html::label()
+                            .child((
+                                IntoRender::into_render({
+                                    t("颜色", "Color")
+                                }),
+                                leptos::html::input()
+                                    .r#type("color")
+                                    .prop("value", move || model.dialog.get().color)
+                                    .on(
+                                        leptos::ev::input,
+                                        move |e| {
+                                            model.dialog.update(|d| d.color = event_target_value(&e))
+                                        },
+                                    ),
+                            ))
+                            .hidden(
+                                ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                model.dialog.get().color.is_empty()),
+                            ),
+                        leptos::html::div()
+                            .child((
+                                leptos::html::button()
+                                    .child(
+                                        #[allow(unused_braces)]
+                                        {
+                                            IntoRender::into_render({
+                                                move || {
+                                                    let label = model.dialog.get().cancel;
+                                                    if label.is_empty() { t("取消", "Cancel") } else { label }
+                                                }
+                                            })
+                                        },
+                                    )
+                                    .class("action-dialog-cancel xcss-button")
+                                    .r#type("button")
+                                    .hidden(
+                                        ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                        model.dialog.get().confirm == t("关闭", "Close")),
+                                    )
+                                    .on(
+                                        leptos::ev::click,
+                                        move |_| answer(model, "cancel"),
+                                    ),
+                                leptos::html::button()
+                                    .child(
+                                        #[allow(unused_braces)]
+                                        {
+                                            IntoRender::into_render({
+                                                move || model.dialog.get().alternate
+                                            })
+                                        },
+                                    )
+                                    .class("action-dialog-alternate xcss-button")
+                                    .r#type("button")
+                                    .hidden(
+                                        ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                        model.dialog.get().alternate.is_empty()),
+                                    )
+                                    .on(
+                                        leptos::ev::click,
+                                        move |_| answer(model, "alternate"),
+                                    ),
+                                leptos::html::button()
+                                    .child(
+                                        #[allow(unused_braces)]
+                                        {
+                                            IntoRender::into_render({
+                                                move || model.dialog.get().confirm
+                                            })
+                                        },
+                                    )
+                                    .class("action-dialog-confirm xcss-button")
+                                    .r#type("submit")
+                                    .class(("xcss-danger", move || model.dialog.get().danger)),
+                            ))
+                            .class("action-dialog-actions"),
+                    ))
+                    .class("action-dialog-form")
+                    .method("dialog")
+                    .on(
+                        leptos::ev::submit,
+                        move |e| {
+                            e.prevent_default();
+                            answer(model, "confirm");
+                        },
+                    )
+            },
+        )
+        .class("action-dialog xcss-dialog")
+        .node_ref(node)
+        .aria_labelledby("action-dialog-title")
+        .aria_describedby("action-dialog-message")
+        .on(
+            leptos::ev::Custom::new("cancel"),
+            move |e: web_sys::Event| {
+                e.prevent_default();
+                answer(model, "cancel");
+            },
+        ),
+)
 }

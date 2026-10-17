@@ -1,5 +1,7 @@
 # Leptos 浏览器前端
 
+当前构建入口已更新为 [Rust 原生 Web 构建与测试](rust-native-web.md)。以下保留首次 Leptos 迁移时的流程与验证记录。
+
 文件列表、文件操作、上传、标签库和登录页面的 Rust 实现在 `web/leptos`。它使用 Leptos CSR，编译为在浏览器内运行的 WebAssembly；HTTP 路由、认证、文件系统、SQLite 标签索引和静态文件服务继续由 Axum 提供，保留兼容的既有 API，并按 WASM 加载、缓存和传输需要配合优化。
 
 分支约定：`main` 保留 React 实现，本文所述 Leptos CSR 实现在 `feat/leptos-migration`。构建与验收需先切换到该分支；合并、发行和线上部署按后续明确安排执行。

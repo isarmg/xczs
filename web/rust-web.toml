@@ -1,0 +1,25 @@
+[web]
+kind = "embedded"
+dist = "web/runtime-dist"
+relative_urls = true
+runtime_root = "product"
+css_output = "dist/platform.css"
+
+[web.entries]
+"index.js" = "leptos-index.js"
+"login.js" = "leptos-login.js"
+"dist/platform.js" = "leptos-platform.js"
+
+[web.copies]
+"assets/LICENSE-leptos-MIT.txt" = "leptos/vendor/xcss-web/vendor/leptos-csr/LICENSE"
+"assets/LICENSE-leptos-macro-MIT.txt" = "leptos/vendor/xcss-web/vendor/leptos-macro-csr/LICENSE"
+"assets/LICENSE-xcss-Apache-2.0.txt" = "vendor/xcss/LICENSE"
+"index.css" = "index.css"
+"login.css" = "login.css"
+"favicon.ico" = "favicon.ico"
+"dist/boot.css" = "vendor/xcss/web-fonts/boot.css"
+"dist/MapleMonoFull-Regular.woff2" = "vendor/xcss/web-fonts/MapleMonoFull-Regular.woff2"
+"dist/MapleMonoFull-Bold.woff2" = "vendor/xcss/web-fonts/MapleMonoFull-Bold.woff2"
+
+[aliases]
+"@xcss/web/" = "vendor/xcss/"

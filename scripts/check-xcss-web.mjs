@@ -11,7 +11,7 @@ const manifest = JSON.parse(read("package.json"));
 const lock = JSON.parse(read("package-lock.json"));
 
 for (const name of ["react", "react-dom"]) {
-  assert.equal(manifest.dependencies[name], undefined);
+  assert.equal(manifest.devDependencies[name], undefined);
   assert.equal(lock.packages[`node_modules/${name}`], undefined);
 }
 for (const name of ["@types/react", "@types/react-dom", "@vitejs/plugin-react"]) {
@@ -23,7 +23,7 @@ for (const [name, entry] of Object.entries(lock.packages)) {
   assert.match(entry.resolved, /^https:\/\//u, name);
   assert.match(entry.integrity, /^sha512-/u, name);
 }
-assert.match(manifest.scripts["check:types"], /build-leptos\.py check/u);
+assert.match(manifest.scripts["check:types"], /web-build\/Cargo\.toml -- check/u);
 assert.match(read("web/leptos/Cargo.toml").toString(), /leptos = .*csr/u);
 for (const name of ["index", "login"]) {
   assert.match(read(`web/leptos-${name}.js`).toString(), /pkg\/xczs_web\.js/u);
@@ -33,7 +33,7 @@ assert.doesNotMatch(vite, /createXcssReactViteConfig|web\/index\.ts|web\/login\.
 assert.match(vite, /leptosStaticAssets/u);
 for (const packageName of ["@xcss/web"]) {
   const url = "https://github.com/isarmg/xcss/releases/download/v1.0.0/xcss-web-1.0.0.tgz";
-  assert.equal(manifest.dependencies[packageName], url);
+  assert.equal(manifest.devDependencies[packageName], url);
   const installed = JSON.parse(read(`node_modules/${packageName}/package.json`));
   assert.equal(installed.version, "1.0.0");
   assert.equal(lock.packages[`node_modules/${packageName}`].resolved, url);

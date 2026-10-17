@@ -2,6 +2,7 @@ use crate::{
     http::{self, Error},
     model::{Model, Tag},
 };
+use leptos::component::{component_props_builder, component_view};
 use leptos::prelude::*;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -435,22 +436,199 @@ pub fn TagFilters(model: Model) -> impl IntoView {
             }
         });
     });
-    view! {<details class="search-tags" open=move||open.get() on:toggle=move|e|{let target=event_target::<web_sys::HtmlElement>(&e);open.set(target.has_attribute("open"));}>
-    <summary aria-label=t("标签筛选","Tag filters")>{t("标签","Tags")}</summary><div class="search-tag-options"><p role="alert" hidden=move||error.get().is_empty()>{move||error.get()}</p>
-    {[ ("all",t("全部标签","All tags")),("any",t("任一标签","Any tag")),("exclude",t("排除标签","Exclude tags"))].into_iter().map(move|(key,label)|view!{<label class="xcss-form-field">{label.clone()}<select class="xcss-select" name=key multiple size="3" aria-label=label on:change=move|event|{
-        let select=event_target::<web_sys::HtmlSelectElement>(&event);
-        if let Ok(options)=select.query_selector_all("option:checked") {
-            let values=(0..options.length()).filter_map(|index|options.item(index)).filter_map(|option|option.dyn_into::<web_sys::HtmlOptionElement>().ok()).take(100).map(|option|option.value()).collect();
-            draft.update(|selection| *selection.group_mut(key)=values);
-        }
-    }>{move||{
-        let selected=draft.get().group(key).clone();
-        let tags=candidates.get();
-        let options=filter_options(&tags,&selected);
-        options.into_iter().map(move|(id,name)|{let chosen=selected.contains(&id);view!{<option value=id selected=chosen>{name}</option>}}).collect_view()
-    }}</select></label>}).collect_view()}
-    <div class="search-tag-pager"><button type="button" class="xcss-button" disabled=move||p.get().previous_cursor.is_none() on:click=move|_|cursor.set(p.get_untracked().previous_cursor)>{t("上一页","Previous page")}</button><button type="button" class="xcss-button" disabled=move||p.get().next_cursor.is_none() on:click=move|_|cursor.set(p.get_untracked().next_cursor)>{t("下一页","Next page")}</button></div>
-    <div class="search-tag-actions"><button type="submit" class="xcss-button" on:click=move|_|open.set(false)>{t("搜索","Search")}</button><button type="button" class="xcss-button" on:click=move|_|{open.set(false);model.filters.update(|f|{f.all.clear();f.any.clear();f.exclude.clear();});crate::workspace::apply_filters(model);} >{t("清除标签筛选","Clear tag filters")}</button></div></div></details>}
+    View::new(
+        leptos::html::details()
+            .child((
+                leptos::html::summary()
+                    .child(
+                        #[allow(unused_braces)]
+                        {
+                            IntoRender::into_render({ t("标签", "Tags") })
+                        },
+                    )
+                    .aria_label(::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                        t("标签筛选", "Tag filters"),
+                    )),
+                leptos::html::div()
+                    .child((
+                        leptos::html::p()
+                            .child(
+                                #[allow(unused_braces)]
+                                {
+                                    IntoRender::into_render({ move || error.get() })
+                                },
+                            )
+                            .role("alert")
+                            .hidden(::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                                move || error.get().is_empty(),
+                            )),
+                        IntoRender::into_render({
+                            [
+                                ("all", t("全部标签", "All tags")),
+                                ("any", t("任一标签", "Any tag")),
+                                ("exclude", t("排除标签", "Exclude tags")),
+                            ]
+                            .into_iter()
+                            .map(move |(key, label)| {
+                                View::new(
+    leptos::html::label()
+        .child((
+            IntoRender::into_render(label.clone()),
+            leptos::html::select()
+                .child(
+                    #[allow(unused_braces)]
+                    {
+                        IntoRender::into_render({
+                            move || {
+                                let selected = draft.get().group(key).clone();
+                                let tags = candidates.get();
+                                let options = filter_options(&tags, &selected);
+                                options
+                                    .into_iter()
+                                    .map(move |(id, name)| {
+                                        let chosen = selected.contains(&id);
+                                        View::new(
+    leptos::html::option()
+        .child(
+            #[allow(unused_braces)]
+            { IntoRender::into_render({ name }) },
+        )
+        .value(::leptos::prelude::IntoAttributeValue::into_attribute_value(id))
+        .selected(
+            ::leptos::prelude::IntoAttributeValue::into_attribute_value(chosen),
+        ),
+)
+                                    })
+                                    .collect_view()
+                            }
+                        })
+                    },
+                )
+                .class("xcss-select")
+                .name(
+                    ::leptos::prelude::IntoAttributeValue::into_attribute_value(key),
+                )
+                .multiple(true)
+                .size("3")
+                .aria_label(
+                    ::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                        label,
+                    ),
+                )
+                .on(
+                    leptos::ev::change,
+                    move |event| {
+                        let select = event_target::<
+                            web_sys::HtmlSelectElement,
+                        >(&event);
+                        if let Ok(options) = select
+                            .query_selector_all("option:checked")
+                        {
+                            let values = (0..options.length())
+                                .filter_map(|index| options.item(index))
+                                .filter_map(|option| {
+                                    option.dyn_into::<web_sys::HtmlOptionElement>().ok()
+                                })
+                                .take(100)
+                                .map(|option| option.value())
+                                .collect();
+                            draft
+                                .update(|selection| *selection.group_mut(key) = values);
+                        }
+                    },
+                ),
+        ))
+        .class("xcss-form-field"),
+)
+                            })
+                            .collect_view()
+                        }),
+                        leptos::html::div()
+                            .child((
+                                leptos::html::button()
+                                    .child(
+                                        #[allow(unused_braces)]
+                                        {
+                                            IntoRender::into_render({
+                                                t("上一页", "Previous page")
+                                            })
+                                        },
+                                    )
+                                    .class("xcss-button")
+                                    .r#type("button")
+                                    .disabled(
+                                        ::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                                            move || p.get().previous_cursor.is_none(),
+                                        ),
+                                    )
+                                    .on(leptos::ev::click, move |_| {
+                                        cursor.set(p.get_untracked().previous_cursor)
+                                    }),
+                                leptos::html::button()
+                                    .child(
+                                        #[allow(unused_braces)]
+                                        {
+                                            IntoRender::into_render({ t("下一页", "Next page") })
+                                        },
+                                    )
+                                    .class("xcss-button")
+                                    .r#type("button")
+                                    .disabled(
+                                        ::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                                            move || p.get().next_cursor.is_none(),
+                                        ),
+                                    )
+                                    .on(leptos::ev::click, move |_| {
+                                        cursor.set(p.get_untracked().next_cursor)
+                                    }),
+                            ))
+                            .class("search-tag-pager"),
+                        leptos::html::div()
+                            .child((
+                                leptos::html::button()
+                                    .child(
+                                        #[allow(unused_braces)]
+                                        {
+                                            IntoRender::into_render({ t("搜索", "Search") })
+                                        },
+                                    )
+                                    .class("xcss-button")
+                                    .r#type("submit")
+                                    .on(leptos::ev::click, move |_| open.set(false)),
+                                leptos::html::button()
+                                    .child(
+                                        #[allow(unused_braces)]
+                                        {
+                                            IntoRender::into_render({
+                                                t("清除标签筛选", "Clear tag filters")
+                                            })
+                                        },
+                                    )
+                                    .class("xcss-button")
+                                    .r#type("button")
+                                    .on(leptos::ev::click, move |_| {
+                                        open.set(false);
+                                        model.filters.update(|f| {
+                                            f.all.clear();
+                                            f.any.clear();
+                                            f.exclude.clear();
+                                        });
+                                        crate::workspace::apply_filters(model);
+                                    }),
+                            ))
+                            .class("search-tag-actions"),
+                    ))
+                    .class("search-tag-options"),
+            ))
+            .class("search-tags")
+            .open(::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                move || open.get(),
+            ))
+            .on(leptos::ev::toggle, move |e| {
+                let target = event_target::<web_sys::HtmlElement>(&e);
+                open.set(target.has_attribute("open"));
+            }),
+    )
 }
 
 #[component]
@@ -620,15 +798,519 @@ pub fn FileTagToolbar(model: Model) -> impl IntoView {
             }
         });
     };
-    view! {<section class="xcss-content-panel file-tag-bar" aria-label=t("文件标签","File tags") hidden=move||model.action.get()!="tags"||model.tag_target.get().is_none()>
-    <span class="file-tag-target">{move||model.tag_target.get().map(|f|f.name).unwrap_or_default()}</span><div class="file-tag-editor"><p role="alert" hidden=move||error.get().is_empty()>{move||error.get()}<button class="xcss-button" type="button" on:click=move|_|version.update(|v|*v+=1)>{t("重试","Retry")}</button></p>
-    <Show when=move||busy.get()><p role="status">{t("加载中…","Loading…")}</p></Show>
-    <Show when=move||!reading.get()&&error.get().is_empty()&&file.get().file_id.is_none()><div role="status"><p>{t("该文件尚未索引。添加标签前需要扫描整个文件库，这可能需要较长时间。","This file is not indexed. Scan the entire file library before adding tags; this may take a while.")}</p><button class="xcss-button" disabled=move||busy.get() on:click=move|_|{if busy.get_untracked(){return;}pending.set(true);let original=model.tag_target.get_untracked().map(|file|file.name);leptos::task::spawn_local(async move{let result=request("/scan","POST",None).await;let current=original==model.tag_target.get_untracked().map(|file|file.name);match result{Ok(_)=>{if current{reading.set(true);version.update(|v|*v+=1);}model.tags_changed();},Err(_)=>{if current{error.set(t("扫描结果未能确认，请查看文件库状态后再决定是否重试。","The scan result could not be confirmed. Check Library status before retrying."));}}}if current{pending.set(false);}});}>{t("扫描整个文件库","Scan entire library")}</button><a href="#status">{t("查看文件库状态","Library status")}</a></div></Show>
-    <Show when=move||file.get().file_id.is_some()><span class="file-tag-count">{move||{let current=file.get();if current.tags_has_more{t("标签超过 16 个，请先移除至少于 16 个。","More than 16 tags. Remove tags until fewer than 16 remain.")}else{format!("{} {}/16",t("标签：","Tags:"),current.tags.len())}}}</span><Show when=move||file.with(|current|!current.tags_has_more&&current.tags.len()>=16)><span>{t("每个文件最多 16 个标签，请先移除后再添加。","Each file can have at most 16 tags. Remove a tag before adding another.")}</span></Show><div class="file-tag-options" role="group" aria-label=t("选择标签","Select tags")>
-    {move||{let current=file.get();let mut selected=current.tags.clone();for tag in assigned.get().tags.into_iter().chain(added.get()) {if !selected.iter().any(|value|value.id==tag.id){selected.push(tag);}}let ids:HashSet<_>=selected.iter().map(|tag|tag.id).collect();let mut tags=if current.tags_has_more||current.tags.len()>16{assigned.get().tags}else{selected};if !current.tags_has_more&&current.tags.len()<=16{for tag in choices.get().tags{if !tags.iter().any(|t|t.id==tag.id){tags.push(tag);}}}
-        tags.into_iter().map(move|tag|{let selected=ids.contains(&tag.id);let label=format!("{} {}",if selected{t("移除标签","Remove tag")}else{t("添加标签","Add tag")},tag.name);let disabled=current.tags_has_more||current.tags.len()>=16;view!{<button type="button" class="file-tag-choice xcss-button" aria-pressed=selected.to_string() aria-label=label disabled=move||busy.get()||disabled&&!selected on:click=move|_|mutate(tag.id,if selected{"remove"}else{"add"})><span class="file-tag-label" style:border-inline-start-color=tag.color.unwrap_or_default()>{tag.name}</span></button>}}).collect_view()}}
-    <Show when=move||!busy.get()&&assigned.with(|page|page.tags.is_empty())&&choices.with(|page|page.tags.is_empty())><span>{t("请先在标签管理中创建标签。","Create tags in Manage tags first.")}</span></Show></div><div class="search-tag-pager"><button class="xcss-button" disabled=move||busy.get()||assigned.get().previous_cursor.is_none() on:click=move|_|assigned_cursor.set(assigned.get_untracked().previous_cursor)>{t("已添加标签：上一页","Assigned tags: previous page")}</button><button class="xcss-button" disabled=move||busy.get()||assigned.get().next_cursor.is_none() on:click=move|_|assigned_cursor.set(assigned.get_untracked().next_cursor)>{t("已添加标签：下一页","Assigned tags: next page")}</button><button class="xcss-button" disabled=move||busy.get()||file.get().tags_has_more||choices.get().previous_cursor.is_none() on:click=move|_|choices_cursor.set(choices.get_untracked().previous_cursor)>{t("可用标签：上一页","Available tags: previous page")}</button><button class="xcss-button" disabled=move||busy.get()||file.get().tags_has_more||choices.get().next_cursor.is_none() on:click=move|_|choices_cursor.set(choices.get_untracked().next_cursor)>{t("可用标签：下一页","Available tags: next page")}</button></div></Show>
-    </div></section>}
+    View::new(
+    leptos::html::section()
+        .child((
+            leptos::html::span()
+                .child(
+                    #[allow(unused_braces)]
+                    {
+                        IntoRender::into_render({
+                            move || {
+                                model.tag_target.get().map(|f| f.name).unwrap_or_default()
+                            }
+                        })
+                    },
+                )
+                .class("file-tag-target"),
+            leptos::html::div()
+                .child((
+                    leptos::html::p()
+                        .child((
+                            IntoRender::into_render({
+                                move || error.get()
+                            }),
+                            leptos::html::button()
+                                .child(
+                                    #[allow(unused_braces)]
+                                    {
+                                        IntoRender::into_render({
+                                            t("重试", "Retry")
+                                        })
+                                    },
+                                )
+                                .class("xcss-button")
+                                .r#type("button")
+                                .on(
+                                    leptos::ev::click,
+                                    move |_| version.update(|v| *v += 1),
+                                ),
+                        ))
+                        .role("alert")
+                        .hidden(
+                            ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                            error.get().is_empty()),
+                        ),
+                    {
+                        #[allow(unreachable_code)] #[allow(unused_mut)]
+                        #[allow(clippy::let_and_return, clippy::let_unit_value, clippy::unit_arg)]
+                        component_view(
+                            #[allow(clippy::needless_borrows_for_generic_args)]
+                            &Show,
+                            {
+                                let mut props = component_props_builder(
+                                        &Show,
+                                    )
+                                    .when(#[allow(unused_braces)] { move || busy.get() })
+                                    .children({
+                                        ::leptos::children::ToChildren::to_children(move || {
+                                            leptos::html::p()
+                                                .child(
+                                                    #[allow(unused_braces)]
+                                                    {
+                                                        IntoRender::into_render({
+                                                            t("加载中…", "Loading…")
+                                                        })
+                                                    },
+                                                )
+                                                .role("status")
+                                        })
+                                    })
+                                    .build();
+                                props
+                            },
+                        )
+                    },
+                    {
+                        #[allow(unreachable_code)] #[allow(unused_mut)]
+                        #[allow(clippy::let_and_return, clippy::let_unit_value, clippy::unit_arg)]
+                        component_view(
+                            #[allow(clippy::needless_borrows_for_generic_args)]
+                            &Show,
+                            {
+                                let mut props = component_props_builder(
+                                        &Show,
+                                    )
+                                    .when(
+                                        #[allow(unused_braces)]
+                                        {
+                                            move || {
+                                                !reading.get() && error.get().is_empty()
+                                                    && file.get().file_id.is_none()
+                                            }
+                                        },
+                                    )
+                                    .children({
+                                        ::leptos::children::ToChildren::to_children(move || {
+                                            leptos::html::div()
+                                                .child((
+                                                    leptos::html::p()
+                                                        .child(
+                                                            #[allow(unused_braces)]
+                                                            {
+                                                                IntoRender::into_render({
+                                                                    t(
+                                                                        "该文件尚未索引。添加标签前需要扫描整个文件库，这可能需要较长时间。",
+                                                                        "This file is not indexed. Scan the entire file library before adding tags; this may take a while.",
+                                                                    )
+                                                                })
+                                                            },
+                                                        ),
+                                                    leptos::html::button()
+                                                        .child(
+                                                            #[allow(unused_braces)]
+                                                            {
+                                                                IntoRender::into_render({
+                                                                    t("扫描整个文件库", "Scan entire library")
+                                                                })
+                                                            },
+                                                        )
+                                                        .class("xcss-button")
+                                                        .disabled(
+                                                            ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                                            busy.get()),
+                                                        )
+                                                        .on(
+                                                            leptos::ev::click,
+                                                            move |_| {
+                                                                if busy.get_untracked() {
+                                                                    return;
+                                                                }
+                                                                pending.set(true);
+                                                                let original = model
+                                                                    .tag_target
+                                                                    .get_untracked()
+                                                                    .map(|file| file.name);
+                                                                leptos::task::spawn_local(async move {
+                                                                    let result = request("/scan", "POST", None).await;
+                                                                    let current = original
+                                                                        == model.tag_target.get_untracked().map(|file| file.name);
+                                                                    match result {
+                                                                        Ok(_) => {
+                                                                            if current {
+                                                                                reading.set(true);
+                                                                                version.update(|v| *v += 1);
+                                                                            }
+                                                                            model.tags_changed();
+                                                                        }
+                                                                        Err(_) => {
+                                                                            if current {
+                                                                                error
+                                                                                    .set(
+                                                                                        t(
+                                                                                            "扫描结果未能确认，请查看文件库状态后再决定是否重试。",
+                                                                                            "The scan result could not be confirmed. Check Library status before retrying.",
+                                                                                        ),
+                                                                                    );
+                                                                            }
+                                                                        }
+                                                                    }
+                                                                    if current {
+                                                                        pending.set(false);
+                                                                    }
+                                                                });
+                                                            },
+                                                        ),
+                                                    leptos::html::a()
+                                                        .child(
+                                                            #[allow(unused_braces)]
+                                                            {
+                                                                IntoRender::into_render({
+                                                                    t("查看文件库状态", "Library status")
+                                                                })
+                                                            },
+                                                        )
+                                                        .href("#status"),
+                                                ))
+                                                .role("status")
+                                        })
+                                    })
+                                    .build();
+                                props
+                            },
+                        )
+                    },
+                    {
+                        #[allow(unreachable_code)] #[allow(unused_mut)]
+                        #[allow(clippy::let_and_return, clippy::let_unit_value, clippy::unit_arg)]
+                        component_view(
+                            #[allow(clippy::needless_borrows_for_generic_args)]
+                            &Show,
+                            {
+                                let mut props = component_props_builder(
+                                        &Show,
+                                    )
+                                    .when(
+                                        #[allow(unused_braces)]
+                                        { move || file.get().file_id.is_some() },
+                                    )
+                                    .children({
+                                        ::leptos::children::ToChildren::to_children(move || (
+                                            leptos::html::span()
+                                                .child(
+                                                    #[allow(unused_braces)]
+                                                    {
+                                                        IntoRender::into_render({
+                                                            move || {
+                                                                let current = file.get();
+                                                                if current.tags_has_more {
+                                                                    t(
+                                                                        "标签超过 16 个，请先移除至少于 16 个。",
+                                                                        "More than 16 tags. Remove tags until fewer than 16 remain.",
+                                                                    )
+                                                                } else {
+                                                                    format!(
+                                                                        "{} {}/16", t("标签：", "Tags:"), current.tags.len()
+                                                                    )
+                                                                }
+                                                            }
+                                                        })
+                                                    },
+                                                )
+                                                .class("file-tag-count"),
+                                            {
+                                                #[allow(unreachable_code)] #[allow(unused_mut)]
+                                                #[allow(clippy::let_and_return, clippy::let_unit_value, clippy::unit_arg)]
+                                                component_view(
+                                                    #[allow(clippy::needless_borrows_for_generic_args)]
+                                                    &Show,
+                                                    {
+                                                        let mut props = component_props_builder(
+                                                                &Show,
+                                                            )
+                                                            .when(
+                                                                #[allow(unused_braces)]
+                                                                {
+                                                                    move || {
+                                                                        file
+                                                                            .with(|current| {
+                                                                                !current.tags_has_more && current.tags.len() >= 16
+                                                                            })
+                                                                    }
+                                                                },
+                                                            )
+                                                            .children({
+                                                                ::leptos::children::ToChildren::to_children(move || {
+                                                                    leptos::html::span()
+                                                                        .child(
+                                                                            #[allow(unused_braces)]
+                                                                            {
+                                                                                IntoRender::into_render({
+                                                                                    t(
+                                                                                        "每个文件最多 16 个标签，请先移除后再添加。",
+                                                                                        "Each file can have at most 16 tags. Remove a tag before adding another.",
+                                                                                    )
+                                                                                })
+                                                                            },
+                                                                        )
+                                                                })
+                                                            })
+                                                            .build();
+                                                        props
+                                                    },
+                                                )
+                                            },
+                                            leptos::html::div()
+                                                .child((
+                                                    IntoRender::into_render({
+                                                        move || {
+                                                            let current = file.get();
+                                                            let mut selected = current.tags.clone();
+                                                            for tag in assigned
+                                                                .get()
+                                                                .tags
+                                                                .into_iter()
+                                                                .chain(added.get())
+                                                            {
+                                                                if !selected.iter().any(|value| value.id == tag.id) {
+                                                                    selected.push(tag);
+                                                                }
+                                                            }
+                                                            let ids: HashSet<_> = selected
+                                                                .iter()
+                                                                .map(|tag| tag.id)
+                                                                .collect();
+                                                            let mut tags = if current.tags_has_more
+                                                                || current.tags.len() > 16
+                                                            {
+                                                                assigned.get().tags
+                                                            } else {
+                                                                selected
+                                                            };
+                                                            if !current.tags_has_more && current.tags.len() <= 16 {
+                                                                for tag in choices.get().tags {
+                                                                    if !tags.iter().any(|t| t.id == tag.id) {
+                                                                        tags.push(tag);
+                                                                    }
+                                                                }
+                                                            }
+                                                            tags.into_iter()
+                                                                .map(move |tag| {
+                                                                    let selected = ids.contains(&tag.id);
+                                                                    let label = format!(
+                                                                        "{} {}", if selected { t("移除标签", "Remove tag") }
+                                                                        else { t("添加标签", "Add tag") }, tag.name
+                                                                    );
+                                                                    let disabled = current.tags_has_more
+                                                                        || current.tags.len() >= 16;
+                                                                    View::new(
+    leptos::html::button()
+        .child(
+            #[allow(unused_braces)]
+            {
+                leptos::html::span()
+                    .child(
+                        #[allow(unused_braces)]
+                        { IntoRender::into_render({ tag.name }) },
+                    )
+                    .class("file-tag-label")
+                    .style((
+                        "border-inline-start-color",
+                        tag.color.unwrap_or_default(),
+                    ))
+            },
+        )
+        .class("file-tag-choice xcss-button")
+        .r#type("button")
+        .aria_pressed(
+            ::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                selected.to_string(),
+            ),
+        )
+        .aria_label(
+            ::leptos::prelude::IntoAttributeValue::into_attribute_value(label),
+        )
+        .disabled(
+            ::leptos::prelude::IntoAttributeValue::into_attribute_value(move || {
+                busy.get() || disabled && !selected
+            }),
+        )
+        .on(
+            leptos::ev::click,
+            move |_| mutate(tag.id, if selected { "remove" } else { "add" }),
+        ),
+)
+                                                                })
+                                                                .collect_view()
+                                                        }
+                                                    }),
+                                                    {
+                                                        #[allow(unreachable_code)] #[allow(unused_mut)]
+                                                        #[allow(clippy::let_and_return, clippy::let_unit_value, clippy::unit_arg)]
+                                                        component_view(
+                                                            #[allow(clippy::needless_borrows_for_generic_args)]
+                                                            &Show,
+                                                            {
+                                                                let mut props = component_props_builder(
+                                                                        &Show,
+                                                                    )
+                                                                    .when(
+                                                                        #[allow(unused_braces)]
+                                                                        {
+                                                                            move || {
+                                                                                !busy.get() && assigned.with(|page| page.tags.is_empty())
+                                                                                    && choices.with(|page| page.tags.is_empty())
+                                                                            }
+                                                                        },
+                                                                    )
+                                                                    .children({
+                                                                        ::leptos::children::ToChildren::to_children(move || {
+                                                                            leptos::html::span()
+                                                                                .child(
+                                                                                    #[allow(unused_braces)]
+                                                                                    {
+                                                                                        IntoRender::into_render({
+                                                                                            t(
+                                                                                                "请先在标签管理中创建标签。",
+                                                                                                "Create tags in Manage tags first.",
+                                                                                            )
+                                                                                        })
+                                                                                    },
+                                                                                )
+                                                                        })
+                                                                    })
+                                                                    .build();
+                                                                props
+                                                            },
+                                                        )
+                                                    },
+                                                ))
+                                                .class("file-tag-options")
+                                                .role("group")
+                                                .aria_label(
+                                                    ::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                                                        t("选择标签", "Select tags"),
+                                                    ),
+                                                ),
+                                            leptos::html::div()
+                                                .child((
+                                                    leptos::html::button()
+                                                        .child(
+                                                            #[allow(unused_braces)]
+                                                            {
+                                                                IntoRender::into_render({
+                                                                    t(
+                                                                        "已添加标签：上一页",
+                                                                        "Assigned tags: previous page",
+                                                                    )
+                                                                })
+                                                            },
+                                                        )
+                                                        .class("xcss-button")
+                                                        .disabled(
+                                                            ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                                            busy.get() || assigned.get().previous_cursor.is_none()),
+                                                        )
+                                                        .on(
+                                                            leptos::ev::click,
+                                                            move |_| {
+                                                                assigned_cursor
+                                                                    .set(assigned.get_untracked().previous_cursor)
+                                                            },
+                                                        ),
+                                                    leptos::html::button()
+                                                        .child(
+                                                            #[allow(unused_braces)]
+                                                            {
+                                                                IntoRender::into_render({
+                                                                    t("已添加标签：下一页", "Assigned tags: next page")
+                                                                })
+                                                            },
+                                                        )
+                                                        .class("xcss-button")
+                                                        .disabled(
+                                                            ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                                            busy.get() || assigned.get().next_cursor.is_none()),
+                                                        )
+                                                        .on(
+                                                            leptos::ev::click,
+                                                            move |_| {
+                                                                assigned_cursor.set(assigned.get_untracked().next_cursor)
+                                                            },
+                                                        ),
+                                                    leptos::html::button()
+                                                        .child(
+                                                            #[allow(unused_braces)]
+                                                            {
+                                                                IntoRender::into_render({
+                                                                    t(
+                                                                        "可用标签：上一页",
+                                                                        "Available tags: previous page",
+                                                                    )
+                                                                })
+                                                            },
+                                                        )
+                                                        .class("xcss-button")
+                                                        .disabled(
+                                                            ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                                            {
+                                                                busy.get() || file.get().tags_has_more
+                                                                    || choices.get().previous_cursor.is_none()
+                                                            }),
+                                                        )
+                                                        .on(
+                                                            leptos::ev::click,
+                                                            move |_| {
+                                                                choices_cursor.set(choices.get_untracked().previous_cursor)
+                                                            },
+                                                        ),
+                                                    leptos::html::button()
+                                                        .child(
+                                                            #[allow(unused_braces)]
+                                                            {
+                                                                IntoRender::into_render({
+                                                                    t("可用标签：下一页", "Available tags: next page")
+                                                                })
+                                                            },
+                                                        )
+                                                        .class("xcss-button")
+                                                        .disabled(
+                                                            ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                                            {
+                                                                busy.get() || file.get().tags_has_more
+                                                                    || choices.get().next_cursor.is_none()
+                                                            }),
+                                                        )
+                                                        .on(
+                                                            leptos::ev::click,
+                                                            move |_| {
+                                                                choices_cursor.set(choices.get_untracked().next_cursor)
+                                                            },
+                                                        ),
+                                                ))
+                                                .class("search-tag-pager"),
+                                        ))
+                                    })
+                                    .build();
+                                props
+                            },
+                        )
+                    },
+                ))
+                .class("file-tag-editor"),
+        ))
+        .class("xcss-content-panel file-tag-bar")
+        .aria_label(
+            ::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                t("文件标签", "File tags"),
+            ),
+        )
+        .hidden(
+            ::leptos::prelude::IntoAttributeValue::into_attribute_value(move || {
+                model.action.get() != "tags" || model.tag_target.get().is_none()
+            }),
+        ),
+)
 }
 
 #[component]
@@ -789,33 +1471,989 @@ pub fn Library(model: Model) -> impl IntoView {
             version.update(|v| *v += 1);
         });
     };
-    view! {<div class="library-page" hidden=move||!matches!(model.view.get().as_str(),"tags"|"status")><p class="library-notice" role="status" hidden=move||notice.get().is_empty()>{move||notice.get()}</p><p role="alert" hidden=move||error.get().is_empty()>{move||error.get()}</p>
-    <div hidden=move||model.view.get()!="tags"><section class="xcss-content-panel library-panel" aria-label=t("索引目录","Indexed folders")><h2>{t("索引目录","Indexed folders")}</h2><p>{t("浏览已索引文件所在的目录。空目录不在索引中。","Browse folders containing indexed files. Empty folders are not indexed.")}</p><p><a href=move||format!("/{}/",http::file_url(&folder_path.get())).replace("//","/")>{move||{let p=folder_path.get();if p.is_empty(){"/".to_owned()}else{p}}}</a></p>
-    <button class="xcss-button" hidden=move||folder_path.get().is_empty() on:click=move|_|{folder_cursor.set(None);folder_path.update(|p|*p=p.rsplit_once('/').map(|(p,_)|p.to_owned()).unwrap_or_default());}>{t("上级目录","Parent folder")}</button><ul>{move||folders.get().folders.into_iter().map(move|name|{let path=folder_path.get();let child=if path.is_empty(){name.clone()}else{format!("{path}/{name}")};let href=format!("/{}/",http::file_url(&child));view!{<li><button class="xcss-button" on:click=move|_|{folder_cursor.set(None);folder_path.set(child.clone());}>{name}</button><a href=href>{t("打开文件目录","Open folder")}</a></li>}}).collect_view()}</ul>
-    <nav class="library-pager" aria-label=t("索引目录分页","Indexed folder pages")><button class="xcss-button" disabled=move||folders.get().previous_cursor.is_none() on:click=move|_|folder_cursor.set(None)>{t("首页","First page")}</button><button class="xcss-button" disabled=move||folders.get().previous_cursor.is_none() on:click=move|_|folder_cursor.set(folders.get_untracked().previous_cursor)>{t("上一页","Previous page")}</button><button class="xcss-button" disabled=move||folders.get().next_cursor.is_none() on:click=move|_|folder_cursor.set(folders.get_untracked().next_cursor)>{t("下一页","Next page")}</button></nav></section>
-    <form class="xcss-content-panel library-panel library-tag-form" on:submit=move|e|{e.prevent_default();perform("/tags".into(),"POST",Some(json!({"name":new_tag.get_untracked(),"color":new_color.get_untracked()})));}>
-        <label class="xcss-form-field">{t("标签名称","Tag name")}<input class="xcss-input" required maxlength="80" prop:value=move||new_tag.get() on:input=move|e|new_tag.set(event_target_value(&e))/></label><label class="xcss-form-field">{t("颜色","Color")}<input class="xcss-input" type="color" prop:value=move||new_color.get() on:input=move|e|new_color.set(event_target_value(&e))/></label><button class="xcss-button" type="submit" disabled=move||pending.get()>{t("创建标签","Create tag")}</button>
-    </form><section class="xcss-content-panel library-panel"><Show when=move||tags.get().tags.is_empty()><p>{t("尚未创建标签。","No tags created yet.")}</p></Show><table class="xcss-table" aria-label=t("标签列表","Tag list")><thead><tr><th>{t("标签","Tags")}</th><th>{t("文件数","File count")}</th><th>{t("操作","Actions")}</th></tr></thead><tbody>
-    {move||tags.get().tags.into_iter().map(move|tag|{
-        let delete_tag=tag.clone(); let edit_tag=tag.clone();
-        view!{<tr><td><span class="library-color" style:background-color=tag.color.unwrap_or_else(||"#3b82f6".into())></span>{tag.name}</td><td>{tag.file_count}</td><td><div class="library-row-actions">
-        <button class="xcss-button" disabled=move||pending.get() on:click=move|_|open_editor(edit_tag.clone(),false)>{t("编辑","Edit")}</button>
-        <button class="xcss-button xcss-danger" disabled=move||pending.get() on:click=move|_|open_editor(delete_tag.clone(),true)>{t("删除整个标签","Delete tag")}</button>
-        </div></td></tr>}
-    }).collect_view()}
-    </tbody></table><nav class="library-pager" aria-label=t("标签列表分页","Tag list pages")><button class="xcss-button" disabled=move||tags.get().previous_cursor.is_none() on:click=move|_|cursor.set(None)>{t("首页","First page")}</button><button class="xcss-button" disabled=move||tags.get().previous_cursor.is_none() on:click=move|_|cursor.set(tags.get_untracked().previous_cursor)>{t("上一页","Previous page")}</button><button class="xcss-button" disabled=move||tags.get().next_cursor.is_none() on:click=move|_|cursor.set(tags.get_untracked().next_cursor)>{t("下一页","Next page")}</button></nav></section></div>
-    {move||editor.get().map(|(tag,deleting)|view!{
-        <xcss_web::components::Dialog title=if deleting{t("删除整个标签","Delete tag")}else{t("编辑标签","Edit tag")} close=close_editor>
-        <form class="library-dialog-form" aria-busy=move||pending.get().to_string() on:submit=move|event|{event.prevent_default();save_editor.run(());}>
-        {deleting.then(||view!{<p>{if xcss_web::i18n::locale()=="en" {format!("Deleting “{}” removes its associations with {} files. Original files are retained.",tag.name,tag.file_count)}else{format!("删除“{}”将移除它与 {} 个文件的关联，原文件不会被删除。",tag.name,tag.file_count)}}</p><p>{t("请确认删除整个标签。","Confirm deletion of this tag.")}</p>})}
-        <Show when=move||!deleting><label class="xcss-form-field">{t("标签名称","Tag name")}<input class="xcss-input" required maxlength="80" data-xcss-initial-focus="" readonly=move||pending.get() prop:value=move||editor_name.get() on:input=move|e|editor_name.set(event_target_value(&e))/></label><label class="xcss-form-field">{t("颜色","Color")}<input class="xcss-input" type="color" disabled=move||pending.get() prop:value=move||editor_color.get() on:input=move|e|editor_color.set(event_target_value(&e))/></label></Show>
-        <p role="alert" hidden=move||editor_error.get().is_empty()>{move||editor_error.get()}</p>
-        <div class="library-actions"><button class="xcss-button" type="button" data-xcss-initial-focus=deleting.then_some("") disabled=move||pending.get() on:click=move|_|close_editor.run(())>{t("取消","Cancel")}</button><button class="xcss-button" class:xcss-danger=deleting type="submit" disabled=move||pending.get()>{if deleting{t("确认","Confirm")}else{t("保存","Save")}}</button></div>
-        </form></xcss_web::components::Dialog>
-    })}
-    <section class="xcss-content-panel library-panel" hidden=move||model.view.get()!="status"><p>{t("重新扫描会更新整个文件库的索引。扫描期间请等待完成；若结果未能确认，请先检查扫描状态。","Scanning updates the entire file library index. Wait for completion; if the result is unconfirmed, check scan status before retrying.")}</p>
-    {move||status.get().map(|s|view!{<dl class="library-status"><dt>{t("原文件根目录","Original file root")}</dt><dd>{s.root}</dd><dt>{t("目录状态","Directory status")}</dt><dd>{if s.available{t("可用","Available")}else{t("异常","Unavailable")}}</dd><dt>{t("上次完整扫描","Last full scan")}</dt><dd>{s.last_scan_at.map(|v|crate::model::mtime(v*1000)).unwrap_or_else(||t("尚未完成","Not completed yet"))}</dd><dt>{t("当前文件","Present files")}</dt><dd>{s.indexed}</dd><dt>{t("缺失记录","Missing records")}</dt><dd>{s.missing}</dd><dt>{t("待确认记录","Unconfirmed records")}</dt><dd>{s.suspect}</dd><dt>{t("最近扫描错误","Last scan error")}</dt><dd>{if s.last_error.is_some(){t("扫描未能完成，请重新扫描。","The scan could not complete. Scan again.")}else{t("无","None")}}</dd></dl>})}
-    <div class="library-actions"><button class="xcss-button" disabled=move||pending.get() on:click=move|_|version.update(|v|*v+=1)>{t("刷新扫描状态","Refresh scan status")}</button><button class="xcss-button" disabled=move||pending.get() on:click=move|_|perform("/scan".into(),"POST",None)>{move||if pending.get(){t("操作进行中…","Operation in progress…")}else{t("重新扫描","Scan again")}}</button><button class="xcss-button" disabled=move||pending.get() on:click=move|_|perform("/backup".into(),"POST",None)>{t("备份标签数据库","Back up tag database")}</button></div></section></div>}
+    View::new(
+    leptos::html::div()
+        .child((
+            leptos::html::p()
+                .child(
+                    #[allow(unused_braces)]
+                    {
+                        IntoRender::into_render({
+                            move || notice.get()
+                        })
+                    },
+                )
+                .class("library-notice")
+                .role("status")
+                .hidden(
+                    ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                    notice.get().is_empty()),
+                ),
+            leptos::html::p()
+                .child(
+                    #[allow(unused_braces)]
+                    {
+                        IntoRender::into_render({
+                            move || error.get()
+                        })
+                    },
+                )
+                .role("alert")
+                .hidden(
+                    ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                    error.get().is_empty()),
+                ),
+            leptos::html::div()
+                .child((
+                    leptos::html::section()
+                        .child((
+                            leptos::html::h2()
+                                .child(
+                                    #[allow(unused_braces)]
+                                    {
+                                        IntoRender::into_render({
+                                            t("索引目录", "Indexed folders")
+                                        })
+                                    },
+                                ),
+                            leptos::html::p()
+                                .child(
+                                    #[allow(unused_braces)]
+                                    {
+                                        IntoRender::into_render({
+                                            t(
+                                                "浏览已索引文件所在的目录。空目录不在索引中。",
+                                                "Browse folders containing indexed files. Empty folders are not indexed.",
+                                            )
+                                        })
+                                    },
+                                ),
+                            leptos::html::p()
+                                .child(
+                                    #[allow(unused_braces)]
+                                    {
+                                        leptos::html::a()
+                                            .child(
+                                                #[allow(unused_braces)]
+                                                {
+                                                    IntoRender::into_render({
+                                                        move || {
+                                                            let p = folder_path.get();
+                                                            if p.is_empty() { "/".to_owned() } else { p }
+                                                        }
+                                                    })
+                                                },
+                                            )
+                                            .href(
+                                                ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                                {
+                                                    format!("/{}/", http::file_url(& folder_path.get()))
+                                                        .replace("//", "/")
+                                                }),
+                                            )
+                                    },
+                                ),
+                            leptos::html::button()
+                                .child(
+                                    #[allow(unused_braces)]
+                                    {
+                                        IntoRender::into_render({
+                                            t("上级目录", "Parent folder")
+                                        })
+                                    },
+                                )
+                                .class("xcss-button")
+                                .hidden(
+                                    ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                    folder_path.get().is_empty()),
+                                )
+                                .on(
+                                    leptos::ev::click,
+                                    move |_| {
+                                        folder_cursor.set(None);
+                                        folder_path
+                                            .update(|p| {
+                                                *p = p
+                                                    .rsplit_once('/')
+                                                    .map(|(p, _)| p.to_owned())
+                                                    .unwrap_or_default();
+                                            });
+                                    },
+                                ),
+                            leptos::html::ul()
+                                .child(
+                                    #[allow(unused_braces)]
+                                    {
+                                        IntoRender::into_render({
+                                            move || {
+                                                folders
+                                                    .get()
+                                                    .folders
+                                                    .into_iter()
+                                                    .map(move |name| {
+                                                        let path = folder_path.get();
+                                                        let child = if path.is_empty() {
+                                                            name.clone()
+                                                        } else {
+                                                            format!("{path}/{name}")
+                                                        };
+                                                        let href = format!("/{}/", http::file_url(& child));
+                                                        View::new(
+    leptos::html::li()
+        .child((
+            leptos::html::button()
+                .child(
+                    #[allow(unused_braces)]
+                    { IntoRender::into_render({ name }) },
+                )
+                .class("xcss-button")
+                .on(
+                    leptos::ev::click,
+                    move |_| {
+                        folder_cursor.set(None);
+                        folder_path.set(child.clone());
+                    },
+                ),
+            leptos::html::a()
+                .child(
+                    #[allow(unused_braces)]
+                    {
+                        IntoRender::into_render({
+                            t("打开文件目录", "Open folder")
+                        })
+                    },
+                )
+                .href(
+                    ::leptos::prelude::IntoAttributeValue::into_attribute_value(href),
+                ),
+        )),
+)
+                                                    })
+                                                    .collect_view()
+                                            }
+                                        })
+                                    },
+                                ),
+                            leptos::html::nav()
+                                .child((
+                                    leptos::html::button()
+                                        .child(
+                                            #[allow(unused_braces)]
+                                            {
+                                                IntoRender::into_render({
+                                                    t("首页", "First page")
+                                                })
+                                            },
+                                        )
+                                        .class("xcss-button")
+                                        .disabled(
+                                            ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                            folders.get().previous_cursor.is_none()),
+                                        )
+                                        .on(
+                                            leptos::ev::click,
+                                            move |_| folder_cursor.set(None),
+                                        ),
+                                    leptos::html::button()
+                                        .child(
+                                            #[allow(unused_braces)]
+                                            {
+                                                IntoRender::into_render({
+                                                    t("上一页", "Previous page")
+                                                })
+                                            },
+                                        )
+                                        .class("xcss-button")
+                                        .disabled(
+                                            ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                            folders.get().previous_cursor.is_none()),
+                                        )
+                                        .on(
+                                            leptos::ev::click,
+                                            move |_| {
+                                                folder_cursor.set(folders.get_untracked().previous_cursor)
+                                            },
+                                        ),
+                                    leptos::html::button()
+                                        .child(
+                                            #[allow(unused_braces)]
+                                            {
+                                                IntoRender::into_render({
+                                                    t("下一页", "Next page")
+                                                })
+                                            },
+                                        )
+                                        .class("xcss-button")
+                                        .disabled(
+                                            ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                            folders.get().next_cursor.is_none()),
+                                        )
+                                        .on(
+                                            leptos::ev::click,
+                                            move |_| {
+                                                folder_cursor.set(folders.get_untracked().next_cursor)
+                                            },
+                                        ),
+                                ))
+                                .class("library-pager")
+                                .aria_label(
+                                    ::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                                        t("索引目录分页", "Indexed folder pages"),
+                                    ),
+                                ),
+                        ))
+                        .class("xcss-content-panel library-panel")
+                        .aria_label(
+                            ::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                                t("索引目录", "Indexed folders"),
+                            ),
+                        ),
+                    leptos::html::form()
+                        .child((
+                            leptos::html::label()
+                                .child((
+                                    IntoRender::into_render({
+                                        t("标签名称", "Tag name")
+                                    }),
+                                    leptos::html::input()
+                                        .class("xcss-input")
+                                        .required(true)
+                                        .maxlength("80")
+                                        .prop("value", move || new_tag.get())
+                                        .on(
+                                            leptos::ev::input,
+                                            move |e| new_tag.set(event_target_value(&e)),
+                                        ),
+                                ))
+                                .class("xcss-form-field"),
+                            leptos::html::label()
+                                .child((
+                                    IntoRender::into_render({
+                                        t("颜色", "Color")
+                                    }),
+                                    leptos::html::input()
+                                        .class("xcss-input")
+                                        .r#type("color")
+                                        .prop("value", move || new_color.get())
+                                        .on(
+                                            leptos::ev::input,
+                                            move |e| new_color.set(event_target_value(&e)),
+                                        ),
+                                ))
+                                .class("xcss-form-field"),
+                            leptos::html::button()
+                                .child(
+                                    #[allow(unused_braces)]
+                                    {
+                                        IntoRender::into_render({
+                                            t("创建标签", "Create tag")
+                                        })
+                                    },
+                                )
+                                .class("xcss-button")
+                                .r#type("submit")
+                                .disabled(
+                                    ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                    pending.get()),
+                                ),
+                        ))
+                        .class("xcss-content-panel library-panel library-tag-form")
+                        .on(
+                            leptos::ev::submit,
+                            move |e| {
+                                e.prevent_default();
+                                perform(
+                                    "/tags".into(),
+                                    "POST",
+                                    Some(
+                                        json!(
+                                            { "name" : new_tag.get_untracked(), "color" : new_color
+                                            .get_untracked() }
+                                        ),
+                                    ),
+                                );
+                            },
+                        ),
+                    leptos::html::section()
+                        .child((
+                            {
+                                #[allow(unreachable_code)] #[allow(unused_mut)]
+                                #[allow(clippy::let_and_return, clippy::let_unit_value, clippy::unit_arg)]
+                                component_view(
+                                    #[allow(clippy::needless_borrows_for_generic_args)]
+                                    &Show,
+                                    {
+                                        let mut props = component_props_builder(
+                                                &Show,
+                                            )
+                                            .when(
+                                                #[allow(unused_braces)]
+                                                { move || tags.get().tags.is_empty() },
+                                            )
+                                            .children({
+                                                ::leptos::children::ToChildren::to_children(move || {
+                                                    leptos::html::p()
+                                                        .child(
+                                                            #[allow(unused_braces)]
+                                                            {
+                                                                IntoRender::into_render({
+                                                                    t("尚未创建标签。", "No tags created yet.")
+                                                                })
+                                                            },
+                                                        )
+                                                })
+                                            })
+                                            .build();
+                                        props
+                                    },
+                                )
+                            },
+                            leptos::html::table()
+                                .child((
+                                    leptos::html::thead()
+                                        .child(
+                                            #[allow(unused_braces)]
+                                            {
+                                                leptos::html::tr()
+                                                    .child((
+                                                        leptos::html::th()
+                                                            .child(
+                                                                #[allow(unused_braces)]
+                                                                {
+                                                                    IntoRender::into_render({
+                                                                        t("标签", "Tags")
+                                                                    })
+                                                                },
+                                                            ),
+                                                        leptos::html::th()
+                                                            .child(
+                                                                #[allow(unused_braces)]
+                                                                {
+                                                                    IntoRender::into_render({
+                                                                        t("文件数", "File count")
+                                                                    })
+                                                                },
+                                                            ),
+                                                        leptos::html::th()
+                                                            .child(
+                                                                #[allow(unused_braces)]
+                                                                {
+                                                                    IntoRender::into_render({
+                                                                        t("操作", "Actions")
+                                                                    })
+                                                                },
+                                                            ),
+                                                    ))
+                                            },
+                                        ),
+                                    leptos::html::tbody()
+                                        .child(
+                                            #[allow(unused_braces)]
+                                            {
+                                                IntoRender::into_render({
+                                                    move || {
+                                                        tags
+                                                            .get()
+                                                            .tags
+                                                            .into_iter()
+                                                            .map(move |tag| {
+                                                                let delete_tag = tag.clone();
+                                                                let edit_tag = tag.clone();
+                                                                View::new(
+    leptos::html::tr()
+        .child((
+            leptos::html::td()
+                .child((
+                    leptos::html::span()
+                        .class("library-color")
+                        .style((
+                            "background-color",
+                            tag.color.unwrap_or_else(|| "#3b82f6".into()),
+                        )),
+                    IntoRender::into_render({ tag.name }),
+                )),
+            leptos::html::td()
+                .child(
+                    #[allow(unused_braces)]
+                    {
+                        IntoRender::into_render({
+                            tag.file_count
+                        })
+                    },
+                ),
+            leptos::html::td()
+                .child(
+                    #[allow(unused_braces)]
+                    {
+                        leptos::html::div()
+                            .child((
+                                leptos::html::button()
+                                    .child(
+                                        #[allow(unused_braces)]
+                                        {
+                                            IntoRender::into_render({
+                                                t("编辑", "Edit")
+                                            })
+                                        },
+                                    )
+                                    .class("xcss-button")
+                                    .disabled(
+                                        ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                        pending.get()),
+                                    )
+                                    .on(
+                                        leptos::ev::click,
+                                        move |_| open_editor(edit_tag.clone(), false),
+                                    ),
+                                leptos::html::button()
+                                    .child(
+                                        #[allow(unused_braces)]
+                                        {
+                                            IntoRender::into_render({
+                                                t("删除整个标签", "Delete tag")
+                                            })
+                                        },
+                                    )
+                                    .class("xcss-button xcss-danger")
+                                    .disabled(
+                                        ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                        pending.get()),
+                                    )
+                                    .on(
+                                        leptos::ev::click,
+                                        move |_| open_editor(delete_tag.clone(), true),
+                                    ),
+                            ))
+                            .class("library-row-actions")
+                    },
+                ),
+        )),
+)
+                                                            })
+                                                            .collect_view()
+                                                    }
+                                                })
+                                            },
+                                        ),
+                                ))
+                                .class("xcss-table")
+                                .aria_label(
+                                    ::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                                        t("标签列表", "Tag list"),
+                                    ),
+                                ),
+                            leptos::html::nav()
+                                .child((
+                                    leptos::html::button()
+                                        .child(
+                                            #[allow(unused_braces)]
+                                            {
+                                                IntoRender::into_render({
+                                                    t("首页", "First page")
+                                                })
+                                            },
+                                        )
+                                        .class("xcss-button")
+                                        .disabled(
+                                            ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                            tags.get().previous_cursor.is_none()),
+                                        )
+                                        .on(
+                                            leptos::ev::click,
+                                            move |_| cursor.set(None),
+                                        ),
+                                    leptos::html::button()
+                                        .child(
+                                            #[allow(unused_braces)]
+                                            {
+                                                IntoRender::into_render({
+                                                    t("上一页", "Previous page")
+                                                })
+                                            },
+                                        )
+                                        .class("xcss-button")
+                                        .disabled(
+                                            ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                            tags.get().previous_cursor.is_none()),
+                                        )
+                                        .on(
+                                            leptos::ev::click,
+                                            move |_| cursor.set(tags.get_untracked().previous_cursor),
+                                        ),
+                                    leptos::html::button()
+                                        .child(
+                                            #[allow(unused_braces)]
+                                            {
+                                                IntoRender::into_render({
+                                                    t("下一页", "Next page")
+                                                })
+                                            },
+                                        )
+                                        .class("xcss-button")
+                                        .disabled(
+                                            ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                            tags.get().next_cursor.is_none()),
+                                        )
+                                        .on(
+                                            leptos::ev::click,
+                                            move |_| cursor.set(tags.get_untracked().next_cursor),
+                                        ),
+                                ))
+                                .class("library-pager")
+                                .aria_label(
+                                    ::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                                        t("标签列表分页", "Tag list pages"),
+                                    ),
+                                ),
+                        ))
+                        .class("xcss-content-panel library-panel"),
+                ))
+                .hidden(
+                    ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                    model.view.get() != "tags"),
+                ),
+            IntoRender::into_render({
+                move || {
+                    editor
+                        .get()
+                        .map(|(tag, deleting)| {
+                            View::new({
+    #[allow(unreachable_code)] #[allow(unused_mut)] #[allow(clippy::let_and_return, clippy::let_unit_value, clippy::unit_arg)]
+    component_view(
+        #[allow(clippy::needless_borrows_for_generic_args)]
+        &xcss_web::components::Dialog,
+        {
+            let mut props = component_props_builder(
+                    &xcss_web::components::Dialog,
+                )
+                .title(
+                    #[allow(unused_braces)]
+                    {
+                        if deleting {
+                            t("删除整个标签", "Delete tag")
+                        } else {
+                            t("编辑标签", "Edit tag")
+                        }
+                    },
+                )
+                .close(#[allow(unused_braces)] { close_editor })
+                .children({
+                    ::leptos::children::ToChildren::to_children(move || {
+                        leptos::html::form()
+                            .child((
+                                IntoRender::into_render({
+                                    deleting
+                                        .then(|| {
+                                            View::new((
+    leptos::html::p()
+        .child(
+            #[allow(unused_braces)]
+            {
+                IntoRender::into_render({
+                    if xcss_web::i18n::locale() == "en" {
+                        format!(
+                            "Deleting “{}” removes its associations with {} files. Original files are retained.",
+                            tag.name, tag.file_count
+                        )
+                    } else {
+                        format!(
+                            "删除“{}”将移除它与 {} 个文件的关联，原文件不会被删除。",
+                            tag.name, tag.file_count
+                        )
+                    }
+                })
+            },
+        ),
+    leptos::html::p()
+        .child(
+            #[allow(unused_braces)]
+            {
+                IntoRender::into_render({
+                    t(
+                        "请确认删除整个标签。",
+                        "Confirm deletion of this tag.",
+                    )
+                })
+            },
+        ),
+))
+                                        })
+                                }),
+                                {
+                                    #[allow(unreachable_code)] #[allow(unused_mut)]
+                                    #[allow(clippy::let_and_return, clippy::let_unit_value, clippy::unit_arg)]
+                                    component_view(
+                                        #[allow(clippy::needless_borrows_for_generic_args)]
+                                        &Show,
+                                        {
+                                            let mut props = component_props_builder(
+                                                    &Show,
+                                                )
+                                                .when(#[allow(unused_braces)] { move || !deleting })
+                                                .children({
+                                                    ::leptos::children::ToChildren::to_children(move || (
+                                                        leptos::html::label()
+                                                            .child((
+                                                                IntoRender::into_render({
+                                                                    t("标签名称", "Tag name")
+                                                                }),
+                                                                leptos::html::input()
+                                                                    .class("xcss-input")
+                                                                    .required(true)
+                                                                    .maxlength("80")
+                                                                    .attr("data-xcss-initial-focus", "")
+                                                                    .readonly(
+                                                                        ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                                                        pending.get()),
+                                                                    )
+                                                                    .prop("value", move || editor_name.get())
+                                                                    .on(
+                                                                        leptos::ev::input,
+                                                                        move |e| editor_name.set(event_target_value(&e)),
+                                                                    ),
+                                                            ))
+                                                            .class("xcss-form-field"),
+                                                        leptos::html::label()
+                                                            .child((
+                                                                IntoRender::into_render({
+                                                                    t("颜色", "Color")
+                                                                }),
+                                                                leptos::html::input()
+                                                                    .class("xcss-input")
+                                                                    .r#type("color")
+                                                                    .disabled(
+                                                                        ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                                                        pending.get()),
+                                                                    )
+                                                                    .prop("value", move || editor_color.get())
+                                                                    .on(
+                                                                        leptos::ev::input,
+                                                                        move |e| editor_color.set(event_target_value(&e)),
+                                                                    ),
+                                                            ))
+                                                            .class("xcss-form-field"),
+                                                    ))
+                                                })
+                                                .build();
+                                            props
+                                        },
+                                    )
+                                },
+                                leptos::html::p()
+                                    .child(
+                                        #[allow(unused_braces)]
+                                        {
+                                            IntoRender::into_render({
+                                                move || editor_error.get()
+                                            })
+                                        },
+                                    )
+                                    .role("alert")
+                                    .hidden(
+                                        ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                        editor_error.get().is_empty()),
+                                    ),
+                                leptos::html::div()
+                                    .child((
+                                        leptos::html::button()
+                                            .child(
+                                                #[allow(unused_braces)]
+                                                {
+                                                    IntoRender::into_render({
+                                                        t("取消", "Cancel")
+                                                    })
+                                                },
+                                            )
+                                            .class("xcss-button")
+                                            .r#type("button")
+                                            .attr(
+                                                "data-xcss-initial-focus",
+                                                ::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                                                    deleting.then_some(""),
+                                                ),
+                                            )
+                                            .disabled(
+                                                ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                                pending.get()),
+                                            )
+                                            .on(
+                                                leptos::ev::click,
+                                                move |_| close_editor.run(()),
+                                            ),
+                                        leptos::html::button()
+                                            .child(
+                                                #[allow(unused_braces)]
+                                                {
+                                                    IntoRender::into_render({
+                                                        if deleting {
+                                                            t("确认", "Confirm")
+                                                        } else {
+                                                            t("保存", "Save")
+                                                        }
+                                                    })
+                                                },
+                                            )
+                                            .class("xcss-button")
+                                            .class(("xcss-danger", deleting))
+                                            .r#type("submit")
+                                            .disabled(
+                                                ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                                pending.get()),
+                                            ),
+                                    ))
+                                    .class("library-actions"),
+                            ))
+                            .class("library-dialog-form")
+                            .aria_busy(
+                                ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                pending.get().to_string()),
+                            )
+                            .on(
+                                leptos::ev::submit,
+                                move |event| {
+                                    event.prevent_default();
+                                    save_editor.run(());
+                                },
+                            )
+                    })
+                })
+                .build();
+            props
+        },
+    )
+})
+                        })
+                }
+            }),
+            leptos::html::section()
+                .child((
+                    leptos::html::p()
+                        .child(
+                            #[allow(unused_braces)]
+                            {
+                                IntoRender::into_render({
+                                    t(
+                                        "重新扫描会更新整个文件库的索引。扫描期间请等待完成；若结果未能确认，请先检查扫描状态。",
+                                        "Scanning updates the entire file library index. Wait for completion; if the result is unconfirmed, check scan status before retrying.",
+                                    )
+                                })
+                            },
+                        ),
+                    IntoRender::into_render({
+                        move || {
+                            status
+                                .get()
+                                .map(|s| {
+                                    View::new(
+    leptos::html::dl()
+        .child((
+            leptos::html::dt()
+                .child(
+                    #[allow(unused_braces)]
+                    {
+                        IntoRender::into_render({
+                            t("原文件根目录", "Original file root")
+                        })
+                    },
+                ),
+            leptos::html::dd()
+                .child(
+                    #[allow(unused_braces)]
+                    { IntoRender::into_render({ s.root }) },
+                ),
+            leptos::html::dt()
+                .child(
+                    #[allow(unused_braces)]
+                    {
+                        IntoRender::into_render({
+                            t("目录状态", "Directory status")
+                        })
+                    },
+                ),
+            leptos::html::dd()
+                .child(
+                    #[allow(unused_braces)]
+                    {
+                        IntoRender::into_render({
+                            if s.available {
+                                t("可用", "Available")
+                            } else {
+                                t("异常", "Unavailable")
+                            }
+                        })
+                    },
+                ),
+            leptos::html::dt()
+                .child(
+                    #[allow(unused_braces)]
+                    {
+                        IntoRender::into_render({
+                            t("上次完整扫描", "Last full scan")
+                        })
+                    },
+                ),
+            leptos::html::dd()
+                .child(
+                    #[allow(unused_braces)]
+                    {
+                        IntoRender::into_render({
+                            s.last_scan_at
+                                .map(|v| crate::model::mtime(v * 1000))
+                                .unwrap_or_else(|| t("尚未完成", "Not completed yet"))
+                        })
+                    },
+                ),
+            leptos::html::dt()
+                .child(
+                    #[allow(unused_braces)]
+                    {
+                        IntoRender::into_render({
+                            t("当前文件", "Present files")
+                        })
+                    },
+                ),
+            leptos::html::dd()
+                .child(
+                    #[allow(unused_braces)]
+                    { IntoRender::into_render({ s.indexed }) },
+                ),
+            leptos::html::dt()
+                .child(
+                    #[allow(unused_braces)]
+                    {
+                        IntoRender::into_render({
+                            t("缺失记录", "Missing records")
+                        })
+                    },
+                ),
+            leptos::html::dd()
+                .child(
+                    #[allow(unused_braces)]
+                    { IntoRender::into_render({ s.missing }) },
+                ),
+            leptos::html::dt()
+                .child(
+                    #[allow(unused_braces)]
+                    {
+                        IntoRender::into_render({
+                            t("待确认记录", "Unconfirmed records")
+                        })
+                    },
+                ),
+            leptos::html::dd()
+                .child(
+                    #[allow(unused_braces)]
+                    { IntoRender::into_render({ s.suspect }) },
+                ),
+            leptos::html::dt()
+                .child(
+                    #[allow(unused_braces)]
+                    {
+                        IntoRender::into_render({
+                            t("最近扫描错误", "Last scan error")
+                        })
+                    },
+                ),
+            leptos::html::dd()
+                .child(
+                    #[allow(unused_braces)]
+                    {
+                        IntoRender::into_render({
+                            if s.last_error.is_some() {
+                                t(
+                                    "扫描未能完成，请重新扫描。",
+                                    "The scan could not complete. Scan again.",
+                                )
+                            } else {
+                                t("无", "None")
+                            }
+                        })
+                    },
+                ),
+        ))
+        .class("library-status"),
+)
+                                })
+                        }
+                    }),
+                    leptos::html::div()
+                        .child((
+                            leptos::html::button()
+                                .child(
+                                    #[allow(unused_braces)]
+                                    {
+                                        IntoRender::into_render({
+                                            t("刷新扫描状态", "Refresh scan status")
+                                        })
+                                    },
+                                )
+                                .class("xcss-button")
+                                .disabled(
+                                    ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                    pending.get()),
+                                )
+                                .on(
+                                    leptos::ev::click,
+                                    move |_| version.update(|v| *v += 1),
+                                ),
+                            leptos::html::button()
+                                .child(
+                                    #[allow(unused_braces)]
+                                    {
+                                        IntoRender::into_render({
+                                            move || {
+                                                if pending.get() {
+                                                    t("操作进行中…", "Operation in progress…")
+                                                } else {
+                                                    t("重新扫描", "Scan again")
+                                                }
+                                            }
+                                        })
+                                    },
+                                )
+                                .class("xcss-button")
+                                .disabled(
+                                    ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                    pending.get()),
+                                )
+                                .on(
+                                    leptos::ev::click,
+                                    move |_| perform("/scan".into(), "POST", None),
+                                ),
+                            leptos::html::button()
+                                .child(
+                                    #[allow(unused_braces)]
+                                    {
+                                        IntoRender::into_render({
+                                            t("备份标签数据库", "Back up tag database")
+                                        })
+                                    },
+                                )
+                                .class("xcss-button")
+                                .disabled(
+                                    ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                    pending.get()),
+                                )
+                                .on(
+                                    leptos::ev::click,
+                                    move |_| perform("/backup".into(), "POST", None),
+                                ),
+                        ))
+                        .class("library-actions"),
+                ))
+                .class("xcss-content-panel library-panel")
+                .hidden(
+                    ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                    model.view.get() != "status"),
+                ),
+        ))
+        .class("library-page")
+        .hidden(
+            ::leptos::prelude::IntoAttributeValue::into_attribute_value(move || {
+                !matches!(model.view.get().as_str(), "tags" | "status")
+            }),
+        ),
+)
 }
 
 #[cfg(test)]

@@ -13,7 +13,7 @@ release_binary="$1"
 ulimit -c 0
 # The fixture is compiled from this checkout, which may not be the isolated
 # source tree that produced the supplied formal package binary.
-npm run build:platform
+cargo +1.99.0 run --quiet --locked --manifest-path tools/web-build/Cargo.toml -- build --product-root .
 cargo build --locked --release --target x86_64-unknown-linux-gnu --example runtime_shutdown_probe
 node scripts/check-shutdown-runtime.mjs "${CARGO_TARGET_DIR:-$project_dir/target}/x86_64-unknown-linux-gnu/release/examples/runtime_shutdown_probe"
 # A release build accepts administrator-controlled configuration. Compile the

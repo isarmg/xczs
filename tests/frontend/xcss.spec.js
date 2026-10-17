@@ -1,4 +1,5 @@
-const { readFileSync } = require("node:fs");
+const { readFileSync, readdirSync } = require("node:fs");
+const { join } = require("node:path");
 const { createHash } = require("node:crypto");
 const AxeBuilder = require("@axe-core/playwright").default;
 const { test, expect, pageData, login, selectFiles } = require("./fixtures.js");
@@ -43,13 +44,21 @@ test("Leptos frontend uses embedded fonts, licenses, and session recovery suppli
   const css = await page.context().request.get(new URL("platform.css", prefix).href);
   const cssText = await css.text();
   expect(cssText).not.toContain("data:image");
-  const icons = [...new Set([...cssText.matchAll(/xcss-icon-[a-f0-9]{64}\.svg/gu)].map(match => match[0]))];
+  const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
+  const cssUrls = [...cssText.matchAll(/url\(\s*(["']?)([^"')]+)\1\s*\)/gu)].map(match => match[2].trim());
+  const icons = [...new Set(cssUrls
+    .filter(url => /(?:^|\/)xcss-icon-[a-f0-9]{16}\.svg$/u.test(url))
+    .map(url => new URL(url, css.url()).href))];
   expect(icons).toHaveLength(3);
   for (const icon of icons) {
-    const response = await page.context().request.get(new URL(icon, prefix).href);
+    const url = new URL(icon);
+    expect(url.origin).toBe(prefix.origin);
+    const response = await page.context().request.get(url.href);
     expect(response.status()).toBe(200);
     expect(response.headers()["content-type"]).toContain("image/svg+xml");
     expect(response.headers()["cache-control"]).toContain("immutable");
+    expect(response.headers()["x-content-type-options"]).toBe("nosniff");
+    expect(sha256(await response.body()).slice(0, 16)).toBe(url.pathname.match(/xcss-icon-([a-f0-9]{16})\.svg$/u)[1]);
   }
   const script = await page.context().request.get(new URL("platform.js", prefix).href);
   expect((await script.body()).byteLength).toBeLessThanOrEqual(512 * 1024);
@@ -70,14 +79,29 @@ test("Leptos frontend uses embedded fonts, licenses, and session recovery suppli
   expect(Object.keys(metadata.shared_inputs)).toEqual(expect.arrayContaining([
     "Cargo.toml", "SOURCE.json", "src/lib.rs", "src/api.rs", "src/theme.rs",
   ]));
-  const sha256 = bytes => createHash("sha256").update(bytes).digest("hex");
   for (const [name, digest] of Object.entries(metadata.browser_inputs)) {
     expect(sha256(readFileSync(require("node:path").join(__dirname, "../../web/leptos", name))), name).toBe(digest);
   }
   for (const [name, digest] of Object.entries(metadata.shared_inputs)) {
     expect(sha256(readFileSync(require("node:path").join(__dirname, "../../web/leptos/vendor/xcss-web", name))), name).toBe(digest);
   }
-  expect(sha256(readFileSync(require("node:path").join(__dirname, "../../scripts/build-leptos.py")))).toBe(metadata.builder_sha256);
+  const builderRoot = join(__dirname, "../../tools/web-build");
+  function builderSources(directory, prefix = "src") {
+    return readdirSync(directory, { withFileTypes: true }).flatMap(entry => {
+      const name = `${prefix}/${entry.name}`;
+      expect(entry.isSymbolicLink(), name).toBe(false);
+      if (entry.isDirectory()) return builderSources(join(directory, entry.name), name);
+      expect(entry.isFile(), name).toBe(true);
+      return [name];
+    });
+  }
+  const builderKeys = ["Cargo.toml", "Cargo.lock", ...builderSources(join(builderRoot, "src"))].sort();
+  expect(Object.keys(metadata.builder_inputs).sort()).toEqual(builderKeys);
+  for (const name of builderKeys) {
+    expect(sha256(readFileSync(join(builderRoot, name))), name).toBe(metadata.builder_inputs[name]);
+  }
+  const sortedBuilderInputs = Object.fromEntries(builderKeys.map(name => [name, metadata.builder_inputs[name]]));
+  expect(sha256(Buffer.from(JSON.stringify(sortedBuilderInputs)))).toBe(metadata.builder_sha256);
   const wasmUrl = await page.evaluate(() => performance.getEntriesByType("resource").find(entry => new URL(entry.name).pathname.endsWith(".wasm")).name);
   const wasmResponse = await page.context().request.get(wasmUrl);
   expect(wasmResponse.status()).toBe(200);

@@ -1,5 +1,7 @@
 //! Browser upload lifecycle. File handles live only in this document; refresh
 //! never resumes a different file merely because its metadata happens to match.
+use leptos::component::{component_props_builder, component_view};
+
 use crate::{
     http::{self, Error, Raw},
     model::{self, Dialog, Model},
@@ -1427,7 +1429,146 @@ pub fn Queue(model: Model) -> impl IntoView {
     let _ = http::window()
         .add_event_listener_with_callback("beforeunload", guard.as_ref().unchecked_ref());
     guard.forget();
-    view! {<div class="upload-queue-message" role="alert" aria-live="assertive" hidden=move||signal.get().message.is_empty()>{move||signal.get().message}</div><table class="uploaders-table xcss-table" aria-label=t("上传队列","Upload queue") hidden=move||signal.get().rows.is_empty()><caption class="upload-history-status" role="status" aria-live="polite" hidden=move||signal.get().evicted==0 on:blur=move|e|{if let Some(e)=e.target().and_then(|e|e.dyn_into::<web_sys::Element>().ok()){let _=e.remove_attribute("tabindex");}}>{move||history_message(signal.get().evicted,signal.get().rows.iter().filter(|r|r.terminal()).count())}</caption><thead><tr><th class="cell-name" colspan="2">{t("名称","Name")}</th><th class="cell-status">{t("上传状态","Upload status")}</th></tr></thead><tbody><For each=move||signal.with(|s|s.rows.iter().filter(|r|r.visible).map(|r|r.id).collect::<Vec<_>>()) key=|id|*id children=move|id|view!{<UploadRow model id tick signal/>}/></tbody></table>}
+    View::new((
+        leptos::html::div()
+            .child(
+                #[allow(unused_braces)]
+                {
+                    IntoRender::into_render({ move || signal.get().message })
+                },
+            )
+            .class("upload-queue-message")
+            .role("alert")
+            .aria_live("assertive")
+            .hidden(::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                move || signal.get().message.is_empty(),
+            )),
+        leptos::html::table()
+            .child((
+                leptos::html::caption()
+                    .child(
+                        #[allow(unused_braces)]
+                        {
+                            IntoRender::into_render({
+                                move || {
+                                    history_message(
+                                        signal.get().evicted,
+                                        signal.get().rows.iter().filter(|r| r.terminal()).count(),
+                                    )
+                                }
+                            })
+                        },
+                    )
+                    .class("upload-history-status")
+                    .role("status")
+                    .aria_live("polite")
+                    .hidden(::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                        move || signal.get().evicted == 0,
+                    ))
+                    .on(leptos::ev::blur, move |e| {
+                        if let Some(e) = e
+                            .target()
+                            .and_then(|e| e.dyn_into::<web_sys::Element>().ok())
+                        {
+                            let _ = e.remove_attribute("tabindex");
+                        }
+                    }),
+                leptos::html::thead().child(
+                    #[allow(unused_braces)]
+                    {
+                        leptos::html::tr().child((
+                            leptos::html::th()
+                                .child(
+                                    #[allow(unused_braces)]
+                                    {
+                                        IntoRender::into_render({ t("名称", "Name") })
+                                    },
+                                )
+                                .class("cell-name")
+                                .colspan("2"),
+                            leptos::html::th()
+                                .child(
+                                    #[allow(unused_braces)]
+                                    {
+                                        IntoRender::into_render({
+                                            t("上传状态", "Upload status")
+                                        })
+                                    },
+                                )
+                                .class("cell-status"),
+                        ))
+                    },
+                ),
+                leptos::html::tbody().child(
+                    #[allow(unused_braces)]
+                    {
+                        {
+                            #[allow(unreachable_code)]
+                            #[allow(unused_mut)]
+                            #[allow(clippy::let_and_return, clippy::let_unit_value, clippy::unit_arg)]
+                            component_view(
+                                #[allow(clippy::needless_borrows_for_generic_args)]
+                                &For,
+                                {
+                                    let mut props = component_props_builder(
+                                            &For,
+                                        )
+                                        .each(
+                                            #[allow(unused_braces)]
+                                            {
+                                                move || {
+                                                    signal
+                                                        .with(|s| {
+                                                            s
+                                                                .rows
+                                                                .iter()
+                                                                .filter(|r| r.visible)
+                                                                .map(|r| r.id)
+                                                                .collect::<Vec<_>>()
+                                                        })
+                                                }
+                                            },
+                                        )
+                                        .key(#[allow(unused_braces)] { |id| *id })
+                                        .children(
+                                            #[allow(unused_braces)]
+                                            {
+                                                move |id| {
+                                                    View::new({
+    #[allow(unreachable_code)] #[allow(unused_mut)] #[allow(clippy::let_and_return, clippy::let_unit_value, clippy::unit_arg)]
+    component_view(
+        #[allow(clippy::needless_borrows_for_generic_args)]
+        &UploadRow,
+        {
+            let mut props = component_props_builder(&UploadRow)
+                .model(#[allow(unused_braces)] { model })
+                .id(#[allow(unused_braces)] { id })
+                .tick(#[allow(unused_braces)] { tick })
+                .signal(#[allow(unused_braces)] { signal })
+                .build();
+            props
+        },
+    )
+})
+                                                }
+                                            },
+                                        )
+                                        .build();
+                                    props
+                                },
+                            )
+                        }
+                    },
+                ),
+            ))
+            .class("uploaders-table xcss-table")
+            .aria_label(::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                t("上传队列", "Upload queue"),
+            ))
+            .hidden(::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                move || signal.get().rows.is_empty(),
+            )),
+    ))
 }
 #[component]
 fn UploadRow(
@@ -1441,8 +1582,276 @@ fn UploadRow(
     let current = Memo::new(move |_| signal.with(|s| s.rows.iter().find(|r| r.id == id).cloned()));
     let get = move || current.get();
     let initial = current.get_untracked().unwrap();
-    view! {<tr class="uploader" id=format!("upload{id}") data-upload-id=id><td class="path cell-icon"><crate::workspace::Icon name="file"/></td><td class="path cell-name"><a href=http::file_url(&initial.path)>{initial.name}</a></td><td class="cell-status upload-status" id=format!("uploadStatus{id}") aria-label=move||get().map(|r|announce(&r)).unwrap_or_default()><span class:upload-failure=move||get().is_some_and(|r|matches!(r.state.as_str(),"failed"|"unknown")) class:upload-unknown=move||get().is_some_and(|r|r.state=="unknown")>{move||get().map(|r|r.message).unwrap_or_default()}</span><span class="upload-speed" aria-hidden="true">{move||get().map(|r|r.speed).unwrap_or_default()}</span><span class="upload-progress" aria-hidden="true">{move||get().map(|r|r.progress).unwrap_or_default()}</span><span class="visually-hidden" role="status" aria-live="polite">{move||get().map(|r|format!("{}: {} {}",r.name,r.message,r.progress)).unwrap_or_default()}</span>
-    <Show when=move||get().is_some_and(|r|!r.terminal()&&!matches!(r.phase.as_str(),"awaiting-confirmation"|"cleanup"))><button class="upload-cancel" type="button" aria-label=move||get().map(|r|format!("{} {}",if r.state=="queued"{t("取消排队上传","Cancel queued upload")}else if r.phase=="checking"{t("取消续传状态核对","Cancel resume status check for")}else if r.phase=="submitting"{t("停止等待上传","Stop waiting for upload")}else{t("取消上传","Cancel upload")},r.name)).unwrap_or_default() on:click=move|_|cancel(model,id)>{move||get().map(|r|if r.phase=="submitting"{t("停止等待","Stop waiting")}else{t("取消","Cancel")}).unwrap_or_default()}</button></Show><Show when=move||get().is_some_and(|r|r.terminal()&&!r.recovery.is_empty())><button class="retry-btn" type="button" data-recovery=move||get().map(|r|r.recovery).unwrap_or_default() aria-label=move||get().map(|r|format!("{} {}",if r.recovery=="query_upload"{t("核对上传状态","Check upload status")}else{t("重试上传","Retry upload")},r.name)).unwrap_or_default() disabled=move||{let _=tick.get();get().is_some_and(|r|js_sys::Date::now()<r.ready_at)} on:click=move|_|recover(model,id)>"↻"</button></Show></td></tr>}
+    View::new(
+    leptos::html::tr()
+        .child((
+            leptos::html::td()
+                .child(
+                    #[allow(unused_braces)]
+                    {
+                        {
+                            #[allow(unreachable_code)] #[allow(unused_mut)]
+                            #[allow(clippy::let_and_return, clippy::let_unit_value, clippy::unit_arg)]
+                            component_view(
+                                #[allow(clippy::needless_borrows_for_generic_args)]
+                                &crate::workspace::Icon,
+                                {
+                                    let mut props = component_props_builder(
+                                            &crate::workspace::Icon,
+                                        )
+                                        .name(#[allow(unused_braces)] { "file" })
+                                        .build();
+                                    props
+                                },
+                            )
+                        }
+                    },
+                )
+                .class("path cell-icon"),
+            leptos::html::td()
+                .child(
+                    #[allow(unused_braces)]
+                    {
+                        leptos::html::a()
+                            .child(
+                                #[allow(unused_braces)]
+                                {
+                                    IntoRender::into_render({ initial.name })
+                                },
+                            )
+                            .href(
+                                ::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                                    http::file_url(&initial.path),
+                                ),
+                            )
+                    },
+                )
+                .class("path cell-name"),
+            leptos::html::td()
+                .child((
+                    leptos::html::span()
+                        .child(
+                            #[allow(unused_braces)]
+                            {
+                                IntoRender::into_render({
+                                    move || get().map(|r| r.message).unwrap_or_default()
+                                })
+                            },
+                        )
+                        .class((
+                            "upload-failure",
+                            move || {
+                                get()
+                                    .is_some_and(|r| {
+                                        matches!(r.state.as_str(), "failed" | "unknown")
+                                    })
+                            },
+                        ))
+                        .class((
+                            "upload-unknown",
+                            move || get().is_some_and(|r| r.state == "unknown"),
+                        )),
+                    leptos::html::span()
+                        .child(
+                            #[allow(unused_braces)]
+                            {
+                                IntoRender::into_render({
+                                    move || get().map(|r| r.speed).unwrap_or_default()
+                                })
+                            },
+                        )
+                        .class("upload-speed")
+                        .aria_hidden("true"),
+                    leptos::html::span()
+                        .child(
+                            #[allow(unused_braces)]
+                            {
+                                IntoRender::into_render({
+                                    move || get().map(|r| r.progress).unwrap_or_default()
+                                })
+                            },
+                        )
+                        .class("upload-progress")
+                        .aria_hidden("true"),
+                    leptos::html::span()
+                        .child(
+                            #[allow(unused_braces)]
+                            {
+                                IntoRender::into_render({
+                                    move || {
+                                        get()
+                                            .map(|r| {
+                                                format!("{}: {} {}", r.name, r.message, r.progress)
+                                            })
+                                            .unwrap_or_default()
+                                    }
+                                })
+                            },
+                        )
+                        .class("visually-hidden")
+                        .role("status")
+                        .aria_live("polite"),
+                    {
+                        #[allow(unreachable_code)] #[allow(unused_mut)]
+                        #[allow(clippy::let_and_return, clippy::let_unit_value, clippy::unit_arg)]
+                        component_view(
+                            #[allow(clippy::needless_borrows_for_generic_args)]
+                            &Show,
+                            {
+                                let mut props = component_props_builder(
+                                        &Show,
+                                    )
+                                    .when(
+                                        #[allow(unused_braces)]
+                                        {
+                                            move || {
+                                                get()
+                                                    .is_some_and(|r| {
+                                                        !r.terminal()
+                                                            && !matches!(
+                                                                r.phase.as_str(), "awaiting-confirmation" | "cleanup"
+                                                            )
+                                                    })
+                                            }
+                                        },
+                                    )
+                                    .children({
+                                        ::leptos::children::ToChildren::to_children(move || {
+                                            leptos::html::button()
+                                                .child(
+                                                    #[allow(unused_braces)]
+                                                    {
+                                                        IntoRender::into_render({
+                                                            move || {
+                                                                get()
+                                                                    .map(|r| {
+                                                                        if r.phase == "submitting" {
+                                                                            t("停止等待", "Stop waiting")
+                                                                        } else {
+                                                                            t("取消", "Cancel")
+                                                                        }
+                                                                    })
+                                                                    .unwrap_or_default()
+                                                            }
+                                                        })
+                                                    },
+                                                )
+                                                .class("upload-cancel")
+                                                .r#type("button")
+                                                .aria_label(
+                                                    ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                                    {
+                                                        get()
+                                                            .map(|r| {
+                                                                format!(
+                                                                    "{} {}", if r.state == "queued" { t("取消排队上传",
+                                                                    "Cancel queued upload") } else if r.phase == "checking" {
+                                                                    t("取消续传状态核对",
+                                                                    "Cancel resume status check for") } else if r.phase ==
+                                                                    "submitting" { t("停止等待上传",
+                                                                    "Stop waiting for upload") } else { t("取消上传",
+                                                                    "Cancel upload") }, r.name
+                                                                )
+                                                            })
+                                                            .unwrap_or_default()
+                                                    }),
+                                                )
+                                                .on(
+                                                    leptos::ev::click,
+                                                    move |_| cancel(model, id),
+                                                )
+                                        })
+                                    })
+                                    .build();
+                                props
+                            },
+                        )
+                    },
+                    {
+                        #[allow(unreachable_code)] #[allow(unused_mut)]
+                        #[allow(clippy::let_and_return, clippy::let_unit_value, clippy::unit_arg)]
+                        component_view(
+                            #[allow(clippy::needless_borrows_for_generic_args)]
+                            &Show,
+                            {
+                                let mut props = component_props_builder(
+                                        &Show,
+                                    )
+                                    .when(
+                                        #[allow(unused_braces)]
+                                        {
+                                            move || {
+                                                get()
+                                                    .is_some_and(|r| r.terminal() && !r.recovery.is_empty())
+                                            }
+                                        },
+                                    )
+                                    .children({
+                                        ::leptos::children::ToChildren::to_children(move || {
+                                            leptos::html::button()
+                                                .child(#[allow(unused_braces)] { "↻" })
+                                                .class("retry-btn")
+                                                .r#type("button")
+                                                .attr(
+                                                    "data-recovery",
+                                                    ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                                    get().map(|r| r.recovery).unwrap_or_default()),
+                                                )
+                                                .aria_label(
+                                                    ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                                    {
+                                                        get()
+                                                            .map(|r| {
+                                                                format!(
+                                                                    "{} {}", if r.recovery == "query_upload" {
+                                                                    t("核对上传状态", "Check upload status") } else {
+                                                                    t("重试上传", "Retry upload") }, r.name
+                                                                )
+                                                            })
+                                                            .unwrap_or_default()
+                                                    }),
+                                                )
+                                                .disabled(
+                                                    ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                                    {
+                                                        let _ = tick.get();
+                                                        get().is_some_and(|r| js_sys::Date::now() < r.ready_at)
+                                                    }),
+                                                )
+                                                .on(
+                                                    leptos::ev::click,
+                                                    move |_| recover(model, id),
+                                                )
+                                        })
+                                    })
+                                    .build();
+                                props
+                            },
+                        )
+                    },
+                ))
+                .class("cell-status upload-status")
+                .id(
+                    ::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                        format!("uploadStatus{id}"),
+                    ),
+                )
+                .aria_label(
+                    ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                    get().map(|r| announce(&r)).unwrap_or_default()),
+                ),
+        ))
+        .class("uploader")
+        .id(
+            ::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                format!("upload{id}"),
+            ),
+        )
+        .attr(
+            "data-upload-id",
+            ::leptos::prelude::IntoAttributeValue::into_attribute_value(id),
+        ),
+)
 }
 
 fn announce(row: &Row) -> String {

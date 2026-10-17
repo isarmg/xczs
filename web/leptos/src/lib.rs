@@ -1,3 +1,4 @@
+use leptos::component::{component_props_builder, component_view};
 mod http;
 mod model;
 mod operations;
@@ -55,9 +56,100 @@ fn App() -> impl IntoView {
         });
     }
     if is_login {
-        view! {<Login/>}.into_any()
+        View::new({
+            #[allow(unreachable_code)]
+            #[allow(unused_mut)]
+            #[allow(clippy::let_and_return, clippy::let_unit_value, clippy::unit_arg)]
+            component_view(
+                #[allow(clippy::needless_borrows_for_generic_args)]
+                &Login,
+                {
+                    let mut props = component_props_builder(&Login).build();
+                    props
+                },
+            )
+        })
+        .into_any()
     } else {
-        view!{<Show when=move||loading.get()><p role="status">{t("加载中…","Loading…")}</p></Show><p class="workspace-status" role="alert" hidden=move||failure.get().is_empty()>{move||failure.get()}</p>{move||ready.get().map(|model|view!{<workspace::Workspace model/>})}}.into_any()
+        View::new((
+            {
+                #[allow(unreachable_code)]
+                #[allow(unused_mut)]
+                #[allow(clippy::let_and_return, clippy::let_unit_value, clippy::unit_arg)]
+                component_view(
+                    #[allow(clippy::needless_borrows_for_generic_args)]
+                    &Show,
+                    {
+                        let mut props = component_props_builder(&Show)
+                            .when(
+                                #[allow(unused_braces)]
+                                {
+                                    move || loading.get()
+                                },
+                            )
+                            .children({
+                                ::leptos::children::ToChildren::to_children(move || {
+                                    leptos::html::p()
+                                        .child(
+                                            #[allow(unused_braces)]
+                                            {
+                                                IntoRender::into_render({
+                                                    t("加载中…", "Loading…")
+                                                })
+                                            },
+                                        )
+                                        .role("status")
+                                })
+                            })
+                            .build();
+                        props
+                    },
+                )
+            },
+            leptos::html::p()
+                .child(
+                    #[allow(unused_braces)]
+                    {
+                        IntoRender::into_render({ move || failure.get() })
+                    },
+                )
+                .class("workspace-status")
+                .role("alert")
+                .hidden(::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                    move || failure.get().is_empty(),
+                )),
+            IntoRender::into_render({
+                move || {
+                    ready.get().map(|model| {
+                        View::new({
+                            #[allow(unreachable_code)]
+                            #[allow(unused_mut)]
+                            #[allow(
+                                clippy::let_and_return,
+                                clippy::let_unit_value,
+                                clippy::unit_arg
+                            )]
+                            component_view(
+                                #[allow(clippy::needless_borrows_for_generic_args)]
+                                &workspace::Workspace,
+                                {
+                                    let mut props = component_props_builder(&workspace::Workspace)
+                                        .model(
+                                            #[allow(unused_braces)]
+                                            {
+                                                model
+                                            },
+                                        )
+                                        .build();
+                                    props
+                                },
+                            )
+                        })
+                    })
+                }
+            }),
+        ))
+        .into_any()
     }
 }
 #[component]
@@ -77,9 +169,299 @@ fn Login() -> impl IntoView {
         .get_attribute("data-max-bytes")
         .and_then(|n| n.parse::<usize>().ok())
         .unwrap_or(1024);
-    view! {<main class="xcss-auth-shell login-screen"><div class="xcss-auth-language" style:position="absolute" style:inset-block-start="1rem" style:inset-inline-end="1rem"><div class="xcss-login-controls" role="group" aria-label=t("显示设置","Display settings")><xcss_web::components::LanguageToggle/><xcss_web::components::ThemeToggle/></div></div><section class="xcss-auth-card" aria-label="xczs"><form class="login-card" aria-label=t("登录 xczs","Sign in to xczs") aria-busy=move||pending.get().to_string() novalidate on:input=move|_|{field.set(String::new());error.set(String::new());} on:submit=move|e|{e.prevent_default();if pending.get_untracked(){return;}let user=username.get_untracked();let pass=password.get_untracked();if user.is_empty()||pass.is_empty(){let f=if user.is_empty(){"username"}else{"password"};field.set(f.into());error.set(if f=="username"{t("请输入用户名。","Enter your username.")}else{t("请输入密码。","Enter your password.")});focus(f);return;}
-    if !(min..=max).contains(&pass.len())||!xcss_web::contracts::valid_password(&pass)||!xcss_web::contracts::valid_username_candidate(&user){password.set(String::new());field.set("password".into());error.set(t("请输入有效的管理员用户名和密码。","Enter a valid administrator username and password."));focus("password");return;}pending.set(true);error.set(String::new());leptos::task::spawn_local(async move{match xcss_web::api::login(&user,&pass).await{Ok(_)=>{let _=http::window().location().set_href(&login_landing());},Err(e)=>{error.set(format!("{}{}",t("无法完成认证请求，请重试。","Authentication request could not be completed. Please try again."),e.request_id.map(|id|format!(" Request ID: {id}")).unwrap_or_default()));field.set(String::new());}}password.set(String::new());pending.set(false);focus("password");});}>
-        <h1 class="visually-hidden">{t("登录","Sign in")}</h1><label class="xcss-form-field" for="username"><span>{t("用户名","Username")}</span><input class="xcss-input login-input" id="username" name="username" type="text" maxlength="64" autocomplete="username" autocapitalize="none" spellcheck="false" required autofocus prop:value=move||username.get() readonly=move||pending.get() aria-invalid=move||(field.get()=="username").then_some("true") aria-describedby=move||(!error.get().is_empty()).then_some("login-error") on:input=move|e|username.set(event_target_value(&e))/></label><label class="xcss-form-field" for="password"><span>{t("密码","Password")}</span><input class="xcss-input login-input" id="password" name="password" type="password" data-min-bytes=min data-max-bytes=max autocomplete="current-password" required prop:value=move||password.get() readonly=move||pending.get() aria-invalid=move||(field.get()=="password").then_some("true") aria-describedby=move||(!error.get().is_empty()).then_some("login-error") on:input=move|e|password.set(event_target_value(&e))/></label><div class="xcss-error error-row" class:hidden=move||error.get().is_empty() role="alert"><span class="login-error" id="login-error">{move||error.get()}</span></div><button class="xcss-button" type="submit" disabled=move||pending.get()>{t("登录","Sign in")}</button></form></section></main>}
+    View::new(
+    leptos::html::main()
+        .child((
+            leptos::html::div()
+                .child(
+                    #[allow(unused_braces)]
+                    {
+                        leptos::html::div()
+                            .child((
+                                {
+                                    #[allow(unreachable_code)] #[allow(unused_mut)]
+                                    #[allow(clippy::let_and_return, clippy::let_unit_value, clippy::unit_arg)]
+                                    component_view(
+                                        #[allow(clippy::needless_borrows_for_generic_args)]
+                                        &xcss_web::components::LanguageToggle,
+                                        {
+                                            let mut props = component_props_builder(
+                                                    &xcss_web::components::LanguageToggle,
+                                                )
+                                                .build();
+                                            props
+                                        },
+                                    )
+                                },
+                                {
+                                    #[allow(unreachable_code)] #[allow(unused_mut)]
+                                    #[allow(clippy::let_and_return, clippy::let_unit_value, clippy::unit_arg)]
+                                    component_view(
+                                        #[allow(clippy::needless_borrows_for_generic_args)]
+                                        &xcss_web::components::ThemeToggle,
+                                        {
+                                            let mut props = component_props_builder(
+                                                    &xcss_web::components::ThemeToggle,
+                                                )
+                                                .build();
+                                            props
+                                        },
+                                    )
+                                },
+                            ))
+                            .class("xcss-login-controls")
+                            .role("group")
+                            .aria_label(
+                                ::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                                    t("显示设置", "Display settings"),
+                                ),
+                            )
+                    },
+                )
+                .class("xcss-auth-language")
+                .style(("position", "absolute"))
+                .style(("inset-block-start", "1rem"))
+                .style(("inset-inline-end", "1rem")),
+            leptos::html::section()
+                .child(
+                    #[allow(unused_braces)]
+                    {
+                        leptos::html::form()
+                            .child((
+                                leptos::html::h1()
+                                    .child(
+                                        #[allow(unused_braces)]
+                                        {
+                                            IntoRender::into_render({
+                                                t("登录", "Sign in")
+                                            })
+                                        },
+                                    )
+                                    .class("visually-hidden"),
+                                leptos::html::label()
+                                    .child((
+                                        leptos::html::span()
+                                            .child(
+                                                #[allow(unused_braces)]
+                                                {
+                                                    IntoRender::into_render({
+                                                        t("用户名", "Username")
+                                                    })
+                                                },
+                                            ),
+                                        leptos::html::input()
+                                            .class("xcss-input login-input")
+                                            .id("username")
+                                            .name("username")
+                                            .r#type("text")
+                                            .maxlength("64")
+                                            .autocomplete("username")
+                                            .autocapitalize("none")
+                                            .spellcheck("false")
+                                            .required(true)
+                                            .autofocus(true)
+                                            .prop("value", move || username.get())
+                                            .readonly(
+                                                ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                                pending.get()),
+                                            )
+                                            .aria_invalid(
+                                                ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                                (field.get() == "username").then_some("true")),
+                                            )
+                                            .aria_describedby(
+                                                ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                                (!error.get().is_empty()).then_some("login-error")),
+                                            )
+                                            .on(
+                                                leptos::ev::input,
+                                                move |e| username.set(event_target_value(&e)),
+                                            ),
+                                    ))
+                                    .class("xcss-form-field")
+                                    .r#for("username"),
+                                leptos::html::label()
+                                    .child((
+                                        leptos::html::span()
+                                            .child(
+                                                #[allow(unused_braces)]
+                                                {
+                                                    IntoRender::into_render({
+                                                        t("密码", "Password")
+                                                    })
+                                                },
+                                            ),
+                                        leptos::html::input()
+                                            .class("xcss-input login-input")
+                                            .id("password")
+                                            .name("password")
+                                            .r#type("password")
+                                            .attr(
+                                                "data-min-bytes",
+                                                ::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                                                    min,
+                                                ),
+                                            )
+                                            .attr(
+                                                "data-max-bytes",
+                                                ::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                                                    max,
+                                                ),
+                                            )
+                                            .autocomplete("current-password")
+                                            .required(true)
+                                            .prop("value", move || password.get())
+                                            .readonly(
+                                                ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                                pending.get()),
+                                            )
+                                            .aria_invalid(
+                                                ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                                (field.get() == "password").then_some("true")),
+                                            )
+                                            .aria_describedby(
+                                                ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                                (!error.get().is_empty()).then_some("login-error")),
+                                            )
+                                            .on(
+                                                leptos::ev::input,
+                                                move |e| password.set(event_target_value(&e)),
+                                            ),
+                                    ))
+                                    .class("xcss-form-field")
+                                    .r#for("password"),
+                                leptos::html::div()
+                                    .child(
+                                        #[allow(unused_braces)]
+                                        {
+                                            leptos::html::span()
+                                                .child(
+                                                    #[allow(unused_braces)]
+                                                    {
+                                                        IntoRender::into_render({
+                                                            move || error.get()
+                                                        })
+                                                    },
+                                                )
+                                                .class("login-error")
+                                                .id("login-error")
+                                        },
+                                    )
+                                    .class("xcss-error error-row")
+                                    .class(("hidden", move || error.get().is_empty()))
+                                    .role("alert"),
+                                leptos::html::button()
+                                    .child(
+                                        #[allow(unused_braces)]
+                                        {
+                                            IntoRender::into_render({
+                                                t("登录", "Sign in")
+                                            })
+                                        },
+                                    )
+                                    .class("xcss-button")
+                                    .r#type("submit")
+                                    .disabled(
+                                        ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                        pending.get()),
+                                    ),
+                            ))
+                            .class("login-card")
+                            .aria_label(
+                                ::leptos::prelude::IntoAttributeValue::into_attribute_value(
+                                    t("登录 xczs", "Sign in to xczs"),
+                                ),
+                            )
+                            .aria_busy(
+                                ::leptos::prelude::IntoAttributeValue::into_attribute_value(move ||
+                                pending.get().to_string()),
+                            )
+                            .novalidate(true)
+                            .on(
+                                leptos::ev::input,
+                                move |_| {
+                                    field.set(String::new());
+                                    error.set(String::new());
+                                },
+                            )
+                            .on(
+                                leptos::ev::submit,
+                                move |e| {
+                                    e.prevent_default();
+                                    if pending.get_untracked() {
+                                        return;
+                                    }
+                                    let user = username.get_untracked();
+                                    let pass = password.get_untracked();
+                                    if user.is_empty() || pass.is_empty() {
+                                        let f = if user.is_empty() {
+                                            "username"
+                                        } else {
+                                            "password"
+                                        };
+                                        field.set(f.into());
+                                        error
+                                            .set(
+                                                if f == "username" {
+                                                    t("请输入用户名。", "Enter your username.")
+                                                } else {
+                                                    t("请输入密码。", "Enter your password.")
+                                                },
+                                            );
+                                        focus(f);
+                                        return;
+                                    }
+                                    if !(min..=max).contains(&pass.len())
+                                        || !xcss_web::contracts::valid_password(&pass)
+                                        || !xcss_web::contracts::valid_username_candidate(&user)
+                                    {
+                                        password.set(String::new());
+                                        field.set("password".into());
+                                        error
+                                            .set(
+                                                t(
+                                                    "请输入有效的管理员用户名和密码。",
+                                                    "Enter a valid administrator username and password.",
+                                                ),
+                                            );
+                                        focus("password");
+                                        return;
+                                    }
+                                    pending.set(true);
+                                    error.set(String::new());
+                                    leptos::task::spawn_local(async move {
+                                        match xcss_web::api::login(&user, &pass).await {
+                                            Ok(_) => {
+                                                let _ = http::window()
+                                                    .location()
+                                                    .set_href(&login_landing());
+                                            }
+                                            Err(e) => {
+                                                error
+                                                    .set(
+                                                        format!(
+                                                            "{}{}", t("无法完成认证请求，请重试。",
+                                                            "Authentication request could not be completed. Please try again."),
+                                                            e.request_id.map(| id | format!(" Request ID: {id}"))
+                                                            .unwrap_or_default()
+                                                        ),
+                                                    );
+                                                field.set(String::new());
+                                            }
+                                        }
+                                        password.set(String::new());
+                                        pending.set(false);
+                                        focus("password");
+                                    });
+                                },
+                            )
+                    },
+                )
+                .class("xcss-auth-card")
+                .aria_label("xczs"),
+        ))
+        .class("xcss-auth-shell login-screen"),
+)
 }
 fn focus(id: &str) {
     if let Some(e) = http::document()

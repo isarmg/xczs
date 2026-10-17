@@ -8,11 +8,11 @@
     "node": ">=26.7.0 <27"
   },
   "scripts": {
-    "build:platform": "node scripts/build-platform.mjs",
+    "build:platform": "cargo +1.99.0 run --quiet --locked --manifest-path tools/web-build/Cargo.toml -- build --product-root .",
     "check:docs": "node scripts/check-docs.mjs",
     "check:independence": "node scripts/check-independence.mjs",
     "check:js": "node scripts/check-js.mjs",
-    "check:types": "python3 scripts/build-leptos.py check",
+    "check:types": "cargo +1.99.0 run --quiet --locked --manifest-path tools/web-build/Cargo.toml -- check --product-root .",
     "test:frontend:unit": "node --test tests/frontend/unit/*.test.mjs && npm run test:rust",
     "test:language": "npm run build:platform && node tests/frontend/language.mjs",
     "test:frontend": "node scripts/build-frontend-candidate.mjs",
@@ -20,17 +20,16 @@
     "test:frontend:headed": "node scripts/build-frontend-candidate.mjs --headed",
     "test:frontend:edge": "node scripts/build-frontend-candidate.mjs --edge --project=edge",
     "test:frontend:install": "playwright install chromium firefox",
-    "build:server": "xcss-build-server --config xcss-web-build.json --mode development",
-    "build:server:release": "xcss-build-server --config xcss-web-build.json --mode release",
-    "test:rust": "python3 scripts/build-leptos.py test"
-  },
-  "dependencies": {
-    "@xcss/web": "https://github.com/isarmg/xcss/releases/download/v1.0.0/xcss-web-1.0.0.tgz"
+    "build:server": "cargo +1.99.0 run --quiet --locked --manifest-path tools/web-build/Cargo.toml -- server --product-root . --config xcss-web-build.json --mode development",
+    "build:server:release": "cargo +1.99.0 run --quiet --locked --manifest-path tools/web-build/Cargo.toml -- server --product-root . --config xcss-web-build.json --mode release",
+    "test:rust": "cargo +1.99.0 run --quiet --locked --manifest-path tools/web-build/Cargo.toml -- test --product-root .",
+    "dev": "cargo +1.99.0 run --quiet --locked --manifest-path tools/web-build/Cargo.toml -- serve --product-root . --debug --bind 127.0.0.1:5173"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
-    "@playwright/test": "1.63.0",
     "@eslint/js": "10.0.1",
+    "@playwright/test": "1.63.0",
+    "@xcss/web": "https://github.com/isarmg/xcss/releases/download/v1.0.0/xcss-web-1.0.0.tgz",
     "eslint": "10.11.0",
     "eslint-plugin-no-unsanitized": "4.1.5",
     "globals": "17.12.0",

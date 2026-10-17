@@ -90,12 +90,11 @@ export XSSI_BUILD_TOOLS_DIR="$work/xssi"
 export XSSI_FRONTEND_METADATA_FILE="$work/metadata/frontend.json"
 git -C "$work/xssi" checkout --quiet --detach FETCH_HEAD
 [[ "$(git -C "$work/xssi" rev-parse HEAD)" = "$xssi_revision" ]]
-npm ci --prefix "$source_root" --ignore-scripts --no-audit --no-fund
-builder="$source_root/node_modules/.bin/xcss-build-server"
+builder=(cargo +1.99.0 run --quiet --locked --manifest-path "$source_root/tools/web-build/Cargo.toml" -- server --product-root "$source_root")
 export XCZS_SOURCE_REVISION="$source_revision"
 export XCSS_WEB_DIST="$source_root/web/runtime-dist"
 export XSSI_BUILD_METADATA_DIR="$work/metadata"
-"$builder" --config "$source_root/xcss-web-build.json" --mode release --no-install --source-revision "$source_revision" > "$work/build.log"
+"${builder[@]}" --config "$source_root/xcss-web-build.json" --mode release --source-revision "$source_revision" > "$work/build.log"
 server_binary="$(tail -n 1 "$work/build.log")"
 [[ "$server_binary" = /* && -f "$server_binary" && ! -L "$server_binary" && -x "$server_binary" ]] || { echo 'Builder did not return a physical executable.' >&2; exit 1; }
 install -m 0755 "$server_binary" "$work/stage/bin/$product"
