@@ -16,7 +16,7 @@ const html = (await readFile(resolve(root, 'web/index.html'), 'utf8'))
   .replace('__INDEX_DATA__', Buffer.from(JSON.stringify({ href: '/', dir_exists: true })).toString('base64'));
 const loginHtml = (await readFile(resolve(root, 'web/login.html'), 'utf8'))
   .replace('__WASM_PRELOAD__', '')
-  .replaceAll('__ASSETS_PREFIX__', '/__xczs__/')
+  .replaceAll('__ASSETS_PREFIX__', '__xczs__/')
   .replace('__MIN_PASSWORD_BYTES__', '12')
   .replace('__MAX_PASSWORD_BYTES__', '1024');
 
@@ -104,6 +104,8 @@ for (const engine of engines) {
     }
     const loginContext = await browser.newContext({ locale:'en-US', viewport:{width:360,height:900} });
     const loginPage = await loginContext.newPage();
+    const loginErrors = [];
+    loginPage.on('pageerror', error => loginErrors.push(error.message));
     await loginPage.addInitScript(() => {
       Storage.prototype.getItem = () => { throw new Error('storage blocked'); };
       Storage.prototype.setItem = () => { throw new Error('storage blocked'); };
@@ -116,6 +118,7 @@ for (const engine of engines) {
     await loginPage.getByRole('button',{name:'登录',exact:true}).click();
     await expect(loginPage).toHaveURL(base+'/?lang=zh-CN');
     await expect(loginPage.getByRole('table',{name:'文件列表',exact:true})).toBeVisible();
+    assert.deepEqual(loginErrors, []);
     await loginContext.close();
     console.log(`${engine.name()}: bilingual tags, dialogs, capacity errors, authored names and mobile layout passed`);
   } finally { await browser.close(); }

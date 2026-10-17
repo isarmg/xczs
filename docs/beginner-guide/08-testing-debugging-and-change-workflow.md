@@ -326,7 +326,7 @@ Edge 是可选扩展；Chromium 和 Firefox 才是仓库要求的基本矩阵。
 
 ### 测试服务器和浏览器 fixture
 
-[tests/frontend/run.mjs](../../tests/frontend/run.mjs) 为每个浏览器项目分配临时端口，然后启动 Playwright。Playwright 配置 [playwright.config.js](../../playwright.config.js) 再启动 [tests/frontend/server.mjs](../../tests/frontend/server.mjs)：
+实际浏览器测试通过 `npm run test:frontend` 构建候选，或以 `XCZS_FRONTEND_BINARY` 指定候选后执行 `npm run test:frontend:run`。这两个入口均在 Playwright 启动前准备实际 fixture；随后 [tests/frontend/run.mjs](../../tests/frontend/run.mjs) 为每个浏览器项目分配临时端口。该底层 runner 仅在 `--list` 收集用例时可直接调用，实际测试不要绕过准备入口。Playwright 配置 [playwright.config.js](../../playwright.config.js) 再启动 [tests/frontend/server.mjs](../../tests/frontend/server.mjs)：
 
 ```text
 Playwright 浏览器
