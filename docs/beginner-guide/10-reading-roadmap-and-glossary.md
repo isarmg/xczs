@@ -407,7 +407,7 @@ Linux 中识别文件系统对象的重要字段。路径名变化不一定改�
 ### E
 
 **ES Modules**
-浏览器的 `import`/`export` JavaScript 模块系统。本项目由 Vite 收集薄模块、WASM、CSS、字体和许可，生产只运行 Axum 服务。
+浏览器的 `import`/`export` JavaScript 模块系统。本项目由仓库内 Rust 构建工具收集薄模块、WASM、CSS、字体和许可，生产只运行 Axum 服务。
 
 **ETag**
 HTTP 资源版本标识。下载 ETag 用对象 metadata 构造，不应自动理解为正文加密摘要。
@@ -448,7 +448,7 @@ Rust 中表示将来可能完成的异步计算。丢弃 Future 不会撤销已�
 ### J
 
 **JavaScript 编译产物**
-Rust / xcss-web 源码编译为浏览器 WASM；wasm-bindgen 和 Vite 提供绑定与静态资源。编译期类型不能代替网络输入运行时校验。
+Rust / xcss-web 源码编译为浏览器 WASM；wasm-bindgen 生成绑定，仓库内 Rust 构建工具整理静态资源。编译期类型不能代替网络输入运行时校验。
 
 ### L
 
@@ -567,9 +567,9 @@ Extended Attribute，Linux 文件扩展属性。覆盖重放时必须限制特�
 
 修改平台或业务资源后，重新执行 npm run build:platform、Cargo 构建、重启并取得新页面。全部注册 JS（包括 login.js）、CSS、图标、字体和许可证参与资源摘要；HTML 模板本身不参与该资源摘要，修改模板时直接核对 document 与同源 CSP。
 
-### Xczs 如何使用 xcss-web 和 Vite？
+### Xczs 如何使用 xcss-web 和 Rust 构建工具？
 
-Xczs 使用随产品提供的 xcss Rust 共享快照，xcss-web 负责登录、导航、文件和上传状态，Vite 收集浏览器绑定、WASM、CSS、字体和许可。生命周期需要保持进行中的上传、行内编辑、焦点和清理语义。产物内嵌 Axum 二进制，生产不需要 Node 服务，管理员身份继续使用 xcss current 合同。
+Xczs 使用随产品提供的 xcss Rust 共享快照，xcss-web 负责登录、导航、文件和上传状态，仓库内 `tools/web-build` 收集浏览器绑定、WASM、CSS、字体和许可。生命周期需要保持进行中的上传、行内编辑、焦点和清理语义。产物内嵌 Axum 二进制，生产不需要 Node 服务，管理员身份继续使用 xcss current 合同。
 
 ### SQLite 是文件索引数据库吗？
 

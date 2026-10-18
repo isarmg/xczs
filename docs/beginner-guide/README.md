@@ -72,7 +72,7 @@ flowchart LR
     A --> L[访问日志]
 ```
 
-开发测试会使用一个 Node.js HTTPS 代理模拟网关；生产运行不需要 Node.js。xcss-web WASM、浏览器绑定、xcss CSS 和字体在构建时嵌入 Axum 二进制，由同一个服务返回。浏览器使用随产品提供的 xcss Rust 认证与 UI 快照；Vite 负责静态资源收集。
+开发测试会使用一个 Node.js HTTPS 代理模拟网关；生产运行不需要 Node.js。xcss-web WASM、浏览器绑定、xcss CSS 和字体在构建时嵌入 Axum 二进制，由同一个服务返回。浏览器使用随产品提供的 xcss Rust 认证与 UI 快照；仓库内 Rust 工具 `tools/web-build` 负责静态资源收集，具体命令见 [Rust 原生 Web 构建](../rust-native-web.md)。
 
 ## 阅读源码的约定
 

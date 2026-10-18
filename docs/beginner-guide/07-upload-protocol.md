@@ -54,7 +54,7 @@ Xczs 因此把控制面和数据面分开：
 | [http.rs](../../web/xcss-web/src/http.rs) | Fetch/XHR、规范整数、响应预算、进度事件、abort、timeout 与错误分类 |
 | [model.rs](../../web/xcss-web/src/model.rs) | 上传数据、工作区状态和列表失效 |
 
-旧 TypeScript 源码及测试完整保存在迁移基线目录，供核对历史合同；本章的协议状态和提交边界仍适用。
+退役的 TypeScript 源码及测试可通过 Git 历史核对；当前工作树只保留实际 Rust/WASM 实现及其验收，本章按当前协议状态和提交边界说明。
 
 ### 服务端
 

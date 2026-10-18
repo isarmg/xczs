@@ -20,7 +20,7 @@ SQLite 提交与共享根中的 mkdir、rename、文件同步和目录 `fsync` �
 
 上传任务是否可能产生未知结果，取决于是否通过首次 mutation 边界。任务可以在持有路径租约和上传槽时只读查询 owner 会话、目标 identity/metadata 与空间状态；创建祖先或 stage、截断既有 stage、更新 SQLite 会话或接收正文等首次 mutation 必须先通过一个与总 deadline 原子竞争的边界。deadline 先赢会关闭边界并 abort 任务，返回绑定的 `408 request_timeout + not-started + retry`；只读准备中逸出的超时类错误同样返回 `408`，其他未处理 I/O 返回 `503 upload_precommit_failed + not-started + retry`。边界关闭后任务不能稍后恢复并写入。若 mutation 先赢，随后外层 deadline 或未处理错误才是 `unknown + query_upload`。运维自动化不要只按 HTTP `408/503` 重放；仍应遵守响应中的 upload state/recovery，并以原 ID 做 owner-scoped HEAD，因为 `not-started` 不排除更早请求留下的检查点或终态。
 
-只读的 `config validate` 只打开经过验证的私有快照，不打开原路径的业务连接。在线写入导致主库或辅助文件的正常数据代际变化时，本次诊断仍失败，并返回可重试的 `snapshot.source_changed`；活动写事务返回 `snapshot.busy`。等待写入停止后重新执行检查即可，不能通过删除数据库处理这类瞬时错误。文件替换、权限和链接异常仍受身份检查约束；启动及修改路径继续使用严格复核。错误记录和命令作用见[当前服务命令](cli.md)。
+维护脚本的只读 `check` 通过独立 xssi 辅助程序打开经过验证的私有快照，不打开原路径的业务连接；该入口要求写入服务已停止。在线写入导致主库或辅助文件的正常数据代际变化时，本次诊断仍失败，并返回可重试的 `snapshot.source_changed`；活动写事务返回 `snapshot.busy`。等待写入停止后重新执行检查即可，不能通过删除数据库处理这类瞬时错误。文件替换、权限和链接异常仍受身份检查约束；启动及修改路径继续使用严格复核。错误记录和命令作用见[当前服务命令](cli.md)。
 
 ## 上传预检与条件覆盖
 
@@ -57,4 +57,4 @@ Xczs 的普通文件和 Range 正文没有总时长/最低速率限制，但每�
 
 ## 公共接口标识
 
-当前版本只使用 `.state-instance.lock`、`.state-maintenance.lock`、`.state-maintenance-pending.json` 和 `.state-atomic-` 临时文件前缀。服务身份头为 `x-service`，健康状态中的公共源码修订字段为 `common_revision`。管理会话采用 `__Host-admin-xczs-session`，显式开发模式采用 `admin-xczs-session`；生产 Cookie 的 Secure、HttpOnly、SameSite、Path 和 CSRF 约束继续生效。资源清单格式为 `web-assets-v1`；本项目的文件状态库与标签库仍采用各自当前产品 DDL，不引入公共管理数据库表。
+实例锁和原子临时文件遵守项目根目录《规范》附录 A 的公共运行接口约定；安装维护工具的协调职责见[运维](operations.md)。服务身份头为 `x-service`，健康状态中的公共源码修订字段为 `common_revision`。管理会话采用 `__Host-admin-xczs-session`，显式开发模式采用 `admin-xczs-session`；生产 Cookie 的 Secure、HttpOnly、SameSite、Path 和 CSRF 约束继续生效。资源清单格式为 `web-assets-v1`；state.sqlite3 使用组合后的当前产品 DDL，包含公共管理员、会话与安全审计表；tags.db 保持独立的标签 DDL。

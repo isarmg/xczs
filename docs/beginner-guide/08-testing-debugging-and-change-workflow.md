@@ -79,7 +79,7 @@ cargo install cargo-llvm-cov --version 0.8.6 --locked
 
 首次安装 Rust/npm 依赖和 Playwright 浏览器通常需要网络；Cargo 审计还需要 RustSec，并须先取得锁图所需的 crates.io 索引项，`npm audit` 要访问 npm registry。正式发布只允许 cargo-audit 0.22.2。宿主 RustSec DB 只有在 canonical origin、`HEAD=FETCH_HEAD`、实体 FETCH_HEAD 不得比当前时间早超过 7 天或晚超过 300 秒，并通过物理/Git/内容完整性检查后才能复用；alternates、不安全元数据、symlink/submodule/特殊项、untracked 路径和 tracked 内容/mode 漂移都会拒绝。合格数据库以无硬链接私有 clone 封存 revision、fetch epoch、index/config 校验和；不合格、过期或缺失时，在运行任何项目或依赖代码前用 dummy lockfile 在私有数据库联网刷新，断网即失败关闭。发布入口先执行 `cargo audit --db ... --no-fetch --no-yanked` sealed advisory pre-audit，再用私有 Cargo home 执行 `cargo fetch --locked` 取得完整锁图所需的 crates.io 索引项，并以 `--deny yanked` 拒绝已撤回依赖；空索引不能作为成功审计。随后 `XCZS_QUALITY_AUDIT_DB` 把同一封存交给 `scripts/check.sh`。封存时校验 seal 与新鲜度，pre-audit 和 yanked 检查后重验 seal；完整门后重验 seal 与新鲜度，随后销毁质量树和该 RustSec 数据库。普通本地检查若要离线执行，必须预热或提供相应缓存/镜像并预先安装相容的 Chromium、Firefox；正式 yanked 检查使用每次全新创建的私有 Cargo home，当前仍要求 registry 网络可达，宿主缓存不能替代这一步；不能把“命令已经安装”误解为所有审计和浏览器门禁一定能离线运行。
 
-所有 npm 脚本及锁定版本都可以在 [package.json](../../package.json) 和 [package-lock.json](../../package-lock.json) 中找到。Node/Vite 参与构建静态资源，但不是服务器运行依赖。WASM 工具准备见 xcss-web 浏览器维护文档。
+所有 npm 脚本及锁定版本都可以在 [package.json](../../package.json) 和 [package-lock.json](../../package-lock.json) 中找到。生产静态资源由仓库内 Rust 工具构建，不需要 Node 或 npm 安装；Node 26.7.0 与锁定依赖用于浏览器、工具和静态策略验证。WASM 工具准备及无需 npm 的构建命令见 [Rust 原生 Web 构建](../rust-native-web.md)。
 
 ## 8.3 最短反馈环
 

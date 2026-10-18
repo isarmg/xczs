@@ -1,8 +1,8 @@
 # 环境与首次运行
 
-使用 rust-toolchain.toml、.node-version 和锁文件固定的工具。先 `npm ci --ignore-scripts --no-audit --no-fund`，再 `npm run build:platform`。开发构建使用 `npm run build:server -- --no-install`，正式发行见[发布说明](../releasing.md)。
+生产构建使用 Rust 1.99.0、wasm32-unknown-unknown target 和 wasm-bindgen-cli 0.2.129，无需 npm 安装；在产品根目录执行 `cargo +1.99.0 run --quiet --locked --manifest-path tools/web-build/Cargo.toml -- server --product-root . --config xcss-web-build.json --mode development`。浏览器及工具验证另需 `.node-version` 固定的 Node 26.7.0 与 `npm ci --ignore-scripts --no-audit --no-fund` 安装的锁定开发依赖。命令详见 [Rust 原生 Web 构建](../rust-native-web.md)，正式发行见[发布说明](../releasing.md)。
 
-server 入口只有 `--root ROOT`，从 ROOT/config/config.json 读取配置。首次状态由独立 xssi 独立辅助程序初始化，server 不自动建库，不接受配置或账号 CLI 参数。开发配置显式使用 `development: true` 且 bind 为回环地址，初始密码只经辅助程序 stdin。
+server 入口只有 `--root ROOT`，从 ROOT/config/config.json 读取配置。首次状态由独立 xssi 安装辅助程序初始化，server 不自动建库，不接受配置或账号 CLI 参数。开发配置显式使用 `development: true` 且 bind 为回环地址，初始密码只经辅助程序 stdin。
 
 开发端到端夹具见 tests/frontend/server.mjs：它在隔离 ROOT 内写入配置，使用离线库适配器显式初始化，再启动本次候选程序。生产安装使用独立 xssi 完整安装包，步骤见[首次安装](../getting-started.md)。
 

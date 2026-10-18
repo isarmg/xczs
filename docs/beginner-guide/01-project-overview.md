@@ -118,8 +118,6 @@ xczs/
 ├── web/                 浏览器 Rust、WASM 绑定和样式
 │   └── xcss-web/src/               列表、操作、上传、API 等 Rust 模块
 ├── config/                       唯一当前源码配置样例
-├── systemd/                      普通账号服务单元
-├── libexec/                      安装器内部实现
 ├── config/xssi.lock             固定独立安装维护仓库提交
 ├── docs/                   设计、取舍、运维和本教学手册
 ├── scripts/                质量门、文档检查、发布打包脚本
@@ -133,7 +131,7 @@ xczs/
 └── rust-toolchain.toml           固定 Rust 1.99 工具链
 ```
 
-源码配置一律位于 `config/`，部署资产一律位于 `systemd/`，客户端一律位于 `web/`。生产安装故意使用 `ROOT/config/config.json` ：这是 Linux FHS/证书权限边界，不是仓库目录命名不一致，也不是历史兼容路径。
+源码配置位于 `config/`，浏览器实现位于 `web/`；systemd、安装维护脚本和独立 setup 由 `config/xssi.lock` 固定的 xssi 修订生成并随发行包交付。生产安装故意使用 `ROOT/config/config.json` ：这是 Linux FHS/证书权限边界，不是仓库目录命名不一致，也不是历史兼容路径。
 
 ### `src/` 的重点
 
@@ -177,7 +175,7 @@ Tokio 提供异步任务、网络、信号和同步原语；Axum 组织路由及
 
 ### Rust / xcss-web 与浏览器 WASM
 
-xcss-web CSR 在浏览器内渲染登录、导航、列表、标签和上传界面，使用信号和生命周期清理保存状态及释放资源。Vite 收集 wasm-bindgen 绑定、WASM、CSS、字体和许可；生产不需要 Node 服务。主要代价是增加 WASM 编译工具链、调试与 JavaScript 互操作成本，收益是否体现为体积或速度需要实际测量。
+xcss-web CSR 在浏览器内渲染登录、导航、列表、标签和上传界面，使用信号和生命周期清理保存状态及释放资源。仓库内 Rust 工具 `tools/web-build` 收集 wasm-bindgen 绑定、WASM、CSS、字体和许可；生产不需要 Node 服务。主要代价是增加 WASM 编译工具链、调试与 JavaScript 互操作成本，收益是否体现为体积或速度需要实际测量。
 
 ### SQLite
 

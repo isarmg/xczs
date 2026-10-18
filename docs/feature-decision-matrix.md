@@ -11,8 +11,8 @@
 | DFM-001 | 单进程管理一个共享根；同根第二实例被 advisory `flock` 拒绝 | `src/main.rs`、`src/server/rooted_fs.rs` | 核心 | 高 | 产品失去清晰数据域；误启多实例会越过进程内协调 | 同根双启失败、不同根可独立启动；锁不能阻止 shell/宿主写入 |
 | DFM-002 | 服务端唯一 target 为 `x86_64-unknown-linux-gnu` | `build.rs`、`xcss::server_target` | 保障 | 高 | 未证明的 CPU/OS/ABI 进入交付矩阵 | 精确 target 正例；aarch64、musl、Windows、macOS 负例；无 best-effort |
 | DFM-003 | Linux `openat2` 必需，不降级到路径拼接 | `src/server/rooted_fs.rs` | 保障 | 高 | 共享根逃逸和 TOCTOU 安全证明失效 | 缺系统调用启动失败；symlink、magic link 和路径竞态测试 |
-| DFM-004 | 使用 xcss-web CSR 与随产品提供的 xcss Rust 快照 | `web/xcss-web/`、`src/server/assets.rs` | 已实施 | 高 | 必须验证 WASM、嵌入、CSP、缓存和供应链 | Axum 继续提供兼容 API；生产无 Node 服务 |
-| DFM-005 | 客户端统一在 `web/`，源码配置在 `config/`，部署资产在 `systemd/` | 三个同名目录 | 开发运维 | 中 | 代码与资产散落，登记和审查易漏 | 新生产模块进入 asset registry；不复制当前配置/部署模板 |
+| DFM-004 | 使用 xcss-web CSR 与随产品提供的 xcss Rust 快照 | `web/xcss-web/`、`src/server/assets.rs` | 核心 | 高 | 必须验证 WASM、嵌入、CSP、缓存和供应链 | Axum 继续提供兼容 API；生产无 Node 服务 |
+| DFM-005 | 浏览器实现位于 `web/`，源码配置位于 `config/`，部署材料由固定 xssi 修订生成 | 两个源码目录、`config/xssi.lock`、产品安装定义 | 开发运维 | 中 | 代码与资产散落，登记和审查易漏 | 新生产模块进入 asset registry；不复制当前配置/部署模板 |
 | DFM-006 | 生产配置故意使用 `ROOT/config/config.json`，TLS 由外部网关管理 | xssi 服务模板和安装脚本 | 开发运维 | 中 | 随意换路径会破坏 systemd/安装器 权限约定 | 这是 FHS/TLS 权限例外，不是旧路径兼容 |
 | DFM-007 | current-only：只接受当前配置、API、页面和 SQLite identity | `src/args.rs`、`src/server/router/`、`src/server/state_store/database.rs` | 保障 | 高 | alias/fallback 令分支、攻击面和测试矩阵增加 | 非当前字段、路径、schema 在修改状态前拒绝 |
 | DFM-008 | 外部 HTTPS 网关终止 TLS，Xczs 只做明文 HTTP/1 回源 | `src/main.rs`、xssi 安装脚本 | 保障 | 高 | 直接公网暴露会泄露凭据；内置 TLS 则新增证书生命周期 | 默认回环；HTTP/1.0/1.1；无 h2c；浏览器入口必须 HTTPS |
@@ -22,17 +22,17 @@
 
 | ID | 功能/当前实现 | 实现/代码锚点 | 分类 | 复杂度 | 删除后的确定后果 | 验证与边界 |
 | --- | --- | --- | --- | --- | --- | --- |
-| DFM-010 | 严格 JSON 与 18 个显式环境映射；命令行、环境、文件、默认值逐层校验并按优先级覆盖 | `src/args.rs`、`config/config.json.example` | 保障 | 中 | 拼写错误或无效低优先级值可能被静默隐藏 | 未知字段、重复字段、空值、类型、覆盖优先级；环境映射见[命令说明](cli.md) |
+| DFM-010 | 严格 JSON 与 17 个显式环境映射；环境、文件、默认值逐层校验并按优先级覆盖，CLI 仅选择 ROOT | `src/args.rs`、`config/config.json.example` | 保障 | 中 | 拼写错误或无效低优先级值可能被静默隐藏 | 未知字段、重复字段、空值、类型、覆盖优先级；环境映射见[命令说明](cli.md) |
 | DFM-011 | 配置文件 no-follow、安全 owner/mode、单硬链接和身份复核 | `src/args.rs` | 保障 | 高 | 服务可能读取攻击者替换或公开可写配置 | symlink/ACL/mode/owner/hardlink/rename race；最大 1 MiB |
-| DFM-012 | `serve-path` canonicalize 并作为唯一共享根 | `src/args.rs`、`src/server/rooted_fs.rs` | 核心 | 高 | 所有浏览、写入和路径隔离失去边界 | 不存在/非目录拒绝；相对路径拒绝；根 fd identity |
+| DFM-012 | `serve_path` canonicalize 并作为唯一共享根 | `src/args.rs`、`src/server/rooted_fs.rs` | 核心 | 高 | 所有浏览、写入和路径隔离失去边界 | 不存在/非目录拒绝；相对路径拒绝；根 fd identity |
 | DFM-013 | `data_dir` 默认 ROOT/state、私有 `0700`，与根/配置/日志分离 | `src/args.rs`、`src/server/state_store.rs` | 保障 | 高 | 重启证据丢失或敏感状态泄露 | owner/mode/symlink/祖先关系/object alias/sidecar 冲突 |
 | DFM-014 | 单个 SocketAddr listener | `src/main.rs`、`src/args.rs` | 保障 | 中 | 多监听增加边界复杂度 | IPv4/IPv6 单地址，拒绝旧数组与 port 字段 |
-| DFM-015 | 生产 HTTPS，显式开发仅 loopback | xcss Origin Mode、`src/args.rs` | 保障 | 高 | 错误信任代理头可破坏认证边界 | 默认忽略转发头；可信 XFF 统一解析；开发 wildcard 拒绝 |
+| DFM-015 | 生产 HTTPS，显式开发仅 loopback | xcss Origin Mode、`src/args.rs` | 保障 | 高 | 错误信任代理头可破坏认证边界 | 不识别可信代理或转发 IP；严格 Host/Origin；开发 wildcard 拒绝 |
 | DFM-016 | 连接、请求头、普通请求与流式 I/O deadline | `src/main.rs`、`src/server/router.rs`、`src/server/download.rs` | 保障 | 高 | 慢连接和停滞 I/O 可无限占资源 | 默认 256 连接；10 秒/64 KiB header；300 秒请求；30 秒 stream idle |
 | DFM-017 | blocking-I/O 有界，许可活到真实 syscall 返回 | `src/server/blocking_io.rs` | 保障 | 高 | 故障 FUSE/NFS 可挤占 Tokio 或无界占满 pool | 64 默认；取消等待者不遗留任务；已开始 syscall 不提前归还 |
 | DFM-018 | 访问日志格式、元素、单行转义和队列都有预算 | `src/http_logger.rs`、`src/logger.rs` | 可选 | 中 | 删除定制会失去字段；删除预算会允许注入/巨型分配 | 4096-byte 格式、128 元素、16 KiB 行、4096 队列、Secret 脱敏 |
 | DFM-019 | xcss UTC 结构化轮转日志 | `src/logger.rs` | 保障 | 中 | 统一诊断与资源预算 | 固定 ROOT/logs；8 MiB，四个归档；log_level 默认 info |
-| DFM-020 | init 与 admin reset-password 从 stdin 读取密码 | `src/main.rs`、`src/auth.rs` | 保障 | 中 | 避免密码参数与配置泄露 | 公共密码策略；已有账户不覆盖，重置保留 ID |
+| DFM-020 | 独立 xssi 安装与离线 admin-reset 从 stdin 读取密码 | xssi setup、`src/installation_definition.rs`、`src/auth.rs` | 保障 | 中 | 避免密码参数与配置泄露 | 公共密码策略；已有账户不覆盖，重置保留 ID |
 | DFM-021 | 初始化唯一持久管理员 | `src/args.rs`、`src/auth.rs` | 核心 | 中 | 未初始化不得运行 | 配置不接受 auth；运行只读取账户；改名不改稳定 ID |
 
 ## 3. xcss 管理员认证
@@ -92,7 +92,7 @@
 | DFM-062 | 按实际 stage `st_dev` 的空间预留账本 | `src/server/disk_space.rs` | 保障 | 高 | 并发上传可共同写穿最低水位 | f_frsize 取整、metadata 余量、8MiB 重检、overflow、8次 revision 重试 |
 | DFM-063 | fresh PUT 建 stage 前检查路径 upload/purge 持久义务 | `src/server/upload/prepare.rs`、`src/server/state_store.rs` | 保障 | 高 | 新写入会切断待恢复/清理路径 | 409/503/408 not-started；keyset 分页；不建本次 stage/记录 |
 | DFM-064 | AwaitingConfirmation 保留满 stage，空 PATCH+新 revision 或 discard | `src/server/upload/commit.rs`、`web/xcss-web/src/upload.rs` | 建议保留 | 高 | 晚到冲突必须重传；自动覆盖破坏条件写 | target changed/missing with old metadata/discard idempotence/restart |
-| DFM-065 | 客户端异常响应只用原 ID HEAD，不盲重放 PUT/PATCH | `web/xcss-web/src/http.rs`、`upload/protocol.ts` | 保障 | 高 | 网络错误可能重复提交或覆盖 | ID/state/length/offset 严格矩阵；unknown 暂停并人工处理 |
+| DFM-065 | 客户端异常响应只用原 ID HEAD，不盲重放 PUT/PATCH | `web/xcss-web/src/http.rs`、`web/xcss-web/src/protocol.rs` | 保障 | 高 | 网络错误可能重复提交或覆盖 | ID/state/length/offset 严格矩阵；unknown 暂停并人工处理 |
 
 ## 6. SQLite、后台维护与生命周期
 
@@ -114,10 +114,10 @@
 | ID | 功能/当前实现 | 实现/代码锚点 | 分类 | 复杂度 | 删除后的确定后果 | 验证与边界 |
 | --- | --- | --- | --- | --- | --- | --- |
 | DFM-076 | 名称/MIME/内容共同生成 SHA-256 URL并编译嵌入 | `src/server/assets.rs`、`web/` | 建议保留 | 高 | 页面/代码版本漂移，长期缓存返回旧模块 | registry/目录双向一致；GET/HEAD；immutable 仅精确资源 |
-| DFM-077 | 登录使用同源外部 ESM，平台字体与许可证嵌入 | `administrator_web.rs`、`login.js`、平台 Vite | 保障 | 中 | inline/eval 或外站字体扩大注入与网络依赖 | 精确资产摘要、CSP、preload、真实字体字节 |
-| DFM-078 | HTML 仅含两个业务字段，独立恢复共享 Session | `listing.rs`、`shared/index_data.ts`、xcss Admin Client | 保障 | 中 | 嵌入凭据或本地合同可造成泄露和漂移 | 严格 own data、xcss session guard、frozen copies |
+| DFM-077 | 登录使用同源外部 ESM，平台字体与许可证嵌入 | `administrator_web.rs`、`web/xcss-web-login.js`、Rust 静态资源构建器 | 保障 | 中 | inline/eval 或外站字体扩大注入与网络依赖 | 精确资产摘要、CSP、preload、真实字体字节 |
+| DFM-078 | HTML 仅含两个业务字段，独立恢复共享 Session | `listing.rs`、`web/xcss-web/src/lib.rs`、xcss Rust API | 保障 | 中 | 嵌入凭据或本地合同可造成泄露和漂移 | 精确 href/dir_exists、xcss session guard、Rust 状态初始化 |
 | DFM-079 | DOM 通过 textContent/安全属性构造业务内容 | `web/xcss-web/src/workspace.rs` | 保障 | 中 | 文件名/错误文本可成为可执行 HTML | 注入 payload、禁动态 HTML API、CSP；静态 SVG 例外 |
-| DFM-080 | DOM window、列表状态和 mutation invalidation 有界 | `web/xcss-web/src/workspace.rs`、`shared/mutation_effect.ts` | 建议保留 | 中 | 大列表无限 DOM；写后继续显示陈旧结果 | 200 window、cursor、四种 effect、focus/scroll |
+| DFM-080 | DOM window、列表状态和 mutation invalidation 有界 | `web/xcss-web/src/workspace.rs`、`web/xcss-web/src/model.rs` | 建议保留 | 中 | 大列表无限 DOM；写后继续显示陈旧结果 | 200 window、cursor、四种 effect、focus/scroll |
 | DFM-081 | 原生 dialog、键盘、focus return、live region、forced colors | `web/xcss-web/src/operations.rs`、`web/index.css` | 建议保留 | 中 | 键盘/低视力用户无法可靠操作 | Chromium/Firefox、axe标签、Escape、320px；非完整 WCAG 声明 |
 | DFM-082 | Rust/WASM 编译检查与运行时不可信响应验证 | `web/xcss-web/Cargo.toml`、`package.json` | 开发运维 | 中 | 前端协议漂移更晚发现 | 编译检查不能代替状态矩阵和绑定验证 |
 | DFM-083 | ESLint 核心规则与 `no-unsanitized` 浏览器安全门 | `eslint.config.mjs`、`scripts/check-js.mjs` | 开发运维 | 高 | 常见动态 HTML、模态框、动态执行或网络边界误用进入生产 | 成熟规则加少量模块边界；不承担完整别名或污点分析 |
@@ -133,7 +133,7 @@
 | DFM-088 | 不提供角色分级、路径权限或租户隔离 | `src/auth.rs`、`src/server/administrator_web.rs` | 核心 | 高 | 新角色需完整授权矩阵/UI/审计/xcss 合同 | 全管理员全根同权；隐藏按钮不是授权 |
 | DFM-089 | 不提供 WebDAV、CORS 或通用第三方 API | `src/server/router/` | 可选 | 高 | 新增会扩大 method/lock/cache/cross-site/兼容矩阵 | unknown internal 404、known wrong method 405；无 CORS 承诺 |
 | DFM-090 | 不提供 preview/edit/static site/SPA fallback | `src/server/download.rs`、router | 可选 | 高 | 新增会执行/渲染不可信内容并改变 CSP/MIME | 下载 attachment；未知路径不回退 index；内容不 inline |
-| DFM-091 | 不提供目录 ZIP、多段 Range 或空目录上传 | `src/server/download.rs`、`upload/selection.ts` | 可选 | 高 | 新增需归档预算、流错误和目录 metadata 合同 | 仅单文件/单 Range；webkitdirectory 只产生文件 |
+| DFM-091 | 不提供目录 ZIP、多段 Range 或空目录上传 | `src/server/download.rs`、`web/xcss-web/src/upload.rs` | 可选 | 高 | 新增需归档预算、流错误和目录 metadata 合同 | 仅单文件/单 Range；webkitdirectory 只产生文件 |
 | DFM-092 | 不提供运行时 assets 覆盖或前端独立部署 | `src/server/assets.rs` | 建议保留 | 高 | 后端与页面协议版本可错配 | 生产不读工作区；修改后重编译/重启 |
 | DFM-093 | 不提供内置备份、恢复、迁移或自动回滚 | `src/`、`docs/operations.md` | 开发运维 | 高 | 转换塞回服务会增加旧格式分支与恢复风险 | 当前运行只处理当前状态 |
 | DFM-094 | 不提供多节点共享同一根或分布式协调 | `src/server/path_coordinator.rs`、root flock | 可选 | 高 | 新增需 distributed lock/fencing/shared state 证明 | 本机同根第二实例拒绝；外部 writer 由部署排除 |

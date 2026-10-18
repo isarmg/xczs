@@ -1,6 +1,6 @@
 # xczs 界面、操作反馈与开发
 
-后端保留 Rust 2024 / Tokio / Axum 和 SQLx / SQLite；前端使用 Rust / xcss-web CSR，编译为浏览器 WASM，复用随产品提供的 xcss Rust 认证、UI、主题和语言快照，以及现有设计令牌、字体和许可。Vite 收集浏览器绑定与静态资源，Axum 内嵌最终产物，并可按 WASM 加载和缓存需要适配优化。构建与验证详见[xcss-web 浏览器维护](xcss-web-browser.md)。
+后端保留 Rust 2024 / Tokio / Axum 和 SQLx / SQLite；前端使用 Rust / xcss-web CSR，编译为浏览器 WASM，复用随产品提供的 xcss Rust 认证、UI、主题和语言快照，以及现有设计令牌、字体和许可。仓库内 Rust 工具 `tools/web-build` 收集浏览器绑定与静态资源，Axum 内嵌最终产物，并可按 WASM 加载和缓存需要适配优化。构建与验证详见[Rust 原生 Web 构建](rust-native-web.md)。
 
 ## 界面操作与标签
 
