@@ -95,7 +95,7 @@ test("xcss-web frontend uses embedded fonts, licenses, and session recovery supp
       return [name];
     });
   }
-  const builderKeys = ["Cargo.toml", "Cargo.lock", ...builderSources(join(builderRoot, "src"))].sort();
+  const builderKeys = ["Cargo.toml", "Cargo.lock", "SOURCE.json", ...builderSources(join(builderRoot, "src"))].sort();
   expect(Object.keys(metadata.builder_inputs).sort()).toEqual(builderKeys);
   for (const name of builderKeys) {
     expect(sha256(readFileSync(join(builderRoot, name))), name).toBe(metadata.builder_inputs[name]);

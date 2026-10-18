@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import test from "node:test";
@@ -34,13 +35,59 @@ test("both bootstrap entries must start the actual WASM application", () => {
   }
 });
 
-test("font bytes and immutable release attribution cannot drift", () => {
+test("font bytes cannot drift from the reviewed Git asset snapshot", () => {
   const path = "web/vendor/xcss/web-fonts/MapleMonoFull-Regular.woff2";
   assert.throws(() => validateXcssWeb(withFile(path, "changed font")), { code: "ERR_ASSERTION" });
+});
+
+test("Git source identity rejects dirty, altered and legacy package attribution", () => {
   const sourcePath = "web/vendor/xcss/SOURCE.json";
+  const mutate = [
+    source => { source.base_revision += "-dirty"; },
+    source => { source.base_revision = "f".repeat(40); },
+    source => { source.origin = "https://github.com/another-owner/xcss"; },
+    source => { source.source_directory = "unreviewed-assets"; },
+    source => { source.package = "@another-owner/web"; },
+    source => { source.version = "2.0.1"; },
+    source => { source.format = 2; },
+    source => { source.dirty = true; },
+    source => { source.npm = { resolved: "https://github.com/isarmg/xcss/releases/download/v1.0.0/xcss-web-1.0.0.tgz" }; },
+  ];
+  for (const change of mutate) {
+    const source = JSON.parse(read(sourcePath));
+    change(source);
+    assert.throws(() => validateXcssWeb(withFile(sourcePath, JSON.stringify(source))), {
+      code: "ERR_ASSERTION", message: /reviewed XCSS asset receipt/u,
+    });
+  }
+});
+
+test("editing an asset together with its declared digest cannot forge the source receipt", () => {
+  const sourcePath = "web/vendor/xcss/SOURCE.json";
+  const asset = "admin-ui/styles.css";
+  const replacement = Buffer.from(".forged-style { color: red; }\n");
   const source = JSON.parse(read(sourcePath));
-  source.npm.resolved = "https://github.com/isarmg/xcss/releases/download/v2.0.0/unpublished.tgz";
-  assert.throws(() => validateXcssWeb(withFile(sourcePath, JSON.stringify(source))), { code: "ERR_ASSERTION" });
+  source.files[asset] = createHash("sha256").update(replacement).digest("hex");
+  assert.throws(() => validateXcssWeb(path => {
+    if (path === sourcePath) return Buffer.from(JSON.stringify(source));
+    if (path === `web/vendor/xcss/${asset}`) return replacement;
+    return read(path);
+  }), { code: "ERR_ASSERTION", message: /reviewed XCSS asset receipt/u });
+});
+
+test("the reviewed asset inventory and recorded digests cannot be replaced or omitted", () => {
+  const sourcePath = "web/vendor/xcss/SOURCE.json";
+  for (const change of [
+    source => { source.files["admin-ui/styles.css"] = "0".repeat(64); },
+    source => { delete source.files["LICENSE"]; },
+    source => { source.files["admin-ui/server-corners.js"] = "0".repeat(64); },
+  ]) {
+    const source = JSON.parse(read(sourcePath));
+    change(source);
+    assert.throws(() => validateXcssWeb(withFile(sourcePath, JSON.stringify(source))), {
+      code: "ERR_ASSERTION", message: /reviewed XCSS asset receipt/u,
+    });
+  }
 });
 
 test("build commands must stay on the Rust builder", () => {

@@ -5,6 +5,10 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
+// Review the committed source identity and its complete file receipt together.
+// This also prevents changing an asset and simply replacing its recorded hash.
+const xcssAssetsRevision = "a055fdf5ce4bdf6cb943284813e42ba864c74b9d";
+const xcssAssetsReceiptSha256 = "3bccf5dad68ce08dff8f3b0b318b3d81a3aee294eb9575c62de42e06692ccfb6";
 
 // This check must also work before npm ci. The deployed bytes come from the
 // reviewed vendor snapshot, not the historical npm package's JS API.
@@ -42,15 +46,22 @@ export function validateXcssWeb(read = path => readFileSync(resolve(root, path))
   assert.match(webConfig, /"login\.js" = "xcss-web-login\.js"/u);
 
   const vendor = "web/vendor/xcss";
-  const source = JSON.parse(read(`${vendor}/SOURCE.json`));
-  assert.equal(source.package, "@xcss/web");
-  assert.equal(source.npm.version, "1.0.0");
-  assert.equal(source.origin, source.npm.resolved);
-  assert.equal(source.npm.resolved, "https://github.com/isarmg/xcss/releases/download/v1.0.0/xcss-web-1.0.0.tgz");
-  assert.equal(source.npm.integrity, "sha512-QR/zmdzyQkLnFzTTp+EHYnOL9XEe5N95XVUasnDlKqdNWw/nVoY4evq083QTxMED/ElRRYeegEItnTxCUcb7TQ==");
-  assert.deepEqual(Object.keys(source.files).sort(), Object.keys(source.npm.archive_files).sort());
   const digest = bytes => createHash("sha256").update(bytes).digest("hex");
+  const sourceBytes = read(`${vendor}/SOURCE.json`);
+  assert.equal(digest(sourceBytes), xcssAssetsReceiptSha256, "reviewed XCSS asset receipt");
+  const source = JSON.parse(sourceBytes);
+  assert.deepEqual(Object.keys(source).sort(), [
+    "base_revision", "files", "format", "origin", "package", "source_directory", "version",
+  ]);
+  assert.equal(source.format, 1);
+  assert.equal(source.package, "@xcss/web");
+  assert.equal(source.version, "2.0.0");
+  assert.equal(source.origin, "https://github.com/isarmg/xcss");
+  assert.equal(source.source_directory, "web");
+  assert.match(source.base_revision, /^[0-9a-f]{40}$/u);
+  assert.equal(source.base_revision, xcssAssetsRevision);
   for (const [name, hash] of Object.entries(source.files)) {
+    assert.match(hash, /^[0-9a-f]{64}$/u, name);
     assert.equal(digest(read(`${vendor}/${name}`)), hash, name);
   }
   const fonts = `${vendor}/web-fonts`;
@@ -68,5 +79,5 @@ export function validateXcssWeb(read = path => readFileSync(resolve(root, path))
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   validateXcssWeb();
-  console.log("Rust/WASM entries, immutable vendor resources and font provenance verified without node_modules");
+  console.log("Rust/WASM entries, reviewed Git asset snapshot and font provenance verified without node_modules");
 }

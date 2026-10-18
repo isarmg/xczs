@@ -15,7 +15,7 @@ pub fn start() {
     if let Some(root) = http::document().get_element_by_id("xczs-root") {
         let _ = root.set_attribute("data-xczs-renderer", "xcss-web");
     }
-    xcss_web::mount("xczs-root", App);
+    xcss_web::mount_server("xczs-root", App);
 }
 #[component]
 fn App() -> impl IntoView {

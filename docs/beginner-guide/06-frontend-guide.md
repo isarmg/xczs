@@ -8,7 +8,7 @@
 
 Axum 返回 `web/index.html` 或 `web/login.html`，引用同源 CSS、字体和外置 ES module。HTML 保留 `#xczs-root`、登录密码字节范围和 Base64 编码的业务元数据，不向页面注入管理员凭据。
 
-启动入口 [xcss-web-index.js](../../web/xcss-web-index.js) 和 [xcss-web-login.js](../../web/xcss-web-login.js) 加载同一个 WASM 模块；[xcss-web-platform.js](../../web/xcss-web-platform.js) 导入 xcss 样式、字体许可和现有 server-corners 绘制适配器。剩余手写 JavaScript 只负责这些浏览器边界与只读验收桥接，文件管理和上传状态保存在 Rust 中。
+启动入口 [xcss-web-index.js](../../web/xcss-web-index.js) 和 [xcss-web-login.js](../../web/xcss-web-login.js) 加载同一个 WASM 模块；[xcss-web-platform.js](../../web/xcss-web-platform.js) 导入 xcss 样式和字体许可。共享轮廓的几何与 DOM 绘制由 Rust `mount_server` 接入。剩余手写 JavaScript 只负责 WASM 加载、静态资源和只读验收桥接，文件管理和上传状态保存在 Rust 中。
 
 [lib.rs](../../web/xcss-web/src/lib.rs) 初始化共享字体、语言、主题和挂载根节点。文件页先经共享客户端恢复会话，再严格检查 `index-data` 的字段、路径和类型，最后创建工作区模型。登录页使用服务端提供的密码字节范围，保留必填错误、焦点、密码清空、请求锁定及中英文显示。
 

@@ -27,7 +27,7 @@ cargo build --locked
 - 上传继续使用原有 PUT、HEAD、PATCH、discard 和 preflight 接口。成功、续传、覆盖或重建上传会话，都必须满足原有标识、长度、偏移和目标 revision 的绑定规则。
 - 所有变更保持原来的 CSRF、操作标识和未知结果处理。变更请求不进行盲目重放；普通文件操作最多查询一次只读 job 状态，上传根据服务器明确给出的 recovery 执行恢复。
 - 单批最多 512 个文件、全页最多 512 个待处理上传、默认一个并发上传和最近 200 条终态历史继续生效。尚未生成 DOM 的批次尾部同样占用容量并参与取消。
-- 原来的 CSS、ARIA、键盘和服务端 HTML 数据接口保留。剩余的手写 JavaScript 负责 WASM 初始化、静态资源导入、只读合同测试桥接，以及原有 server-corners 绘制适配器。
+- 原来的 CSS、ARIA、键盘和服务端 HTML 数据接口保留。剩余的手写 JavaScript 负责 WASM 初始化、静态资源导入和只读合同测试桥接；共享轮廓的几何、SVG 与 DOM 生命周期由 Rust `mount_server` 接入。
 
 ## 验证
 

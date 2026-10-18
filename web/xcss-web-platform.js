@@ -1,4 +1,3 @@
-import { startServerCorners } from "@xcss/web/admin-ui/server-corners";
 import { administrator_session_json, query_job_json } from "./pkg/xczs_web.js";
 // Browser business logic is compiled from web/xcss-web; this entry only supplies
 // immutable authored styles and license assets to the Rust asset builder.
@@ -12,8 +11,6 @@ import "./tags.css";
 export { default as fontLicenseUrl } from "@xcss/web/web-fonts/OFL.txt?url";
 export { default as cjkFontLicenseUrl } from "@xcss/web/web-fonts/CJK-LICENSE.txt?url";
 
-// Paint adapter tracks authored CSS corner geometry as nodes mount.
-startServerCorners(document);
 
 // Read-only diagnostic bridge for browser contract tests. Credentials remain
 // owned by the Rust client and are never copied into HTML or persistent storage.
